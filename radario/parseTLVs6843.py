@@ -60,7 +60,6 @@ class SideInfoTLVParser(BaseParser):
                 break
             tlv_data = tlv_data[point_struct_size:]
             point_cloud[i, 4] = snr * 0.1
-            print(f"SNR: {point_cloud[i, 4]}")
             point_cloud[i, 5] = noise * 0.1
         output_dict['pointCloud'] = point_cloud
                 

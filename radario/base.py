@@ -165,3 +165,16 @@ class BaseBufferedReader:
         
     def read(self):
         raise NotImplementedError
+
+
+READERS = {
+    
+}
+def register_reader(cls):
+    READERS[cls.__name__] = cls
+    return cls
+
+def build_reader(**kwargs):
+    assert 'type' in kwargs, "type must be provided in kwargs"
+    reader_name = kwargs.pop('type')
+    return READERS[reader_name](**kwargs)

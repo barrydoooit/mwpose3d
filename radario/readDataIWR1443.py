@@ -9,7 +9,7 @@ log = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
 
 from datetime import datetime, timezone
-from .base import BaseBufferedReader, bytes_to_int16
+from .base import register_reader, BaseBufferedReader, bytes_to_int16
 
 from typing import TYPE_CHECKING, Union
 
@@ -22,6 +22,7 @@ if TYPE_CHECKING:
 class TLVTYPES(Enum):
     MMWDEMO_UART_MSG_DETECTED_POINTS = 1
 
+@register_reader
 class BufferedPcdReaderIWR1443(BaseBufferedReader):
     def __init__(self, CLI_port: Union[str, serial.Serial], Data_port: Union[str, serial.Serial]):
         super().__init__(CLI_port, Data_port)

@@ -10,7 +10,7 @@ from radario.parseTLVs6843 import TLVTYPES, tlv2parser
 
 log = logging.getLogger(__name__)
 from datetime import datetime, timezone
-from .base import BaseBufferedReader, bytes_to_int16
+from .base import register_reader,BaseBufferedReader, bytes_to_int16
 
 from typing import TYPE_CHECKING, Union
 
@@ -18,7 +18,7 @@ if TYPE_CHECKING:
     from . import ChirpConfigIWR1443
 
 
-
+@register_reader
 class BufferedPcdReaderIWR6843(BaseBufferedReader):
     MAGIC_STRUCT = "Q"
     HEADER_STRUCT = "8I"
@@ -106,7 +106,7 @@ class BufferedPcdReaderIWR6843(BaseBufferedReader):
     
     def read(self):
         in_waiting = self.Data_port.in_waiting
-        print(f"Bytes in waiting: {in_waiting}")
+        # print(f"Bytes in waiting: {in_waiting}")
         _income_bytes = self.Data_port.read(in_waiting)
         if in_waiting >= self.max_buffer_size:
             self.byte_buffer[:] = np.frombuffer(_income_bytes[-self.max_buffer_size:], dtype=np.uint8)

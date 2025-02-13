@@ -3,14 +3,37 @@ import sys
 import os
 
 
-
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 print(sys.path)
 import debugpy
 from apps.lateral_tracking.breakoutRunner import BreakoutRunner
 # from apps.skeleton_estim.skeletonRunner import SktEstimRunner
+from apps.pc_collection.runner import PcdCollectVisRunner
 import apps.lateral_tracking.constants as lateral_const
 # import apps.skeleton_estim.constants as skeleton_const
+
+
+def make_collect_runner():
+    runner = PcdCollectVisRunner(
+            buffer_cfg=dict(
+                max_buffer_size=1,
+                mode="visualize"
+            ),
+            reader_cfg=dict(
+                type='BufferedPcdReaderIWR6843',
+                CLI_port='COM4',
+                Data_port='COM5',
+                config_file_path='./chirp_configs/6843_mobile_tracker.cfg'
+            ),
+            gui_cfg=dict(
+                break_time=15,
+            ),
+            loop_cfg=dict(
+                interval=0.01
+            ),
+            mode=PcdCollectVisRunner.Mode.VISUALIZE
+        )
+    return runner
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="mmwave breakout application")
@@ -24,7 +47,7 @@ if __name__ == "__main__":
         print("Debugger attached.")
 
     if args.type == "breakout":
-        game_runner = BreakoutRunner(
+        runner = BreakoutRunner(
             config_file_path=lateral_const.P_CONFIG_PATH,
             cli_port=lateral_const.P_CLI_PORT,
             data_port=lateral_const.P_DATA_PORT
@@ -35,6 +58,9 @@ if __name__ == "__main__":
     #             cli_port=skeleton_const.P_CLI_PORT,
     #             data_port=skeleton_const.P_DATA_PORT
     #         )
+    elif args.type == "cvis":
+        runner = make_collect_runner()
     else:
         raise ValueError("Unknown type of the application")
-    game_runner.start()
+    
+    runner.start()
