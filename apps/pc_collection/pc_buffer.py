@@ -20,6 +20,7 @@ class PointCloudBuffer:
         self._buffer_lock: threading.Lock = threading.Lock()
         self._frame_counter = 0
         self._dump_stage = False
+        self.recent_dump = None
         
         self._on_frame_arrival = None
         self._on_buffer_full = None
@@ -85,8 +86,9 @@ class PointCloudBuffer:
             "point_keys": ["x", "y", "z", "vel", "snr"],
             "frames": [frame.serialize(compact=True) for frame in frames_to_dump]
         }
-        # with open(filename, 'w') as f:
-        #     json.dump(data, f)
+        with open(filename, 'w') as f:
+            json.dump(data, f)
+        self.recent_dump = f"{first_time_str}-{last_time_str}_{len(frames_to_dump)}.json"
         print(f"Dumped {len(frames_to_dump)} frames to {filename}")
         
         self._dump_stage = False

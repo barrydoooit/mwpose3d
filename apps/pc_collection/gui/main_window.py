@@ -5,6 +5,8 @@ from typing import Optional
 from apps.common.pcd.pointCloudVis import PointCloudFigureFrame
 from apps.pc_collection.gui.cli import CommandProcessor
 from apps.pc_collection.pc_buffer import PointCloudBuffer
+from kinect_toolkits.kinectData import Skeleton
+from kinect_toolkits.kinectVis import SkeletonFigureFrame
 
 class DataCollectorMainWindow:
     def __init__(self, root: tk.Tk, break_time: int = 15):
@@ -39,15 +41,26 @@ class DataCollectorMainWindow:
         self.cmd_entry = tk.Entry(self.cli_frame)
         self.cmd_entry.pack(side=tk.BOTTOM, fill=tk.X)
         
-        self.vis_frame = PointCloudFigureFrame(
-            parent=main_frame,
+        vis_container = tk.Frame(main_frame)
+        vis_container.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True)
+        self.pcd_vis_frame = PointCloudFigureFrame(
+            parent=vis_container,
             figure_cfg=dict(
                 figsize=(5, 5),
                 dpi=100
             )
         )
-        self.vis_frame.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True)
+        self.pcd_vis_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
 
+        self.skel_vis_frame = SkeletonFigureFrame(
+            master=vis_container,
+            figure_cfg=dict(
+                figsize=(5, 5),
+                dpi=100
+            )
+        )
+        self.skel_vis_frame.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True)
+        
     def bind_cli_processor(self, cli_processor: CommandProcessor):
         self.cmd_entry.bind("<Return>", partial(self._on_command_entered, cli_processor))
         
@@ -59,20 +72,32 @@ class DataCollectorMainWindow:
         self.cli_text.see(tk.END)
     
     def _on_frame_arrival(self, pcd_buffer: PointCloudBuffer):
-        self.root.after(0, lambda: self.refresh_visuals(pcd_buffer))
+        self.root.after(0, lambda: self.refresh_pcd_visual(pcd_buffer))
     
-    def refresh_visuals(self, pcd_buffer: PointCloudBuffer):
+    def refresh_pcd_visual(self, pcd_buffer: PointCloudBuffer):
         self.frame_counter_label.config(text=f"Current Frame: {pcd_buffer._frame_counter}")
         with pcd_buffer._buffer_lock:
             if len(pcd_buffer.buffer) == 0:
                 return
             frame = pcd_buffer.buffer[-1]
-        self.vis_frame.update(frame.point_cloud.points)
-        
-    def reset_visuals(self):
-        self.frame_counter_label.config(text="Current Frame: 0")
-        self.vis_frame.reset()
+        self.pcd_vis_frame.update(frame.point_cloud.points)
     
+    def refresh_skel_visual(self, skeleton: Skeleton):
+        if skeleton is None:
+            return
+        self.skel_vis_frame.update(skeleton)
+        
+    def reset_all_visuals(self):
+        self.reset_pcd_visual()
+        self.reset_skel_visual()
+    
+    def reset_pcd_visual(self):
+        self.frame_counter_label.config(text="Current Frame: 0")
+        self.pcd_vis_frame.reset()
+
+    def reset_skel_visual(self):
+        self.skel_vis_frame.reset()
+        
     def show_break_popup(self, on_break_end: Optional[callable] = None):
         if self.popup is not None:
             return

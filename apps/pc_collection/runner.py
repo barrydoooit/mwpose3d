@@ -1,4 +1,5 @@
 from enum import Enum
+import sys
 import threading
 import time
 from typing import Literal, Union
@@ -63,8 +64,16 @@ class PcdCollectVisRunner:
         return OnlineDataCollectionLoop.from_dict(loop_cfg)
     
     def start(self):
-        self.loop.start()
-        self.gui.root.mainloop()
+        try:
+            self.loop.start()
+            self.gui.root.mainloop()
+        except KeyboardInterrupt:
+            print("Keyboard interrupt")
+        except Exception as e:
+            print(e)
+        finally:
+            self.loop.stop()
+            sys.exit(0)
     
     def switch_mode(self, mode: Union[str, Mode]):
         if isinstance(mode, str):

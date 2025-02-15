@@ -17,7 +17,8 @@ def make_collect_runner():
     runner = PcdCollectVisRunner(
             buffer_cfg=dict(
                 max_buffer_size=1,
-                mode="visualize"
+                mode="visualize",
+                output_dir="./data/raw/radar"
             ),
             reader_cfg=dict(
                 type='BufferedPcdReaderIWR6843',
@@ -26,10 +27,13 @@ def make_collect_runner():
                 config_file_path='./chirp_configs/6843_mobile_tracker.cfg'
             ),
             gui_cfg=dict(
-                break_time=15,
+                break_time=5,
             ),
             loop_cfg=dict(
-                interval=0.01
+                interval=0.05,
+                kinect_cfg=dict(
+                    output_dir="./data/raw/kinect"
+                ),
             ),
             mode=PcdCollectVisRunner.Mode.VISUALIZE
         )

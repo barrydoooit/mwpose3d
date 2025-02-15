@@ -56,7 +56,8 @@ class StartCommand(BaseCliCommand):
     def execute(self, runner: 'PcdCollectVisRunner', args: List[str]):
         if runner.loop.running:
             return "Loop is already running. <Stop> first."
-        runner.gui.reset_visuals()
+        runner.gui.reset_all_visuals()
+        runner.loop.first_iter = True
         runner.loop.start()
         return f"Data collection loop started with interval {runner.loop.interval} sec. Current mode: {runner._mode.value.upper()}"
 

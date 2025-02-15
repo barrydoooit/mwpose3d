@@ -23,8 +23,8 @@ class PointCloudFigure(Figure):
         self.ax.set_ylabel('Y')
         self.ax.set_zlabel('Z')
         
-        self.ax.set_xlim(-2, 2)
-        self.ax.set_ylim(-2, 2)
+        self.ax.set_xlim(2, -2)
+        self.ax.set_ylim(2, 0)  # Reverse Y axis
         self.ax.set_zlim(-2, 2)
 
 
