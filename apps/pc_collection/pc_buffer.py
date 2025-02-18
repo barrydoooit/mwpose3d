@@ -5,8 +5,9 @@ import json
 import os
 import threading
 import time
-from typing import Any, Callable, Deque, List
+from typing import Any, Callable, Deque, List, Optional
 from apps.common.pcd.pointCloud import PointCloudFrame, SimplePointCloud5D
+from contextlib import contextmanager
 
 
 class PointCloudBuffer:
@@ -18,6 +19,12 @@ class PointCloudBuffer:
         
         self.buffer: Deque[PointCloudFrame] = deque(maxlen=max_buffer_size)
         self._buffer_lock: threading.Lock = threading.Lock()
+        @contextmanager
+        def locked_buffer():
+            with self._buffer_lock:
+                yield self.buffer
+        self.locked_buffer = locked_buffer
+        
         self._frame_counter = 0
         self._dump_stage = False
         self.recent_dump = None
@@ -25,27 +32,41 @@ class PointCloudBuffer:
         self._on_frame_arrival = None
         self._on_buffer_full = None
 
+        self.meta_data = {}
     
     def __getitem__(self, index: int):
         with self._buffer_lock:
             return self.buffer[index]
-            
+    
+    def __len__(self):
+        with self._buffer_lock:
+            return len(self.buffer)
+    
     def _count(self):
         temp = self._frame_counter
         self._frame_counter += 1
         return temp
     
-    
-    def _check_full(self) -> bool:
+    def _check_full(self, on_buffer_full: Optional[Callable[["PointCloudBuffer"], Any]] = None) -> bool:
         if self.max_buffer_size == 1:
             # NOTE: If buffer size is 1, we don't need to check if it's full
             return False
-        if len(self.buffer) >= self.max_buffer_size:
-            if self._on_buffer_full:
-                self._on_buffer_full(self)
+        if len(self.buffer) >= self.buffer.maxlen:
+            if on_buffer_full:
+                on_buffer_full(self)
             return True
         return False
     
+    def enlarge_buffer(self, new_size: int) -> int:
+        if self.buffer.maxlen is None:
+            return
+        if new_size <= self.buffer.maxlen:
+            return
+        with self.locked_buffer() as buffer:
+            current_size = len(buffer)
+            self.buffer = deque(buffer, maxlen=new_size)
+        return current_size
+        
     def add_frame(self, point_cloud: SimplePointCloud5D):
         with self._buffer_lock:
             ts_ms = int(time.time() * 1000)
@@ -54,7 +75,7 @@ class PointCloudBuffer:
         if self._on_frame_arrival:
             self._on_frame_arrival(self)
             
-        self._check_full()
+        self._check_full(self._on_buffer_full)
 
     def change_max_buffer_size(self, new_size: int):
         with self._buffer_lock:
@@ -66,9 +87,13 @@ class PointCloudBuffer:
     
     def set_on_buffer_full(self, callback: Callable[['PointCloudBuffer'], Any]):
         self._on_buffer_full = callback
-        
+    
+    def add_metadata(self, key: str, value: Any):
+        self.meta_data[key] = value
+        return self
+    
     def dump(self):
-        assert len(self.buffer) == self.max_buffer_size
+        assert self._check_full()
         with self._buffer_lock:
             self._dump_stage = True
             frames_to_dump = list(self.buffer)
@@ -88,6 +113,14 @@ class PointCloudBuffer:
         }
         with open(filename, 'w') as f:
             json.dump(data, f)
+            
+        if len(self.meta_data) > 0:
+            meta_dir = os.path.join(self.output_dir, "meta")
+            os.makedirs(meta_dir, exist_ok=True)
+            meta_filename = os.path.join(meta_dir, f"{first_time_str}-{last_time_str}_{len(frames_to_dump)}.json")
+            with open(meta_filename, 'w') as f:
+                json.dump(self.meta_data, f)
+            
         self.recent_dump = f"{first_time_str}-{last_time_str}_{len(frames_to_dump)}.json"
         print(f"Dumped {len(frames_to_dump)} frames to {filename}")
         
@@ -96,6 +129,7 @@ class PointCloudBuffer:
     def clear(self):
         with self._buffer_lock:
             self.buffer.clear()
+            self.buffer = deque(maxlen=self.max_buffer_size)
         self._frame_counter = 0
     
     @classmethod

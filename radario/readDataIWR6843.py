@@ -61,7 +61,7 @@ class BufferedPcdReaderIWR6843(BaseBufferedReader):
         data_ok = 0
         det_obj = {}
         if num_detected_obj > 0:
-            print(f"Num detected objects: {num_detected_obj}")
+            # print(f"Num detected objects: {num_detected_obj}")
             output_dict['pointCloud'] = np.zeros((num_detected_obj, 7), dtype=np.float64)
             output_dict['pointCloud'][:, 6] = 255
             for i in range(num_tlvs):

@@ -76,6 +76,7 @@ class KinectManager:
     def delete_default_output_file(self):
         file_path = self.get_default_output_file()
         if file_path.exists():
+            print("Deleting file: ", file_path)
             file_path.unlink()
             
     def wait_for_capture_starts(self):

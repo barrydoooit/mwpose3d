@@ -16,8 +16,7 @@ import apps.lateral_tracking.constants as lateral_const
 def make_collect_runner():
     runner = PcdCollectVisRunner(
             buffer_cfg=dict(
-                max_buffer_size=1,
-                mode="visualize",
+                max_buffer_size=200,
                 output_dir="./data/raw/radar"
             ),
             reader_cfg=dict(
@@ -27,15 +26,16 @@ def make_collect_runner():
                 config_file_path='./chirp_configs/6843_mobile_tracker.cfg'
             ),
             gui_cfg=dict(
-                break_time=5,
             ),
             loop_cfg=dict(
                 interval=0.05,
+                break_time=10,
+                time_calib=True,
                 kinect_cfg=dict(
                     output_dir="./data/raw/kinect"
                 ),
             ),
-            mode=PcdCollectVisRunner.Mode.VISUALIZE
+            mode=PcdCollectVisRunner.Mode.COLLECT
         )
     return runner
 

@@ -31,6 +31,7 @@ class PcdCollectVisRunner:
         self.buffer = self._make_buffer(buffer_cfg)
         self.gui = self._make_gui(gui_cfg)
         self.loop = self._make_loop(loop_cfg)
+        self.loop.runner = self
         self._mode = mode
         self.cli_processor = CommandProcessor(self)
         self.gui.bind_cli_processor(self.cli_processor)

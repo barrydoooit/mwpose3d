@@ -1,26 +1,26 @@
 from functools import partial
 import tkinter as tk
-from typing import Optional
+from typing import Any, Callable, Optional, Tuple
 
 from apps.common.pcd.pointCloudVis import PointCloudFigureFrame
 from apps.pc_collection.gui.cli import CommandProcessor
+from apps.pc_collection.gui.popups.calib_instruction import TimeCalibInstructionPopup
+from apps.pc_collection.gui.popups.midbreak import MidBreakPopup
 from apps.pc_collection.pc_buffer import PointCloudBuffer
 from kinect_toolkits.kinectData import Skeleton
 from kinect_toolkits.kinectVis import SkeletonFigureFrame
 
 class DataCollectorMainWindow:
-    def __init__(self, root: tk.Tk, break_time: int = 15):
+    def __init__(self, root: tk.Tk):
         self.root = root
-        self.popup = None
-        self.popup_timer = None
-        self.break_time = break_time
-        self.remaining_break_time = break_time
+        self.break_popup = None
+        self.time_calib_popup = None
         
         self._setup_ui()
     
     @classmethod
     def from_dict(cls, cfg: dict):
-        return cls(tk.Tk(), cfg.get("break_time", 15))
+        return cls(tk.Tk())
     
     def bind_buffer(self, pcd_buffer: PointCloudBuffer):
         self.command_processor.pcd_buffer = pcd_buffer
@@ -98,33 +98,40 @@ class DataCollectorMainWindow:
     def reset_skel_visual(self):
         self.skel_vis_frame.reset()
         
-    def show_break_popup(self, on_break_end: Optional[callable] = None):
-        if self.popup is not None:
+    def show_break_popup(self, break_time: int = 10,
+                         on_break_end: Optional[callable] = None):
+        if self.break_popup is not None:
             return
-        self.remaining_break_time = self.break_time
-        self.popup = tk.Toplevel(self.root)
-        self.popup.title("Take a break :)")
-        self.popup.geometry("300x100")
-        self.timer_label = tk.Label(self.popup, text=f"Next Capture in: {self.remaining_break_time} s", font=("Arial", 18))
-        self.timer_label.pack(expand=True)
-        self.popup_timer = self.root.after(1000, lambda: self.update_popup_timer(on_break_end))
-    
-    def update_popup_timer(self, on_break_end: Optional[callable] = None):
-        if self.remaining_break_time > 0:
-            self.timer_label.config(text=f"Next Capture in: {self.remaining_break_time} s")
-            self.remaining_break_time -= 1
-            self.popup_timer = self.root.after(1000, lambda: self.update_popup_timer(on_break_end))
-        else:
-            self.close_break_popup(on_break_end)
-    
-    def close_break_popup(self, on_break_end: Optional[callable] = None):
-        if self.popup is None:
+        self.remaining_break_time = break_time
+        self.break_popup = MidBreakPopup(self.root, 
+                                         break_time, 
+                                         on_break_end=on_break_end)
+        self.break_popup.transient(self.root)  # Set the popup to be transient to the main window
+        self.break_popup.lift()               # Bring the popup to the front
+        self.break_popup.grab_set()           # Optional: ensure all events are directed to the popup
+        self.break_popup.protocol("WM_DELETE_WINDOW", self.break_popup.close_break_popup)
+
+    def show_time_calib_popup(self, 
+                              pcd_buffer: "PointCloudBuffer",
+                              stages_duration: Tuple[int, int, int, int],
+                              ticks_to_confirm: int,
+                              before_popup_close: Optional[Callable[["TimeCalibInstructionPopup"], Any]] = None):
+        if self.time_calib_popup is not None:
             return
-        self.popup.destroy()
-        self.popup = None
-        if on_break_end:
-            on_break_end()
-
-
+        self.time_calib_popup = TimeCalibInstructionPopup(self.root, 
+                                                     pcd_buffer, 
+                                                     stages_duration, 
+                                                     ticks_to_confirm,
+                                                     before_popup_close=before_popup_close)
+        self.time_calib_popup.protocol("WM_DELETE_WINDOW", self.time_calib_popup.close_popup)
+    
+    def stop_all_popups(self):
+        if self.break_popup:
+            self.break_popup.close_break_popup()
+            self.break_popup = None
+        if self.time_calib_popup:
+            self.time_calib_popup.close_popup()
+            self.time_calib_popup = None
+    
 class DataCollectorDelegate:
     pass
