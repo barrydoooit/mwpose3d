@@ -1,4 +1,5 @@
 import threading
+import time
 from typing import Optional
 from apps.common.loops.onlineReader import OnlineReaderLoop, TestingLoop
 from apps.common.pcd.pointCloud import SimplePointCloud5D
@@ -67,6 +68,7 @@ class OnlineDataCollectionLoop(OnlineReaderLoop):
                 self.kinect_manager.wait_for_capture_starts()
             super().start()
             if self.time_calib:
+                self.start_ts = time.time()
                 self.gui.show_time_calib_popup(
                     pcd_buffer=self.buffer,
                     stages_duration=(4, 20, 2, 1,),
@@ -100,4 +102,5 @@ class OnlineDataCollectionLoop(OnlineReaderLoop):
         pcd_buffer_now_size = self.buffer.enlarge_buffer(len(self.buffer) + self.buffer.max_buffer_size)
         self.buffer.add_metadata("still_start_ts", still_ts[0])\
             .add_metadata("still_end_ts", still_ts[1])\
-            .add_metadata("calib_frames", pcd_buffer_now_size)
+            .add_metadata("calib_frames", pcd_buffer_now_size)\
+            .add_metadata("radar_start_ts", self.start_ts)

@@ -31,7 +31,7 @@ class MidBreakPopup(tk.Toplevel):
             self.popup_timer = None
             self.close_break_popup()
     
-    def close_break_popup(self):
+    def close_break_popup(self, with_callback: bool = True):
         self.destroy()
         if self.popup_timer is not None:
             try:
@@ -39,5 +39,7 @@ class MidBreakPopup(tk.Toplevel):
             except Exception:
                 pass
             self.popup_timer = None
+        if not with_callback:
+            return
         if self.on_break_end:
             self.on_break_end()

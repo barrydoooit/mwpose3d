@@ -127,10 +127,10 @@ class DataCollectorMainWindow:
     
     def stop_all_popups(self):
         if self.break_popup:
-            self.break_popup.close_break_popup()
+            self.break_popup.close_break_popup(with_callback=False)
             self.break_popup = None
         if self.time_calib_popup:
-            self.time_calib_popup.close_popup()
+            self.time_calib_popup.close_popup(with_callback=False)
             self.time_calib_popup = None
     
 class DataCollectorDelegate:

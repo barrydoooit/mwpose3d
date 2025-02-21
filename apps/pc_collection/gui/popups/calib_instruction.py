@@ -91,6 +91,10 @@ class TimeCalibInstructionPopup(tk.Toplevel):
                 self.start_still_stage()
                 return
         else:
+            if ticks_to_confirm < self.ticks_to_confirm:
+                self.instruction_label.config(text="Movement not stopped! Restarting process...")
+                self.after(1000, self.restart_process)
+                return
             ticks_to_confirm = self.ticks_to_confirm
             self.initial_frame_count = current_frame_count
             self.still_start_ts = buffer[-1].ts
@@ -162,7 +166,10 @@ class TimeCalibInstructionPopup(tk.Toplevel):
             self.after_cancel(self.timer_id)
         self.timer_id = self.after(interval, callback)
     
-    def close_popup(self):
+    def close_popup(self, with_callback: bool = True):
+        if not with_callback:
+            self.destroy()
+            return
         # self.still_period = (self.still_start_ts, self.still_end_ts,)
         self.still_period = (self.still_start_ts, self.still_start_ts + self.still_duration * 1000,)
         if self.before_popup_close is not None:
