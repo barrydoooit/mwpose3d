@@ -92,13 +92,13 @@ def resample_df(d, new_freq=30, method='linear'):
     # Resamples data at 30Hz unless otherwise specified
     joints_without_quats = [3, 15, 19, 21, 22, 23, 24]
     resampled_df = pd.DataFrame(
-        columns=['# timestamp', 'jointType', 'orientation.X', 'orientation.Y', 'orientation.Z',
+        columns=['timestamp', 'jointType', 'orientation.X', 'orientation.Y', 'orientation.Z',
                  'orientation.W', 'position.X', 'position.Y', 'position.Z'])
     new_df = pd.DataFrame()
     for i in d['jointType'].unique():
         current_df = d.loc[d['jointType'] == i].copy()
-        old_times = np.array(current_df['# timestamp'])
-        new_times = np.arange(min(current_df['# timestamp']), max(current_df['# timestamp']), 1 / new_freq)
+        old_times = np.array(current_df['timestamp'])
+        new_times = np.arange(min(current_df['timestamp']), max(current_df['timestamp']), 1 / new_freq)
         o_x = np.array(current_df['orientation.X'])
         o_y = np.array(current_df['orientation.Y'])
         o_z = np.array(current_df['orientation.Z'])
@@ -124,7 +124,7 @@ def resample_df(d, new_freq=30, method='linear'):
                 # Create rotation object
                 quats_object = R.from_quat(quats)
                 # Spherical Linear Interpolation
-                slerp = Slerp(np.array(current_df['# timestamp']), quats_object)
+                slerp = Slerp(np.array(current_df['timestamp']), quats_object)
                 interp_rots = slerp(new_times)
                 new_quats = interp_rots.as_quat()
                 # Create new orientation objects
@@ -134,10 +134,10 @@ def resample_df(d, new_freq=30, method='linear'):
                 orientation_w = np.array([item[3] for item in new_quats])
             else:
                 raise ValueError("Method must be either linear or spherical (slerp) interpolation.")
-        position_x = signal.resample(p_x, num=int(max(current_df['# timestamp']) * new_freq))
-        position_y = signal.resample(p_y, num=int(max(current_df['# timestamp']) * new_freq))
-        position_z = signal.resample(p_z, num=int(max(current_df['# timestamp']) * new_freq))
-        new_df['# timestamp'] = pd.Series(new_times)
+        position_x = signal.resample(p_x, num=int(max(current_df['timestamp']) * new_freq))
+        position_y = signal.resample(p_y, num=int(max(current_df['timestamp']) * new_freq))
+        position_z = signal.resample(p_z, num=int(max(current_df['timestamp']) * new_freq))
+        new_df['timestamp'] = pd.Series(new_times)
         new_df['jointType'] = pd.Series(np.repeat(i, len(new_times)))
         new_df['orientation.X'] = pd.Series(orientation_x)
         new_df['orientation.Y'] = pd.Series(orientation_y)
@@ -241,7 +241,7 @@ def process_record(df: pd.DataFrame) -> list:
     """
     Process a dataframe of raw Kinect data and return a list of Skeleton objects.
     Each row of df is assumed to have the following columns:
-        "# timestamp", " jointType", " orientation.X", " orientation.Y", " orientation.Z",
+        "timestamp", " jointType", " orientation.X", " orientation.Y", " orientation.Z",
         " orientation.W", " position.X", " position.Y", " position.Z"
     The function performs re-orientation, (optional) resampling and smoothing, computes
     the orientation matrix for each joint, normalizes each joint’s orientation using a
@@ -308,9 +308,9 @@ def process_record(df: pd.DataFrame) -> list:
     df_reoriented['o33'] = o33
 
     # --- Step 4. Use the first frame as the calibration pose ---
-    # Group by timestamp (each frame is assumed to be identified by a unique "# timestamp")
-    grouped_frames = df_reoriented.groupby('# timestamp')
-    first_timestamp = df_reoriented['# timestamp'].min()
+    # Group by timestamp (each frame is assumed to be identified by a unique "timestamp")
+    grouped_frames = df_reoriented.groupby('timestamp')
+    first_timestamp = df_reoriented['timestamp'].min()
     calibration_frame = grouped_frames.get_group(first_timestamp)
     # Build a dict mapping joint type to its calibration orientation matrix (3x3)
     calibration_orientations = {}
@@ -341,7 +341,7 @@ def process_record(df: pd.DataFrame) -> list:
     for timestamp, frame_df in grouped_frames:
         keypoints = {}
         norm_orientations = {}  # to store normalized 3x3 matrices for extra computation
-
+        unix_ms = frame_df['unixMs'].iloc[0]
         # For each joint (row) in the current frame:
         for _, row in frame_df.iterrows():
             joint_int = int(row['jointType'])
@@ -462,7 +462,7 @@ def process_record(df: pd.DataFrame) -> list:
         )
 
         # Create the Skeleton object for the frame
-        skeleton = Skeleton(timestamp=timestamp, keypoints=keypoints, extras=extras)
+        skeleton = Skeleton(timestamp=timestamp, unix_ms=unix_ms, keypoints=keypoints, extras=extras)
         skeletons.append(skeleton)
     return skeletons
         
@@ -489,7 +489,7 @@ def tail(filename: str, n_lines: int, jump_bytes: int = 4096):
 def get_last_record(csv_file_path: str) -> Optional[Skeleton]:
     with open(csv_file_path, 'r') as f:
         header = f.readline()
-    header = ",".join(map(str.strip, header.split(","))) + "\n"
+    header = ",".join(map(lambda x: x.strip('#').strip(), header.split(","))) + "\n"
     
     record_lines = tail(csv_file_path, 50)
     if len(record_lines) < 25:

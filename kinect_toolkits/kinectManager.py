@@ -25,6 +25,7 @@ class KinectManager:
         if self.process is not None:
             raise RuntimeError("Kinect process is already running")
         print("Starting Kinect process...")
+        self.delete_default_output_file()
         cmd = [self.exe_path, "--prefix", str(self.output_prefix)]
         self.process = subprocess.Popen(
             cmd,
@@ -75,7 +76,7 @@ class KinectManager:
     
     def delete_default_output_file(self):
         file_path = self.get_default_output_file()
-        if file_path.exists():
+        if file_path is not None and file_path.exists():
             print("Deleting file: ", file_path)
             file_path.unlink()
             

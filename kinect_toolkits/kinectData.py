@@ -27,7 +27,8 @@ class KeypointType(Enum):
     ANKLE_RIGHT = 18
     FOOT_RIGHT = 19
 
-
+USED_KEYPOINTS = tuple(range(20))
+ALL_KEYPOINTS = tuple(range(25))
 
 
 class Keypoint:
@@ -77,9 +78,11 @@ class SkeletonExtras:
 
 class Skeleton:
     def __init__(self, timestamp: float,
+                 unix_ms: int,
                  keypoints: Dict[KeypointType, Keypoint],
                  extras: Optional[SkeletonExtras] = None):
         self.timestamp = timestamp
+        self.unix_ms = unix_ms
         self.keypoints = keypoints
         self.extras = extras
 
