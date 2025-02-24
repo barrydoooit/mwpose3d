@@ -10,13 +10,20 @@ class BaseRadarProcessLoop:
         self._stop_event = threading.Event()
     
     def mainloop(self):
-        while not self._stop_event.is_set():
-            ts_start = time.perf_counter()
-            data = self._generate_data()
-            ret = self._process_data(data)
-            ts_end = time.perf_counter()
-            time.sleep(max(0, self._interval - (ts_end - ts_start)))
-        self._running = False
+        try:
+            while not self._stop_event.is_set():
+                ts_start = time.perf_counter()
+                data = self._generate_data()
+                ret = self._process_data(data)
+                ts_end = time.perf_counter()
+                time.sleep(max(0, self._interval - (ts_end - ts_start)))
+        except KeyboardInterrupt:
+            print("Keyboard interrupt")
+        except Exception as e:
+            print("Exception in loop:", e)
+            e.with_traceback()
+        finally:
+            self._running = False
 
     @property
     def running(self):
@@ -27,10 +34,10 @@ class BaseRadarProcessLoop:
         return self._interval
     
     def _generate_data(self):
-        raise NotImplementedError
+        return None
     
-    def _process_data(self):
-        raise NotImplementedError
+    def _process_data(self, data):
+        pass
     
     def start(self):
         if not self._running:
@@ -46,9 +53,17 @@ class BaseRadarProcessLoop:
             self._before_stop_hook()
             self._stop_event.set()
             if threading.current_thread() != self._thread:
-                self._thread.join()
+                self._thread.join(timeout=5.0)
+                if self._thread.is_alive():
+                    print("Thread did not stop within timeout. Continuing shutdown.")
             self._running = False
+            self._thread = None
             self._after_stop_hook()
+    
+    @property
+    def thread(self):
+        
+        return self._thread
     
     def _before_start_hook(self):
         pass

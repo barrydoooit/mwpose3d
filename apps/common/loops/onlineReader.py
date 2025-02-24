@@ -8,6 +8,7 @@ class OnlineReaderLoop(BaseRadarProcessLoop):
                  reader: BaseBufferedReader,
                  interval: float):
         super().__init__(interval)
+        assert isinstance(reader, BaseBufferedReader), "Currently not supporting build the reader in the loop class. Build it outside and pass it in."
         self._reader = reader
     
     def _generate_data(self):
@@ -23,6 +24,13 @@ class OnlineReaderLoop(BaseRadarProcessLoop):
         super()._before_start_hook()
         if not self._reader.Data_port.is_open:
             self._reader.Data_port.open()
+    
+    @classmethod
+    def from_dict(cls, cfg: dict):
+        return cls(
+            reader=cfg.get("reader"),
+            interval=cfg.get("interval")
+        )
 
 class TestingLoop(BaseRadarProcessLoop):
     def __init__(self,

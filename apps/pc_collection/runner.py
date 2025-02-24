@@ -1,13 +1,7 @@
 from enum import Enum
 import sys
-import threading
-import time
-from typing import Literal, Union
-import tkinter as tk
-
-import numpy as np
+from typing import Union
 import serial
-from apps.common.pcd.pointCloud import SimplePoint5D, SimplePointCloud5D
 from apps.pc_collection.gui.cli import CommandProcessor
 from apps.pc_collection.gui.main_window import DataCollectorMainWindow
 from apps.pc_collection.onlineCollectLoop import OnlineDataCollectionLoop
@@ -89,10 +83,13 @@ class PcdCollectVisRunner:
         
     @classmethod
     def from_cfg(cls, cfg: dict):
+        mode = cfg.get("mode", cls.Mode.VISUALIZE)
+        if isinstance(mode, str):
+            mode = cls.Mode(mode.lower())
         return cls(
             buffer_cfg=cfg.get("buffer_cfg"),
             reader_cfg=cfg.get("reader_cfg"),
             gui_cfg=cfg.get("gui_cfg"),
             loop_cfg=cfg.get("loop_cfg"),
-            mode=cfg.get("mode", cls.Mode.VISUALIZE)
+            mode=mode
         )
