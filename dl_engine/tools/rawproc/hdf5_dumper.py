@@ -19,7 +19,7 @@ class ToHdf5:
         assert not pcd_nok, 'PCD data contains NA values.'
         assert not skel_nok, 'Skeleton data contains NA values.'
     
-    def save(self):
+    def save(self, info_suffix='all'):
         self.check_na()
         
         # Check if 'seq' column is ascending from 0
@@ -52,7 +52,7 @@ class ToHdf5:
             ds_data.attrs['columns'] = np.array(pcd_df.columns, dtype='S')
             ds_skel = h5file.create_dataset('skel', data=skel_all)
             ds_skel.attrs['columns'] = np.array(skel_df.columns, dtype='S')
-        self.update_info_file(hdf5_path, self.output_dir / 'info_all.pkl')
+        self.update_info_file(hdf5_path, self.output_dir / f'info_{info_suffix}.pkl')
         
     def update_info_file(self, dataset_h5_file: Path, info_pkl_path: Path) -> dict:
         info_all = {}
