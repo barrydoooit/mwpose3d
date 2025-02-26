@@ -29,8 +29,10 @@ class OnlineDataCollectionLoop(OnlineReaderLoop):
             self.gui._on_frame_arrival(_buffer)
             if self.kinect_manager is None:
                 return
-            last_skeleton = self.kinect_manager.get_last_record()
-            self.gui.refresh_skel_visual(last_skeleton)
+            def update_skeleton():
+                last_skeleton = self.kinect_manager.get_last_record()
+                self.gui.refresh_skel_visual(last_skeleton)
+            threading.Thread(target=update_skeleton, daemon=True).start()
             
         self.buffer.set_on_frame_arrival(_on_frame_arrival)
         self.buffer.set_on_buffer_full(self._on_buffer_full)

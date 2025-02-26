@@ -1,12 +1,7 @@
-import queue
-import threading
 import time
-from PyQt5.QtWidgets import QApplication
+from typing import Dict, Union
 import serial
-from wakepy import keep
-import sys
 import logging
-import signal
 
 from radario.chirpConfig.chirpConfigIWR6843 import ChirpConfigIWR6843
 from radario.readDataIWR6843 import BufferedPcdReaderIWR6843
@@ -20,6 +15,9 @@ log = logging.getLogger(__name__)
 
 from .backend.visualManager import VisualManager
 import apps.lateral_tracking.constants as const
+
+from mmengine.config import Config, ConfigDict
+ConfigType = Union[Dict, Config, ConfigDict]
 
 
 
@@ -81,3 +79,11 @@ class BreakoutRunner:
                     self.reader.close()
                     log.info("Reader closed.")
                 del self.reader    
+    
+    @classmethod
+    def from_cfg(cls, cfg: ConfigType):
+        return cls(
+            config_file_path=cfg.get("config_file_path"),
+            cli_port=cfg.get("CLI_port"),
+            data_port=cfg.get("Data_port")
+        )
