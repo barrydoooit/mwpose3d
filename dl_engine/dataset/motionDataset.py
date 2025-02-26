@@ -16,13 +16,17 @@ class MotionDataset:
                  info_path: str,
                  data_root: str,
                  pipeline: list,
+                 sequence_length: int = 1,
+                 allow_pad_sequence: bool = True
                  ):
         self.info_path = Path(info_path)
         self.data_root = Path(data_root)   
         assert self.info_path.exists(), f'{self.info_path} does not exist.'
         assert self.data_root.exists(), f'{self.data_root} does not exist.'
         
-        print(self.info_path)
+        self.sequence_length = sequence_length
+        self.allow_pad_sequence = allow_pad_sequence
+        
         with open(self.info_path, 'rb') as f:
             self.info = pickle.load(f)
         
@@ -44,7 +48,11 @@ class MotionDataset:
         total_frames = 0
         for file_name, meta in self.info.items():
             frame_count = meta['frame_count']
-            total_frames += frame_count
+            if self.sequence_length > 1 and not self.allow_pad_sequence:
+                valid_frames = max(frame_count - (self.sequence_length - 1), 0)
+            else:
+                valid_frames = frame_count
+            total_frames += valid_frames
             cum_list.append(total_frames)
             file_list.append(file_name)
         cum_frames = np.array(cum_list, dtype=np.int64)
@@ -59,10 +67,15 @@ class MotionDataset:
         file_name = self.file_names[file_idx]
         
         if file_idx == 0:
-            local_idx = global_idx
+            valid_local_idx = global_idx
         else:
-            local_idx = global_idx - self.cum_frames[file_idx - 1]
+            valid_local_idx = global_idx - self.cum_frames[file_idx - 1]
         
+        if self.sequence_length > 1 and not self.allow_pad_sequence:
+            local_idx = valid_local_idx + (self.sequence_length - 1)
+        else:
+            local_idx = valid_local_idx
+            
         return file_name, local_idx
     
     def __len__(self):
