@@ -19,7 +19,7 @@ class ToHdf5:
         assert not pcd_nok, 'PCD data contains NA values.'
         assert not skel_nok, 'Skeleton data contains NA values.'
     
-    def save(self, info_suffix='all'):
+    def save(self, info_suffices=['all']):
         self.check_na()
         
         # Check if 'seq' column is ascending from 0
@@ -52,7 +52,18 @@ class ToHdf5:
             ds_data.attrs['columns'] = np.array(pcd_df.columns, dtype='S')
             ds_skel = h5file.create_dataset('skel', data=skel_all)
             ds_skel.attrs['columns'] = np.array(skel_df.columns, dtype='S')
-        self.update_info_file(hdf5_path, self.output_dir / f'info_{info_suffix}.pkl')
+        file_key, file_info = self.update_info_file(hdf5_path, self.output_dir / f'info_all.pkl')
+        for suffix in info_suffices:
+            if suffix == 'all':
+                continue
+            info_path = self.output_dir / f'info_{suffix}.pkl'
+            if info_path.exists():
+                with open(info_path, 'rb') as f:
+                    infos = pickle.load(f)
+            else:
+                infos = {}
+            with open(self.output_dir / f'info_{suffix}.pkl', 'wb') as f:
+                pickle.dump(dict(infos, **{file_key: file_info}), f)
         
     def update_info_file(self, dataset_h5_file: Path, info_pkl_path: Path) -> dict:
         info_all = {}
@@ -63,7 +74,7 @@ class ToHdf5:
         file_key = dataset_h5_file.name
         if file_key in info_all:
             print(f"File key {file_key} already exists in info file. Overwriting is not allowed for now.")
-            return
+            return file_key, info_all[file_key]
         existing_tokens = {info['token'] for info in info_all.values() if 'token' in info}
         new_token = uuid.uuid4().hex
         while new_token in existing_tokens:
@@ -76,3 +87,4 @@ class ToHdf5:
         info_all[file_key]['frame_count'] = frame_count
         with open(info_pkl_path, 'wb') as f:
             pickle.dump(info_all, f)
+        return file_key, info_all[file_key]

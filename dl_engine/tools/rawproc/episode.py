@@ -1,24 +1,56 @@
 import json
 from pathlib import Path
-from typing import Literal, Optional, Union
+from typing import Any, Literal, Optional, Union
+import logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
+import numpy as np
 import pandas as pd
 
+from apps.common.pcd.pointCloud import SimplePoint5D
 from dl_engine.tools.rawproc.alignment import AlignTraces
 from dl_engine.tools.rawproc.time_calib import TimeCalibrator
+from dl_engine.tools.rawproc.time_calib_manual import CalibrateTimeWindow
+from kinect_toolkits.kinectData import Skeleton
 
 from . import load_utils
 
 class Episode:
     def __init__(self,
-                 episode_name: int,
-                 episode_length: int):
+                 episode_name: 'str',
+                 episode_length: Optional[int] = None):
         self.episode_name = episode_name
         self.episode_length = episode_length
         
         self._pcd_df: Optional[pd.DataFrame] = None
         self._pcd_meta: Optional[dict] = None
         self._skel_df: Optional[pd.DataFrame] = None
+    
+    def get_pcd_frame_by(self, col: str, value: Any, encapsulate: bool = False):
+        df =  self.pcd_df[self.pcd_df[col] == value]
+        if not encapsulate:
+            return df
+        pcd_array = np.asarray(df[['x', 'y', 'z', 'vel', 'snr']])
+        return [SimplePoint5D.from_numpy(point) for point in pcd_array]
+    
+    def get_skel_frame_by(self, col: str, value: Any, encapsulate: bool = False):
+        df = self.skel_df[self.skel_df[col] == value]
+        if not encapsulate:
+            return df
+        return Skeleton.from_dataframe(df.iloc[0])
+    
+    def convert_skel_timestamp_to_unix(self, start_unix_ts: Union[float, int] = None):
+        if start_unix_ts is None:
+            start_unix_ts = self.skel_df['unix_ms'].iloc[0]
+        self.skel_df['timestamp'] = start_unix_ts  + (self.skel_df['timestamp'] - self.skel_df['timestamp'].iloc[0])
+        self.SKEL_TS_BASE = start_unix_ts
+        logger.warning(msg=f'Skeleton df of {self.episode_name} has changed timestamp to unix timestamp.')
+    
+    def get_episode_min_max_ts(self):
+        if not hasattr(self, 'SKEL_TS_BASE'):
+            self.convert_skel_timestamp_to_unix()
+        return min(self.skel_df['timestamp'].iloc[0], self.pcd_df['ts'].iloc[0]), max(self.skel_df['timestamp'].iloc[-1], self.pcd_df['ts'].iloc[-1])
         
     def load_pcd(self, raw_data_dir: Path, allow_missing: bool = False):
         raw_data_file = raw_data_dir / f'{self.episode_name}.json'
@@ -36,7 +68,9 @@ class Episode:
             return None
         with open(meta_data_file, 'r') as f:
             self.pcd_meta = json.load(f)
-    
+        calib_frames = self.pcd_meta['calib_frames']
+        self.episode_length = int(self.episode_name.split('_')[-1]) - calib_frames
+        
     def load_skeleton(self, raw_data_dir: Path, allow_missing: bool = False):
         raw_data_file = raw_data_dir / f'{self.episode_name}.csv'
         if not raw_data_file.exists() and not allow_missing:
@@ -45,11 +79,16 @@ class Episode:
             return None
         self.skel_df = load_utils.load_raw_skeleton_csv_to_df(raw_data_file)
         
-    def calibrate_time(self):
-        calibrator = TimeCalibrator(self)
-        calibrator.calib()
-        return calibrator.make_episode()
-    
+    def calibrate_time(self, manual: bool = False):
+        if not manual:
+            calibrator = TimeCalibrator(self)
+            calibrator.calib()
+            return calibrator.make_episode()
+        else:
+            calibrator_gui = CalibrateTimeWindow(self)
+            calibrator_gui.wait_window()
+            return calibrator_gui.result_episode
+            
     def align_traces(self, use_interp_skel: bool = True):
         aligner = AlignTraces(self, use_interp_skel)
         aligner.align()

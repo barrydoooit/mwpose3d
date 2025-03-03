@@ -3,6 +3,8 @@ import io
 from enum import Enum
 from typing import List, Dict, Optional
 
+import pandas as pd
+
 
 
 class KeypointType(Enum):
@@ -85,7 +87,17 @@ class Skeleton:
         self.unix_ms = unix_ms
         self.keypoints = keypoints
         self.extras = extras
-
+        
+    @classmethod
+    def from_dataframe(cls, row: pd.Series):
+        kps = {}
+        for kp_type_val in USED_KEYPOINTS:
+            kp_type = KeypointType(kp_type_val)
+            kp_type_name_lower = kp_type.name.lower()
+            x, y, z = row[f'{kp_type_name_lower}_x'], row[f'{kp_type_name_lower}_y'], row[f'{kp_type_name_lower}_z']
+            connections = Connectivity.get(kp_type, [])
+            kps[kp_type] = Keypoint(kp_type, x, y, z, connections)
+        return Skeleton(row['timestamp'], row['unix_ms'], kps)
 
 Connectivity = {
     KeypointType.SPINE_BASE: [KeypointType.SPINE_MID],

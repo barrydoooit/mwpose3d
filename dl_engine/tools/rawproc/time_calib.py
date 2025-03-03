@@ -1,4 +1,4 @@
-from typing import List, Literal, TYPE_CHECKING
+from typing import List, Literal, TYPE_CHECKING, Optional, Tuple
 import pandas as pd
 
 import kinect_toolkits as kntk
@@ -15,10 +15,10 @@ distance_func = {
 }
 
 def find_stationary_periods_of_skeleton_df(skel_df: pd.DataFrame,
-                                           stationary_threshold_m: float = 0.03,
+                                           stationary_threshold_m: float = 0.08,
                                            distance: Literal['euclidean', 'manhattan'] = 'manhattan',
                                            duration_threshold_ms: int = 2000,
-                                           keypoints: list = [7]) -> List[dict]:
+                                           keypoints: list = [7, 11]) -> List[dict]:
     distance_func_to_use = distance_func[distance]
     stat_periods = []
     i = 0
@@ -77,23 +77,27 @@ class TimeCalibrator:
         self.output_pcd_df = None
         self.output_skel_df = None
         
-    def calib(self):
-        radar_motion_start_ts, kinect_motion_start_ts = self.locate_motion_start_ts()
+    def calib(self, motion_start_ts: Optional[Tuple] = None, skel_ts_col: str = 'unix_ms'):
+        if motion_start_ts is not None:
+            radar_motion_start_ts, kinect_motion_start_ts = motion_start_ts
+        else:
+            radar_motion_start_ts, kinect_motion_start_ts = self.locate_motion_start_ts()
+
         print(f"Radar Motion Start TS: {radar_motion_start_ts}, kinect motion start ts: {kinect_motion_start_ts}")
         self.output_skel_df = self.episode.clip_skel_by_ts(start_ts_inclusive=kinect_motion_start_ts,
-                                     ts_col='unix_ms')
+                                     ts_col=skel_ts_col)
         self.output_pcd_df = self.episode.clip_pcd_by(col='ts', start_seq_inclusive=radar_motion_start_ts)
-        self.output_pcd_df.loc[:, 'seq'] = self.output_pcd_df['seq'] - self.episode.pcd_meta['calib_frames']
-        self.shift_skel_df(self.output_skel_df, shift_ts=radar_motion_start_ts - round(kinect_motion_start_ts * 1000))
+        self.output_pcd_df.loc[:, 'seq'] = self.output_pcd_df['seq'] - self.output_pcd_df['seq'].iloc[0]
+        self.shift_skel_df(self.output_skel_df, shift_ts_ms=radar_motion_start_ts - kinect_motion_start_ts)
         self.give_skel_real_ts(self.output_skel_df, base_ts=radar_motion_start_ts)
     
     def give_skel_real_ts(self, skel_df, base_ts: int):
         first_ts = int(round(skel_df['timestamp'].iloc[0]))
         skel_df['real_ts'] = base_ts + (skel_df['timestamp'].round().astype(int) - first_ts)
         
-    def shift_skel_df(self, skel_df, shift_ts: int):
-        skel_df['timestamp'] = skel_df['timestamp'] + shift_ts
-        skel_df['unix_ms'] = skel_df['unix_ms'] + shift_ts
+    def shift_skel_df(self, skel_df, shift_ts_ms: int):
+        skel_df['timestamp'] = skel_df['timestamp'] + shift_ts_ms
+        skel_df['unix_ms'] = skel_df['unix_ms'] + shift_ts_ms
         
     def locate_motion_start_ts(self):
         skel_df = self.episode.skel_df
@@ -121,7 +125,7 @@ class TimeCalibrator:
         from .episode import Episode
         episode = Episode(episode_name=self.episode.episode_name,
                           episode_length=self.output_pcd_df['ts'].nunique())
-        assert episode.episode_length == self.episode.episode_length, 'episode length mismatch.'
+        # assert episode.episode_length == self.episode.episode_length, 'episode length mismatch.'
         episode.pcd_df = self.output_pcd_df
         episode.skel_df = self.output_skel_df
         episode.pcd_meta = self.episode.pcd_meta

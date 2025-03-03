@@ -42,7 +42,8 @@ def load_raw_skeleton_csv_to_df(csv_path: Path, parse: bool = True) -> pd.DataFr
     rows = []
     for skeleton in skeleton_list:
         ts = skeleton.timestamp
-        row = {'timestamp': ts, 'unix_ms': skeleton.unix_ms}
+        # TODO: current column name unix_ms is not correct. Should be unix_s
+        row = {'timestamp': ts, 'unix_ms': skeleton.unix_ms * 1000}
         for kp_type, kp in skeleton.keypoints.items():
             kp_type_str = kp_type.name.lower()
             row.update({f'{kp_type_str}_x': kp.x,
