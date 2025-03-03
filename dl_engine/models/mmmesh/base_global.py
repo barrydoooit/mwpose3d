@@ -63,7 +63,7 @@ class GlobalPointNet(nn.Module):
         self.attn = nn.Linear(self.channels[3], 1)
         self.softmax = nn.Softmax(dim=1)
     
-    def foward(self, x):
+    def forward(self, x):
         x = x.permute(0, 2, 1)
         x = self.calf1(self.cb1(self.conv1(x)))
         x = self.calf2(self.cb2(self.conv2(x)))
@@ -84,15 +84,17 @@ class GlobalRNN(nn.Module):
                  dropout: float = 0.1,
                  fc_channels: List[int] = [64, 16, 2]):
         super().__init__()
+        self.in_channel = in_channel
+        self.hidden_size = hidden_size
         self.rnn = nn.LSTM(in_channel, hidden_size, num_layers, batch_first=batch_first, dropout=dropout)
-        self.fc1 = nn.Linear(hidden_size, fc_channels[0])
+        self.fc1 = nn.Linear(fc_channels[0], fc_channels[1])
         self.faf1 = nn.ReLU()
-        self.fc2 = nn.Linear(fc_channels[0], fc_channels[1])
+        self.fc2 = nn.Linear(fc_channels[1], fc_channels[2])
     
     def forward(self, x, h0, c0):
         g_vec, (hn, cn) = self.rnn(x, (h0, c0))
         g_loc = self.fc2(self.faf1(self.fc1(g_vec)))
-        return g_vec, g_loc, (hn, cn)
+        return g_vec, g_loc, hn, cn
 
 @MODELS.register_module()
 class GlobalModule(nn.Module):

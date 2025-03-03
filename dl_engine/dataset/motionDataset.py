@@ -28,7 +28,7 @@ class MotionDataset:
         self.allow_pad_sequence = allow_pad_sequence
         
         with open(self.info_path, 'rb') as f:
-            self.info = pickle.load(f)
+            self.info: dict = pickle.load(f)
         
         self.cum_frames, self.file_names = self._build_global_idx_to_file_table()
         self.total_frames = self.cum_frames[-1] if self.cum_frames.size > 0 else 0
@@ -75,6 +75,12 @@ class MotionDataset:
             local_idx = valid_local_idx + (self.sequence_length - 1)
         else:
             local_idx = valid_local_idx
+        
+        info = self.info[file_name]
+        if "snippets" in info:
+            assert len(info["snippets"]) == 1, "Only one snippet is supported for now."
+            snippet = info["snippets"][0]
+            local_idx += snippet[0]
             
         return file_name, local_idx
     

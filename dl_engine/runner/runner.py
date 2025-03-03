@@ -93,7 +93,8 @@ class Runner:
         if isinstance(self._val_loop, BaseLoop) or self._val_loop is None:
             return self._val_loop
         else:
-            self._val_loop = self.build_val_loop(self._val_loop)
+            self._val_loop = LOOPS.build(self._val_loop,
+                               default_args=dict(runner=self, dataloader=self._val_dataloader))
             return self._val_loop
 
     @property

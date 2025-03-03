@@ -2,6 +2,8 @@ custom_imports = dict(
     imports=['dl_engine'], allow_failed_imports=False)
 
 data_root = './data/neat'
+train_info = 'info_train_temp.pkl'
+test_info = 'info_test_temp.pkl'
 
 num_frames =3
 model = dict(
@@ -46,8 +48,24 @@ optimizer_cfg = dict(
 
 train_cfg = dict(
     type='EpochBasedTrainLoop',
-    max_epochs=200,
-    val_interval=5
+    max_epochs=1000,
+    val_interval=1000
+)
+
+val_pipeline = train_pipeline
+val_dataloader = dict(
+    batch_size=1,
+    num_workers=4,
+    shuffle=False,
+    dataset=dict(
+        type='MotionDataset',
+        data_root=f"{data_root}/h5",
+        info_path=f"{data_root}/info_all.pkl",
+        pipeline=val_pipeline
+    )
+)
+val_cfg = dict(
+    type='ValLoop'
 )
 
 test_pipeline = train_pipeline

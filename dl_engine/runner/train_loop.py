@@ -59,7 +59,8 @@ class EpochBasedTrainLoop(BaseLoop):
     
     def _run_epoch(self) -> None:
         self.runner.model.train()
-        print(f'Epoch [{self._epoch}/{self._max_epochs}]')
+        if self._epoch % 50 == 0:
+            print(f'Epoch [{self._epoch}/{self._max_epochs}]')
         for idx, data_batch in enumerate(self.dataloader):
             self._run_iter(idx, data_batch)
         self._epoch += 1
@@ -68,7 +69,7 @@ class EpochBasedTrainLoop(BaseLoop):
         assert hasattr(self.runner.model, 'pack_input')
         batch_inputs, data_samples = self.runner.model.pack_input(data_batch)
         loss = self.runner.model(batch_inputs, data_samples, mode='loss')
-        if idx % 100 == 0:
+        if self._iter % 1000 == 0:
             print(f'Iter [{self._iter}/{self._max_iters}] Loss: {loss.item()}')
         self.runner.optimizer.zero_grad()
         loss.backward()

@@ -2,10 +2,17 @@ custom_imports = dict(
     imports=['dl_engine'], allow_failed_imports=False)
 
 data_root = './data/neat'
+train_info = 'info_train.pkl'
+val_info = 'info_val.pkl'
+test_info = 'info_test.pkl'
 
-
+keypoint_involved=[0,1,2,3,4,5,6,8,9,10]
+# keypoint_involved=[x for x in range(20) if x not in [7, 11, 15, 19]]
+point_cloud_size = 32
 model = dict(
     type="MmMeshPredictor",
+    point_cloud_size=point_cloud_size,
+    keypoints_involved=keypoint_involved,
     base_pointnet_cfg=dict(
         type="BasePointNet",
         channels=[6, 8, 16, 24],
@@ -30,7 +37,7 @@ model = dict(
         type="AnchorModule",
         anchor_cfg=dict(
             grouping_nsample=8,
-            xyz_range=[-0.3, -0.3, -0.3, 0.3, 0.3, 2.1],
+            xyz_range=[-0.3, 1.5, -0.9, 0.3, 2.1, 1.5],
             xyz_interval=[0.3, 0.3, 0.3]
         ),
         anchor_pointnet_cfg=dict(
@@ -38,7 +45,7 @@ model = dict(
             kernel_size=1
         ),
         anchor_voxelnet_cfg=dict(
-            channels=[64, 128, 256, 512],
+            channels=[64, 96, 128, 64],
             kernel_size=((3,3,3), (5,1,1),(3,1,1),),
         ),
         anchor_rnn_cfg=dict(
@@ -49,6 +56,10 @@ model = dict(
             dropout=0.1,
             bidirectional=False
         )
+    ),
+    fusion_module_cfg=dict(
+        type="SimpleKpFusionHead",
+        channels=[128, 128, len(keypoint_involved)*3],
     )
 )
 
@@ -57,15 +68,25 @@ train_pipeline = [
     dict(
         type='LoadMultiFrameFromH5',
         load_pcd_dim=5,
-        num_frames=num_frames
+        num_frames=num_frames,
+        load_all_skeletons=True,
     ),
     dict(
         type='PointCloudRangeFilter',
-        point_cloud_range=[-1.0, 1.2, -1.5, 1, 2.4, 1.5]
+        point_cloud_range=[-1.0, 1.2, -1.5, 1, 2.4, 2.0],
+        load_pcd_dim=5
+    ),
+    dict(
+        type='PointDuplicator',
+        target_num_points=point_cloud_size
+    ),
+    dict(
+        type='AddRangeDimension',
+        insert_idx=3,
     ),
     dict(
         type='SkeletonKeypointFilter',
-        keypoint_involved=[x for x in range(20) if x not in [7, 11, 15, 19]],
+        keypoint_involved=keypoint_involved,
         with_pcd_ts=False
     )
 ]
@@ -77,7 +98,7 @@ train_dataloader = dict(
     dataset=dict(
         type='MotionDataset',
         data_root=f"{data_root}/h5",
-        info_path=f"{data_root}/info_all.pkl",
+        info_path=f"{data_root}/{train_info}",
         pipeline=train_pipeline,
         sequence_length=num_frames,
         allow_pad_sequence=False
@@ -86,16 +107,33 @@ train_dataloader = dict(
 
 optimizer_cfg = dict(
     type='AdamW',
-    lr = 0.0001,
+    lr = 0.0005,
     weight_decay=0.01
 )
 
 train_cfg = dict(
     type='EpochBasedTrainLoop',
-    max_epochs=200,
-    val_interval=5
+    max_epochs=500,
+    val_interval=100
 )
 
+val_pipeline = train_pipeline
+val_dataloader = dict(
+    batch_size=1,
+    num_workers=4,
+    shuffle=False,
+    dataset=dict(
+        type='MotionDataset',
+        data_root=f"{data_root}/h5",
+        info_path=f"{data_root}/{val_info}",
+        pipeline=val_pipeline,
+        sequence_length=num_frames,
+        allow_pad_sequence=False
+    )
+)
+val_cfg = dict(
+    type='ValLoop'
+)
 test_pipeline = train_pipeline
 test_dataloader = dict(
     batch_size=1,
@@ -104,8 +142,10 @@ test_dataloader = dict(
     dataset=dict(
         type='MotionDataset',
         data_root=f"{data_root}/h5",
-        info_path=f"{data_root}/info_all.pkl",
-        pipeline=test_pipeline
+        info_path=f"{data_root}/{test_info}",
+        pipeline=test_pipeline,
+        sequence_length=num_frames,
+        allow_pad_sequence=False
     )
 )
 test_cfg = dict(

@@ -35,11 +35,11 @@ class AnchorPointNet(nn.Module):
         self.softmax = nn.Softmax(dim=1)
     
     def forward(self, x):
-        x = x.permute(0, 2, 1)
+        x = x.transpose(1, 2)
         x = self.caf1(self.cb1(self.conv1(x)))
         x = self.caf2(self.cb2(self.conv2(x)))
         x = self.caf3(self.cb3(self.conv3(x)))
-        x = x.permute(0, 2, 1)
+        x = x.transpose(1, 2)
         attn_weights = self.softmax(self.attn(x))
         attn_vec = torch.sum(attn_weights * x, dim=1)
         return attn_vec, attn_weights
@@ -89,6 +89,8 @@ class AnchorRNN(nn.Module):
                  bidirectional: bool = False,
                  ):
         super().__init__()
+        self.input_size = input_size
+        self.hidden_size = hidden_size
         self.rnn = nn.LSTM(input_size=input_size,
                            hidden_size=hidden_size,
                            num_layers=num_layers,
@@ -160,10 +162,10 @@ class AnchorModule(nn.Module):
         anchors = self.template_points.view(1, self.spatial_volume, 3).repeat(batch_size * length_size, 1, 1)
         anchors[:,:,:2] += g_loc
         grouped_points = self._group_anchors(anchors, self.grouping_nsample, xyz=x[..., :3], points=x[..., 3:])
-        grouped_points = grouped_points.view(batch_size * length_size, self.spatial_volume, self.grouping_nsample, 3 + feature_size)
+        grouped_points = grouped_points.view(batch_size * length_size * self.spatial_volume, self.grouping_nsample, 3 + feature_size)
         voxel_points, attn_weights = self.apointnet(grouped_points)
         voxel_points = voxel_points.view(batch_size * length_size, self.voxel_size[0], self.voxel_size[1], self.voxel_size[2], self.apointnet.channels[-1])
-        voxel_vec = self.avxel(voxel_points)
+        voxel_vec = self.avoxel(voxel_points)
         voxel_vec = voxel_vec.view(batch_size, length_size, self.avoxel.channels[-1])
         a_vec, hn, cn = self.arnn(voxel_vec, h0, c0)
         return a_vec, hn, cn, attn_weights

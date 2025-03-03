@@ -109,11 +109,11 @@ class TestLoop(BaseLoop):
 
 class SkeletonVisualizer:
     def __init__(self, 
-                 keypoint_involved: List[int], 
-                 connectivity: Dict[KeypointType, List[KeypointType]],
-                 keypoint_for_stats: List[int],
+                 keypoint_involved: list, 
+                 connectivity: dict,
+                 keypoint_for_stats: list,
                  error_type: str):
-        # Convert full keypoints and stats keypoints to enum types
+        # Convert keypoints to enum types (assuming KeypointType is callable)
         self.keypoint_involved = [KeypointType(kp) for kp in keypoint_involved]
         self.connectivity = connectivity
         self.keypoint_for_stats = [KeypointType(kp) for kp in keypoint_for_stats]
@@ -146,6 +146,29 @@ class SkeletonVisualizer:
         self.canvas_pred = FigureCanvasTkAgg(self.fig_pred, master=frame_pred)
         self.canvas_pred.get_tk_widget().pack(fill=tk.BOTH, expand=True)
 
+        # Initialize persistent plot objects instead of redrawing every frame
+        # Precompute connectivity pairs (only include if both keypoints are involved)
+        self.connectivity_pairs = []
+        for kp in self.keypoint_involved:
+            if kp in self.connectivity:
+                for connected in self.connectivity[kp]:
+                    if connected in self.keypoint_involved:
+                        self.connectivity_pairs.append((kp, connected))
+                        
+        # For Ground Truth axis
+        self.scatter_gt = self.ax_gt.scatter([], [], [], color='blue')
+        self.lines_gt = []
+        for pair in self.connectivity_pairs:
+            line, = self.ax_gt.plot([], [], [], color='blue', lw=1)
+            self.lines_gt.append((pair, line))
+                        
+        # For Prediction axis
+        self.scatter_pred = self.ax_pred.scatter([], [], [], color='red')
+        self.lines_pred = []
+        for pair in self.connectivity_pairs:
+            line, = self.ax_pred.plot([], [], [], color='red', lw=1)
+            self.lines_pred.append((pair, line))
+            
         # Create stats frame (visible from the start)
         self.frame_stats = tk.Frame(self.root)
         self.frame_stats.pack(side=tk.BOTTOM, fill=tk.BOTH, expand=True)
@@ -156,10 +179,9 @@ class SkeletonVisualizer:
         self.ax_stats.set_title(f"Error ({self.error_type}) per Frame")
         self.ax_stats.set_xlabel("Frame")
         self.ax_stats.set_ylabel("Error (m)")
-
-        # Adjust the subplot layout to leave room for the legend on the right
         self.fig_stats.subplots_adjust(right=0.75)
         self.current_frame_line = self.ax_stats.axvline(x=0, color='red', lw=2, linestyle='--')
+
         # Create a separate line (and error list) for each keypoint in keypoint_for_stats
         self.stats_lines = {}
         self.stats_errors = {}  # dict mapping keypoint -> list of errors
@@ -168,7 +190,6 @@ class SkeletonVisualizer:
             self.stats_lines[stat_kp] = line
             self.stats_errors[stat_kp] = []
 
-        # Place legend on the outer right side with thicker legend icons
         leg = self.ax_stats.legend(loc="center left", bbox_to_anchor=(1.0, 0.5))
         for legline in leg.get_lines():
             legline.set_linewidth(4)
@@ -202,33 +223,37 @@ class SkeletonVisualizer:
         ax.set_ylabel("Y")
         ax.set_zlabel("Z")
 
-    def _plot_skeleton(self, tensor, ax, title):
-        ax.cla()
-        self._setup_axes(ax, title)
-        coords = {}
-        color = 'blue' if title == "Ground Truth" else 'red'
-
+    def _update_skeleton(self, tensor, scatter, lines):
+        """
+        Update the persistent scatter and line objects using the new tensor.
+        The tensor is assumed to be a flat list or tensor of coordinates:
+        [x0, z0, y0, x1, z1, y1, ...] and we map it to (x, y, z) with y coming from index+2.
+        """
+        coords = []
         for idx, kp_enum in enumerate(self.keypoint_involved):
             x = tensor[idx*3].item() if isinstance(tensor, torch.Tensor) else tensor[idx*3]
             z = tensor[idx*3+1].item() if isinstance(tensor, torch.Tensor) else tensor[idx*3+1]
             y = tensor[idx*3+2].item() if isinstance(tensor, torch.Tensor) else tensor[idx*3+2]
-            coords[kp_enum] = (x, y, z)
-            ax.scatter(x, y, z, color=color)
-
-        for kp_enum in self.keypoint_involved:
-            if kp_enum in self.connectivity:
-                for connected_kp in self.connectivity[kp_enum]:
-                    if kp_enum in coords and connected_kp in coords:
-                        xs, ys, zs = zip(coords[kp_enum], coords[connected_kp])
-                        ax.plot(xs, ys, zs, color=color)
+            coords.append((x, y, z))
+        xs = [pt[0] for pt in coords]
+        ys = [pt[1] for pt in coords]
+        zs = [pt[2] for pt in coords]
+        scatter._offsets3d = (xs, ys, zs)
+        # Update connectivity lines
+        for (pair, line) in lines:
+            idx1 = self.keypoint_involved.index(pair[0])
+            idx2 = self.keypoint_involved.index(pair[1])
+            source = coords[idx1]
+            target = coords[idx2]
+            line.set_data([source[0], target[0]], [source[1], target[1]])
+            line.set_3d_properties([source[2], target[2]])
 
     def update(self, gt_tensor, pred_tensor, frame_report=None):
-        # Update the skeleton plots
-        self._plot_skeleton(gt_tensor, self.ax_gt, "Ground Truth")
-        self._plot_skeleton(pred_tensor, self.ax_pred, "Prediction")
-        self.canvas_gt.draw()
-        self.canvas_pred.draw()
-        self.root.update_idletasks()
+        # Update the skeleton plots using the persistent objects
+        self._update_skeleton(gt_tensor, self.scatter_gt, self.lines_gt)
+        self._update_skeleton(pred_tensor, self.scatter_pred, self.lines_pred)
+        self.canvas_gt.draw_idle()
+        self.canvas_pred.draw_idle()
 
         # Store data for replay if needed
         if frame_report is not None:
@@ -236,13 +261,11 @@ class SkeletonVisualizer:
         self.gt_data.append(gt_tensor)
         self.pred_data.append(pred_tensor)
 
-        # For each keypoint in the stats selection, update its error for this frame.
+        # Update stats errors for each keypoint in keypoint_for_stats
         if frame_report is not None:
             for stat_kp in self.keypoint_for_stats:
-                # Look up the error from the report if available
                 error = frame_report.get(stat_kp, {}).get(self.error_type, None)
                 if error is None:
-                    # Fallback: compute error manually if missing.
                     if stat_kp in self.keypoint_involved:
                         idx = self.keypoint_involved.index(stat_kp)
                         gt_joint = gt_tensor[idx*3: idx*3+3]
@@ -257,7 +280,6 @@ class SkeletonVisualizer:
                         error = 0.0
                 self.stats_errors[stat_kp].append(error)
         else:
-            # If no report provided, compute errors manually for each keypoint.
             for stat_kp in self.keypoint_for_stats:
                 if stat_kp in self.keypoint_involved:
                     idx = self.keypoint_involved.index(stat_kp)
@@ -271,34 +293,30 @@ class SkeletonVisualizer:
                         error = torch.norm(gt_joint - pred_joint).item()
                     self.stats_errors[stat_kp].append(error)
 
-        # All keypoint error lists should have the same length now
         self.num_frames = len(next(iter(self.stats_errors.values()))) if self.stats_errors else 0
 
-        # Update each keypoint's line in the stats plot
         for stat_kp in self.keypoint_for_stats:
             xdata = list(range(len(self.stats_errors[stat_kp])))
             self.stats_lines[stat_kp].set_data(xdata, self.stats_errors[stat_kp])
 
         self.ax_stats.relim()
         self.ax_stats.autoscale_view()
-
-        # Update the progress bar
         self.progress_bar.config(to=self.num_frames - 1)
         self.progress_bar.set(self.num_frames - 1)
-        self.canvas_stats.draw()
+        self.canvas_stats.draw_idle()
 
     def _on_progress_change(self, value):
         frame_idx = int(float(value))
         self._update_replay(frame_idx)
         self.current_frame_line.set_xdata([frame_idx, frame_idx])
-        self.canvas_stats.draw()
+        self.canvas_stats.draw_idle()
 
     def _update_replay(self, frame_idx):
         if frame_idx < len(self.gt_data) and frame_idx < len(self.pred_data):
-            self._plot_skeleton(self.gt_data[frame_idx], self.ax_gt, "Ground Truth")
-            self._plot_skeleton(self.pred_data[frame_idx], self.ax_pred, "Prediction")
-            self.canvas_gt.draw()
-            self.canvas_pred.draw()
+            self._update_skeleton(self.gt_data[frame_idx], self.scatter_gt, self.lines_gt)
+            self._update_skeleton(self.pred_data[frame_idx], self.scatter_pred, self.lines_pred)
+            self.canvas_gt.draw_idle()
+            self.canvas_pred.draw_idle()
 
     def setup_replay(self, gt_data, pred_data, report):
         self.gt_data = gt_data
