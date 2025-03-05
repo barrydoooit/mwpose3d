@@ -49,7 +49,7 @@ class AnchorVoxelNet(nn.Module):
     def __init__(self,
                  channels: List[int] = [64, 96, 128, 64],
                  kernel_size: Tuple[Tuple[int, int, int]] =(
-                     (3,3,3), (5,1,1),(3,1,1),
+                     (3,3,3), (5,1,1),(3,1,1), # (9 3 3) -> (7, 1, 1) -> (3, 1, 1) -> (1, 1, 1), when voxel size is (9, 3, 3)
                  ),
     ):
         super().__init__()

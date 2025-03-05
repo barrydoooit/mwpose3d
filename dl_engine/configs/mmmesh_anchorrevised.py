@@ -38,7 +38,7 @@ model = dict(
         type="AnchorModule",
         anchor_cfg=dict(
             grouping_nsample=8,
-            xyz_range=[-0.3, -0.4, -0.9, 0.3, 0.2, 1.5],
+            xyz_range=[-0.9, -0.4, -0.9, 0.9, 0.2, 1.5],
             xyz_interval=[0.3, 0.3, 0.3]
         ),
         anchor_pointnet_cfg=dict(
@@ -47,7 +47,7 @@ model = dict(
         ),
         anchor_voxelnet_cfg=dict(
             channels=[64, 96, 128, 64],
-            kernel_size=((3,3,3), (5,1,1),(3,1,1),),
+            kernel_size=((3,3,3), (5,1,3),(3,1,3),),
         ),
         anchor_rnn_cfg=dict(
             input_size=64,

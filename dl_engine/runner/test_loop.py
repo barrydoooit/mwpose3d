@@ -217,8 +217,8 @@ class SkeletonVisualizer:
     def _setup_axes(self, ax, title):
         ax.set_title(title)
         ax.set_xlim(-1, 1)
-        ax.set_ylim(3, 1)
-        ax.set_zlim(-1, 1)
+        ax.set_ylim(-1, 1)
+        ax.set_zlim(-1, 2)
         ax.set_xlabel("X")
         ax.set_ylabel("Y")
         ax.set_zlabel("Z")
@@ -232,8 +232,8 @@ class SkeletonVisualizer:
         coords = []
         for idx, kp_enum in enumerate(self.keypoint_involved):
             x = tensor[idx*3].item() if isinstance(tensor, torch.Tensor) else tensor[idx*3]
-            z = tensor[idx*3+1].item() if isinstance(tensor, torch.Tensor) else tensor[idx*3+1]
-            y = tensor[idx*3+2].item() if isinstance(tensor, torch.Tensor) else tensor[idx*3+2]
+            y = tensor[idx*3+1].item() if isinstance(tensor, torch.Tensor) else tensor[idx*3+1]
+            z = tensor[idx*3+2].item() if isinstance(tensor, torch.Tensor) else tensor[idx*3+2]
             coords.append((x, y, z))
         xs = [pt[0] for pt in coords]
         ys = [pt[1] for pt in coords]

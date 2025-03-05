@@ -20,6 +20,8 @@ def main():
     
     raw_dir = Path(args.raw_dir)
     output_dir = Path(args.output_dir)
+    if not output_dir.exists():
+        output_dir.mkdir(parents=True)
     
     if args.gui:
         print('Using GUI')
