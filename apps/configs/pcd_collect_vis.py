@@ -1,6 +1,6 @@
 type="cvis"
 buffer_cfg=dict(
-    max_buffer_size=200,
+    max_buffer_size=1200,
     output_dir="./data/raw/radar"
 )
 reader_cfg=dict(
@@ -8,11 +8,12 @@ reader_cfg=dict(
     CLI_port='COM4',
     Data_port='COM5',
     config_file_path='./chirp_configs/6843_mobile_tracker.cfg'
+    # config_file_path='./chirp_configs/test.cfg'
 )
 gui_cfg=dict()
 loop_cfg=dict(
-    interval=0.05,
-    break_time=10,
+    interval=0.04,
+    break_time=6,
     time_calib=True,
     kinect_cfg=dict(
         output_dir="./data/raw/kinect"

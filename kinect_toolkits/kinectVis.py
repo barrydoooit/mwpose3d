@@ -6,14 +6,15 @@ from kinect_toolkits.kinectData import Skeleton
 from kinect_toolkits.transforms import kinect_coord_to_radar
 
 class SkeletonFigure(Figure):
+    # NOTE TODO: This new version has bugs and cannot display skeleton. To be fixed later.
     def __init__(self, *args, **kwargs):
-        """
-        Subclass of matplotlib.figure.Figure for 3D skeleton visualization.
-        """
         super().__init__(*args, **kwargs)
-        # Create a 3D axis for drawing the skeleton.
         self.ax = self.add_subplot(111, projection='3d')
         self._setup_axes()
+        # Pre-create a scatter plot object (empty for now)
+        self.scatter = self.ax.scatter([], [], [], c='b', marker='o')
+        # Dictionary to hold line objects for each connection
+        self.lines = {}
 
     def _setup_axes(self):
         """Configure the 3D axis for the skeleton display."""
@@ -27,23 +28,33 @@ class SkeletonFigure(Figure):
         self.ax.set_zlim(-2, 2)
         
     def update_skeleton(self, skeleton: Skeleton):
-        self.ax.clear()
-        self._setup_axes()
-
-        for keypoint in skeleton.keypoints.values():
-            kx, ky, kz = kinect_coord_to_radar(keypoint.x, keypoint.y, keypoint.z)
-            self.ax.scatter(kx, ky, kz, c='b', marker='o')
-            
-        for keypoint in skeleton.keypoints.values():
+        # Cache coordinate conversion results to avoid duplicate work.
+        coords = {}
+        for key, keypoint in skeleton.keypoints.items():
+            coords[key] = kinect_coord_to_radar(keypoint.x, keypoint.y, keypoint.z)
+        
+        # Update scatter plot data.
+        xs, ys, zs = zip(*coords.values())
+        # Note: For 3D scatter, you may need to remove and redraw if set_data methods are limited.
+        self.scatter._offsets3d = (xs, ys, zs)
+        
+        # Update or create line objects for connections.
+        for key, keypoint in skeleton.keypoints.items():
             for conn in keypoint.connections:
                 if conn in skeleton.keypoints:
-                    kp2 = skeleton.keypoints[conn]
-                    k1x, k1y, k1z = kinect_coord_to_radar(keypoint.x, keypoint.y, keypoint.z)
-                    k2x, k2y, k2z = kinect_coord_to_radar(kp2.x, kp2.y, kp2.z)
-                    xs = [k1x, k2x]
-                    ys = [k1y, k2y]
-                    zs = [k1z, k2z]
-                    self.ax.plot(xs, ys, zs, 'r-')
+                    line_key = (key, conn)
+                    k1x, k1y, k1z = coords[key]
+                    k2x, k2y, k2z = coords[conn]
+                    
+                    if line_key in self.lines:
+                        # Update the existing line
+                        line_obj = self.lines[line_key]
+                        line_obj.set_data([k1x, k2x], [k1y, k2y])
+                        line_obj.set_3d_properties([k1z, k2z])
+                    else:
+                        # Create a new line and store it.
+                        line_obj = self.ax.plot([k1x, k2x], [k1y, k2y], [k1z, k2z], 'r-')[0]
+                        self.lines[line_key] = line_obj
 
 class SkeletonFigureFrame(tk.Frame):
     def __init__(self, master=None, figure_cfg: dict={}, **kwargs):

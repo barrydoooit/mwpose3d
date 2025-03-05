@@ -59,6 +59,8 @@ class TimeCalibInstructionPopup(tk.Toplevel):
         self.schedule_timer(self.move_stage_tick)
     
     def move_stage_tick(self):
+        print(f"Pcd buffer entrance threshold: {self.pcd_buffer._frame_entrance_threshold}")
+        
         self.remaining_time -= 1
         if self.remaining_time <= 0:
             self.start_transition_stage()
@@ -69,6 +71,7 @@ class TimeCalibInstructionPopup(tk.Toplevel):
     def start_transition_stage(self):
         self.current_stage = self.Stages.TRANSIT_STAGE
         self.instruction_label.config(text="Stop the movements.")
+        self.pcd_buffer.change_frame_entrance_threshold(8)
         with self.pcd_buffer.locked_buffer() as buffer:
             self.initial_frame_count = len(buffer)
             self.still_start_ts = buffer[-1].ts
@@ -154,6 +157,7 @@ class TimeCalibInstructionPopup(tk.Toplevel):
     def restart_process(self):
         self.current_stage = self.Stages.ENTRY_STAGE
         self.pcd_buffer.clear()
+        self.pcd_buffer.change_frame_entrance_threshold(0)
         print("Buffer cleared")
         self.start_move_stage()
 
@@ -167,6 +171,7 @@ class TimeCalibInstructionPopup(tk.Toplevel):
         self.timer_id = self.after(interval, callback)
     
     def close_popup(self, with_callback: bool = True):
+        self.pcd_buffer.change_frame_entrance_threshold(0)
         if not with_callback:
             self.destroy()
             return

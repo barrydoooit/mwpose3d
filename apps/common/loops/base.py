@@ -17,11 +17,11 @@ class BaseRadarProcessLoop:
                 ret = self._process_data(data)
                 ts_end = time.perf_counter()
                 time.sleep(max(0, self._interval - (ts_end - ts_start)))
+                # print(f"Time taken: {ts_end - ts_start}")
         except KeyboardInterrupt:
             print("Keyboard interrupt")
         except Exception as e:
             print("Exception in loop:", e)
-            e.with_traceback()
         finally:
             self._running = False
 
@@ -53,7 +53,7 @@ class BaseRadarProcessLoop:
             self._before_stop_hook()
             self._stop_event.set()
             if threading.current_thread() != self._thread:
-                self._thread.join(timeout=5.0)
+                self._thread.join(timeout=2.0)
                 if self._thread.is_alive():
                     print("Thread did not stop within timeout. Continuing shutdown.")
             self._running = False

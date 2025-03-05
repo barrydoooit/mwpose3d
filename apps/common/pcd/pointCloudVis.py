@@ -11,21 +11,26 @@ class PointCloudFigure(Figure):
     def __init__(self, figure_cfg: dict):
         super().__init__(**figure_cfg)
         self.ax: Axes3D = self.add_subplot(111, projection='3d')
+        self._setup_axes()
+        # Pre-create the scatter object with empty data.
+        self.scatter = self.ax.scatter([], [], [], c='b', marker='o')
+        
+    def _setup_axes(self):
+        self.ax.set_xlabel('X')
+        self.ax.set_ylabel('Y')
+        self.ax.set_zlabel('Z')
+        self.ax.set_xlim(2, -2)
+        self.ax.set_ylim(2, 0)  # Reverse Y axis
+        self.ax.set_zlim(-2, 2)
     
     def update_points(self, points: Iterable[SimplePoint3D]):
-        self.ax.clear()
+        # Collect coordinates from the points.
         xs = [point.x for point in points]
         ys = [point.y for point in points]
         zs = [point.z for point in points]
         
-        self.ax.scatter(xs, ys, zs, c='b', marker='o')
-        self.ax.set_xlabel('X')
-        self.ax.set_ylabel('Y')
-        self.ax.set_zlabel('Z')
-        
-        self.ax.set_xlim(2, -2)
-        self.ax.set_ylim(2, 0)  # Reverse Y axis
-        self.ax.set_zlim(-2, 2)
+        # Update the scatter object without clearing the axes.
+        self.scatter._offsets3d = (xs, ys, zs)
 
 
 class PointCloudFigureFrame(tk.Frame):

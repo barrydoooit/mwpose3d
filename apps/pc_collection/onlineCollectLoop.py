@@ -44,6 +44,7 @@ class OnlineDataCollectionLoop(OnlineReaderLoop):
         data_ok, frame_number, det_obj = data
         if not data_ok:
             return
+        # print(f"Num Objects Detected: {det_obj['numObj']}")
         self.buffer.add_frame(SimplePointCloud5D.from_dict(det_obj))
 
     @classmethod
@@ -82,7 +83,7 @@ class OnlineDataCollectionLoop(OnlineReaderLoop):
         super().stop()
         self.gui.stop_all_popups()
         if self.kinect_manager:
-            self.kinect_manager.stop_skeleton_capture(wait=1)
+            self.kinect_manager.stop_skeleton_capture(wait=5)
             if self.runner._mode.value == "visualize":
                 self.kinect_manager.delete_default_output_file()
         

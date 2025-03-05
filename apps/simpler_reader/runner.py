@@ -15,9 +15,10 @@ ConfigType = Union[Dict, Config, ConfigDict]
 class SimpleReaderRunner:
     def __init__(self,
                  reader_cfg: dict,
-                 loop_cfg: dict):
+                 loop_cfg: dict,
+                 visualize: bool = False):
         self.reader = self._make_reader(reader_cfg)
-        self.loop = self._make_loop(loop_cfg)
+        self.loop = self._make_loop(loop_cfg, visualize)
         
     def _make_reader(self, reader_cfg: dict):
         cli_port = reader_cfg.get("CLI_port")
@@ -33,9 +34,10 @@ class SimpleReaderRunner:
         reader.register_config(chirp_cfg)
         return reader
         
-    def _make_loop(self, loop_cfg: dict):
+    def _make_loop(self, loop_cfg: dict, visualize: bool):
         loop_cfg.update(dict(
             reader=self.reader,
+            visualize=visualize
         ))
         return CustomReaderLoop.from_dict(loop_cfg)
 
@@ -43,7 +45,8 @@ class SimpleReaderRunner:
     def from_cfg(cls, cfg: ConfigType):
         return cls(
             reader_cfg=cfg.get("reader_cfg"),
-            loop_cfg=cfg.get("loop_cfg")
+            loop_cfg=cfg.get("loop_cfg"),
+            visualize=cfg.get("visualize", False)
         )
     
     def start(self):
@@ -54,14 +57,18 @@ class SimpleReaderRunner:
         signal.signal(signal.SIGINT, sigint_handler)
 
         self.loop.start()
-        try:
-            while True:
-                if sys.platform == "linux" or sys.platform == "darwin":
-                    signal.pause()
-                else:
-                    time.sleep(1)
-                
-        except KeyboardInterrupt:
-            print("KeyboardInterrupt captured.")
+        if self.loop.visualize:
+            self.loop.root.mainloop()
             self.loop.stop()
-            sys.exit(0)
+        else:
+            try:
+                while True:
+                    if sys.platform == "linux" or sys.platform == "darwin":
+                        signal.pause()
+                    else:
+                        time.sleep(1)
+                    
+            except KeyboardInterrupt:
+                print("KeyboardInterrupt captured.")
+                self.loop.stop()
+                sys.exit(0)

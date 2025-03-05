@@ -25,6 +25,7 @@ class PointCloudBuffer:
                 yield self.buffer
         self.locked_buffer = locked_buffer
         
+        self._frame_entrance_threshold = 0
         self._frame_counter = 0
         self._dump_stage = False
         self.recent_dump = None
@@ -68,6 +69,10 @@ class PointCloudBuffer:
         return current_size
         
     def add_frame(self, point_cloud: SimplePointCloud5D):
+        if len(point_cloud.points) <= self._frame_entrance_threshold:
+            print(f"Frame entrance threshold not met: {len(point_cloud.points)}")
+            return
+        
         with self._buffer_lock:
             ts_ms = int(time.time() * 1000)
             frame = PointCloudFrame(self._count(), ts_ms, point_cloud)
@@ -77,6 +82,9 @@ class PointCloudBuffer:
             
         self._check_full(self._on_buffer_full)
 
+    def change_frame_entrance_threshold(self, new_threshold: int):
+        self._frame_entrance_threshold = new_threshold
+    
     def change_max_buffer_size(self, new_size: int):
         with self._buffer_lock:
             self.max_buffer_size = new_size
