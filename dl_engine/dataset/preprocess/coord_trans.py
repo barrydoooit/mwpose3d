@@ -10,7 +10,9 @@ class CoordinateTransform(BaseTransform):
                  radar_tilt: float = 5,
                  kinect_tilt: float = 5,  
                  pcd_tran: Tuple[float, float, float] = (0, -2, 0),
-                 skel_tran: Tuple[float, float, float] = (-0.37, 0, -2)):
+                 skel_tran: Tuple[float, float, float] = (-0.37, 0, -2),
+                 online_mode: bool = False):
+        super().__init__(online_mode)
         self.radar_tilt = radar_tilt
         self.kinect_tilt = kinect_tilt
         self.pcd_tran = pcd_tran
@@ -104,4 +106,26 @@ class CoordinateTransform(BaseTransform):
             transformed_skel_frames.append(transformed_frame)
         input['skel_frames'] = tuple(transformed_skel_frames)
 
+        return input
+    
+    def transform_online(self, input: dict):
+        pcd_frames: Tuple[np.ndarray] = input['pcd_frames']
+        num_recent_frames = input.get('num_recent_frames', 1)
+        recent_frames = pcd_frames[-num_recent_frames:]
+        # --- Process radar point cloud frames ---
+        radar_R = self.get_rotation_matrix(self.radar_tilt)
+        pcd_tran_array = np.array(self.pcd_tran)
+        transformed_recent_frames = []
+        for frame in recent_frames:
+            # Each row: first three columns are (x,y,z)
+            points = frame[:, :3]
+            transformed_points = self.transform_points(points, radar_R, pcd_tran_array)
+            # If additional values exist in the row, preserve them.
+            if frame.shape[1] > 3:
+                extra = frame[:, 3:]
+                transformed_frame = np.hstack([transformed_points, extra])
+            else:
+                transformed_frame = transformed_points
+            transformed_recent_frames.append(transformed_frame)
+        input['pcd_frames'] = tuple(pcd_frames[:-num_recent_frames] + transformed_recent_frames)
         return input

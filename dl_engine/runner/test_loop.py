@@ -3,6 +3,7 @@ import torch
 from torch.utils.data import DataLoader
 
 from dl_engine.dataset.skel_data_sample import SkeletonDataSample
+from dl_engine.runner.evaluate.base import METRICS, BaseMetric
 from kinect_toolkits.kinectData import KeypointType, Connectivity
 from .base_loop import BaseLoop, LOOPS
 
@@ -19,20 +20,16 @@ class TestLoop(BaseLoop):
         self,
         runner: 'Runner',
         dataloader: Union[DataLoader, Dict],
+        metric_cfg: dict
     ):
         super().__init__(runner, dataloader)
         self._iter = 0
         self.report = []
         self.gt_data = []  # Collect all ground truth data
         self.pred_data = []  # Collect all prediction data
-        # Pass additional arguments: keypoint_for_stats (can be a subset) and error_type
-        self.visualizer = SkeletonVisualizer(
-            keypoint_involved=self.runner.model.keypoints_involved,
-            connectivity=Connectivity,
-            keypoint_for_stats=[0, 6, 10],
-            error_type="abs_error"  # or "square_error"
-        )
-
+        
+        self.evaluator: BaseMetric = METRICS.build(metric_cfg)
+        
     @property
     def iter(self):
         """int: Current iteration."""
@@ -40,15 +37,7 @@ class TestLoop(BaseLoop):
 
     def run(self) -> torch.nn.Module:
         self._run_epoch()
-        summary = self._summarize_report()
-        print("Summary Report:")
-        for joint, metrics in summary.items():
-            print(f"{joint}: MAE = {metrics['mae']:.4f}, RMSE = {metrics['rmse']:.4f}, MSE = {metrics['mse']:.4f}")
-        
-        # Setup replay after collecting all data (if desired)
-        self.visualizer.setup_replay(self.gt_data, self.pred_data, self.report)
-        self.visualizer.root.mainloop()
-        
+        summary = self.evaluator.evaluate()
         return self.runner.model
     
     def _run_epoch(self) -> None:
@@ -61,264 +50,8 @@ class TestLoop(BaseLoop):
         assert hasattr(self.runner.model, 'pack_input')
         batch_inputs, data_samples = self.runner.model.pack_input(data_batch)
         assert len(data_samples) == 1, 'TestLoop only supports batch_size=1'
-        tensor = self.runner.model(batch_inputs, data_samples, mode='predict')
-        gt, pred = self.evaluate(data_samples[0])
-        self.gt_data.append(gt)  # Store gt
-        self.pred_data.append(pred)  # Store pred
-        # Pass the most recent frame report so the stats plot can update individually
-        self.visualizer.update(gt, pred, self.report[-1])
+        _ = self.runner.model(batch_inputs, data_samples, mode='predict')
+
+        self.evaluator.process_sample(data_samples[0])
         self._iter += 1
-    
-    def evaluate(self, data_sample: SkeletonDataSample):
-        keypoint_involved = self.runner.model.keypoints_involved
-        gt = data_sample.gt
-        pred = data_sample.pred
-        assert gt.shape == pred.shape
-        
-        frame_report = dict()
 
-        for idx, joint in enumerate(keypoint_involved):
-            gt_joint: torch.Tensor = gt[idx*3:idx*3+3]
-            pred_joint: torch.Tensor = pred[idx*3:idx*3+3]
-            frame_report[joint] = dict(
-                gt_joint=gt_joint.tolist(),
-                pred_joint=pred_joint.tolist(),
-                abs_error=torch.norm(gt_joint - pred_joint).item(),
-                square_error=torch.norm(torch.pow(gt_joint - pred_joint, 2)).item()
-            )
-        self.report.append(frame_report)
-        return gt, pred
-
-    def _summarize_report(self) -> dict:
-        joint_errors = {}
-        for iteration_report in self.report:
-            for joint, values in iteration_report.items():
-                if joint not in joint_errors:
-                    joint_errors[joint] = {'abs': [], 'square': []}
-                joint_errors[joint]['abs'].append(values['abs_error'])
-                joint_errors[joint]['square'].append(values['square_error'])
-
-        summary = {}
-        for joint, errors in joint_errors.items():
-            mae = sum(errors['abs']) / len(errors['abs'])
-            mse = sum(errors['square']) / len(errors['square'])
-            rmse = mse ** 0.5
-            summary[joint] = {"mae": mae, "rmse": rmse, "mse": mse}
-
-        return summary
-
-class SkeletonVisualizer:
-    def __init__(self, 
-                 keypoint_involved: list, 
-                 connectivity: dict,
-                 keypoint_for_stats: list,
-                 error_type: str):
-        # Convert keypoints to enum types (assuming KeypointType is callable)
-        self.keypoint_involved = [KeypointType(kp) for kp in keypoint_involved]
-        self.connectivity = connectivity
-        self.keypoint_for_stats = [KeypointType(kp) for kp in keypoint_for_stats]
-        self.error_type = error_type
-
-        self.root = tk.Tk()
-        self.root.title("3D Skeleton Visualization")
-
-        # Top frame for skeletons
-        top_frame = tk.Frame(self.root)
-        top_frame.pack(side=tk.TOP, fill=tk.BOTH, expand=True)
-
-        # Ground Truth and Prediction frames
-        frame_gt = tk.Frame(top_frame)
-        frame_pred = tk.Frame(top_frame)
-        frame_gt.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-        frame_pred.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True)
-
-        # Initialize GT plot
-        self.fig_gt = Figure(figsize=(5, 5))
-        self.ax_gt = self.fig_gt.add_subplot(111, projection='3d')
-        self._setup_axes(self.ax_gt, "Ground Truth")
-        self.canvas_gt = FigureCanvasTkAgg(self.fig_gt, master=frame_gt)
-        self.canvas_gt.get_tk_widget().pack(fill=tk.BOTH, expand=True)
-
-        # Initialize Pred plot
-        self.fig_pred = Figure(figsize=(5, 5))
-        self.ax_pred = self.fig_pred.add_subplot(111, projection='3d')
-        self._setup_axes(self.ax_pred, "Prediction")
-        self.canvas_pred = FigureCanvasTkAgg(self.fig_pred, master=frame_pred)
-        self.canvas_pred.get_tk_widget().pack(fill=tk.BOTH, expand=True)
-
-        # Initialize persistent plot objects instead of redrawing every frame
-        # Precompute connectivity pairs (only include if both keypoints are involved)
-        self.connectivity_pairs = []
-        for kp in self.keypoint_involved:
-            if kp in self.connectivity:
-                for connected in self.connectivity[kp]:
-                    if connected in self.keypoint_involved:
-                        self.connectivity_pairs.append((kp, connected))
-                        
-        # For Ground Truth axis
-        self.scatter_gt = self.ax_gt.scatter([], [], [], color='blue')
-        self.lines_gt = []
-        for pair in self.connectivity_pairs:
-            line, = self.ax_gt.plot([], [], [], color='blue', lw=1)
-            self.lines_gt.append((pair, line))
-                        
-        # For Prediction axis
-        self.scatter_pred = self.ax_pred.scatter([], [], [], color='red')
-        self.lines_pred = []
-        for pair in self.connectivity_pairs:
-            line, = self.ax_pred.plot([], [], [], color='red', lw=1)
-            self.lines_pred.append((pair, line))
-            
-        # Create stats frame (visible from the start)
-        self.frame_stats = tk.Frame(self.root)
-        self.frame_stats.pack(side=tk.BOTTOM, fill=tk.BOTH, expand=True)
-
-        # Stats figure and axis
-        self.fig_stats = Figure(figsize=(10, 3))
-        self.ax_stats = self.fig_stats.add_subplot(111)
-        self.ax_stats.set_title(f"Error ({self.error_type}) per Frame")
-        self.ax_stats.set_xlabel("Frame")
-        self.ax_stats.set_ylabel("Error (m)")
-        self.fig_stats.subplots_adjust(right=0.75)
-        self.current_frame_line = self.ax_stats.axvline(x=0, color='red', lw=2, linestyle='--')
-
-        # Create a separate line (and error list) for each keypoint in keypoint_for_stats
-        self.stats_lines = {}
-        self.stats_errors = {}  # dict mapping keypoint -> list of errors
-        for stat_kp in self.keypoint_for_stats:
-            line, = self.ax_stats.plot([], [], label=stat_kp.name, lw=1)
-            self.stats_lines[stat_kp] = line
-            self.stats_errors[stat_kp] = []
-
-        leg = self.ax_stats.legend(loc="center left", bbox_to_anchor=(1.0, 0.5))
-        for legline in leg.get_lines():
-            legline.set_linewidth(4)
-
-        self.canvas_stats = FigureCanvasTkAgg(self.fig_stats, self.frame_stats)
-        self.canvas_stats.get_tk_widget().pack(fill=tk.BOTH, expand=True)
-
-        # Progress bar for replay/inspection
-        self.progress_bar = tk.Scale(
-            self.frame_stats,
-            from_=0,
-            to=0,
-            orient=tk.HORIZONTAL,
-            command=self._on_progress_change,
-            label="Frame"
-        )
-        self.progress_bar.pack(fill=tk.X)
-
-        # Data storage for replay
-        self.gt_data = []
-        self.pred_data = []
-        self.report = []
-        self.num_frames = 0
-
-    def _setup_axes(self, ax, title):
-        ax.set_title(title)
-        ax.set_xlim(-1, 1)
-        ax.set_ylim(-1, 1)
-        ax.set_zlim(-1, 2)
-        ax.set_xlabel("X")
-        ax.set_ylabel("Y")
-        ax.set_zlabel("Z")
-
-    def _update_skeleton(self, tensor, scatter, lines):
-        """
-        Update the persistent scatter and line objects using the new tensor.
-        The tensor is assumed to be a flat list or tensor of coordinates:
-        [x0, z0, y0, x1, z1, y1, ...] and we map it to (x, y, z) with y coming from index+2.
-        """
-        coords = []
-        for idx, kp_enum in enumerate(self.keypoint_involved):
-            x = tensor[idx*3].item() if isinstance(tensor, torch.Tensor) else tensor[idx*3]
-            y = tensor[idx*3+1].item() if isinstance(tensor, torch.Tensor) else tensor[idx*3+1]
-            z = tensor[idx*3+2].item() if isinstance(tensor, torch.Tensor) else tensor[idx*3+2]
-            coords.append((x, y, z))
-        xs = [pt[0] for pt in coords]
-        ys = [pt[1] for pt in coords]
-        zs = [pt[2] for pt in coords]
-        scatter._offsets3d = (xs, ys, zs)
-        # Update connectivity lines
-        for (pair, line) in lines:
-            idx1 = self.keypoint_involved.index(pair[0])
-            idx2 = self.keypoint_involved.index(pair[1])
-            source = coords[idx1]
-            target = coords[idx2]
-            line.set_data([source[0], target[0]], [source[1], target[1]])
-            line.set_3d_properties([source[2], target[2]])
-
-    def update(self, gt_tensor, pred_tensor, frame_report=None):
-        # Update the skeleton plots using the persistent objects
-        self._update_skeleton(gt_tensor, self.scatter_gt, self.lines_gt)
-        self._update_skeleton(pred_tensor, self.scatter_pred, self.lines_pred)
-        self.canvas_gt.draw_idle()
-        self.canvas_pred.draw_idle()
-
-        # Store data for replay if needed
-        if frame_report is not None:
-            self.report.append(frame_report)
-        self.gt_data.append(gt_tensor)
-        self.pred_data.append(pred_tensor)
-
-        # Update stats errors for each keypoint in keypoint_for_stats
-        if frame_report is not None:
-            for stat_kp in self.keypoint_for_stats:
-                error = frame_report.get(stat_kp, {}).get(self.error_type, None)
-                if error is None:
-                    if stat_kp in self.keypoint_involved:
-                        idx = self.keypoint_involved.index(stat_kp)
-                        gt_joint = gt_tensor[idx*3: idx*3+3]
-                        pred_joint = pred_tensor[idx*3: idx*3+3]
-                        if self.error_type == "abs_error":
-                            error = torch.norm(gt_joint - pred_joint).item()
-                        elif self.error_type == "square_error":
-                            error = torch.norm((gt_joint - pred_joint)**2).item()
-                        else:
-                            error = torch.norm(gt_joint - pred_joint).item()
-                    else:
-                        error = 0.0
-                self.stats_errors[stat_kp].append(error)
-        else:
-            for stat_kp in self.keypoint_for_stats:
-                if stat_kp in self.keypoint_involved:
-                    idx = self.keypoint_involved.index(stat_kp)
-                    gt_joint = gt_tensor[idx*3: idx*3+3]
-                    pred_joint = pred_tensor[idx*3: idx*3+3]
-                    if self.error_type == "abs_error":
-                        error = torch.norm(gt_joint - pred_joint).item()
-                    elif self.error_type == "square_error":
-                        error = torch.norm((gt_joint - pred_joint)**2).item()
-                    else:
-                        error = torch.norm(gt_joint - pred_joint).item()
-                    self.stats_errors[stat_kp].append(error)
-
-        self.num_frames = len(next(iter(self.stats_errors.values()))) if self.stats_errors else 0
-
-        for stat_kp in self.keypoint_for_stats:
-            xdata = list(range(len(self.stats_errors[stat_kp])))
-            self.stats_lines[stat_kp].set_data(xdata, self.stats_errors[stat_kp])
-
-        self.ax_stats.relim()
-        self.ax_stats.autoscale_view()
-        self.progress_bar.config(to=self.num_frames - 1)
-        self.progress_bar.set(self.num_frames - 1)
-        self.canvas_stats.draw_idle()
-
-    def _on_progress_change(self, value):
-        frame_idx = int(float(value))
-        self._update_replay(frame_idx)
-        self.current_frame_line.set_xdata([frame_idx, frame_idx])
-        self.canvas_stats.draw_idle()
-
-    def _update_replay(self, frame_idx):
-        if frame_idx < len(self.gt_data) and frame_idx < len(self.pred_data):
-            self._update_skeleton(self.gt_data[frame_idx], self.scatter_gt, self.lines_gt)
-            self._update_skeleton(self.pred_data[frame_idx], self.scatter_pred, self.lines_pred)
-            self.canvas_gt.draw_idle()
-            self.canvas_pred.draw_idle()
-
-    def setup_replay(self, gt_data, pred_data, report):
-        self.gt_data = gt_data
-        self.pred_data = pred_data
-        self.report = report

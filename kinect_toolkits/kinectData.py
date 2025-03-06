@@ -1,7 +1,7 @@
 import csv
 import io
 from enum import Enum
-from typing import List, Dict, Optional
+from typing import List, Dict, Literal, Optional
 
 import pandas as pd
 
@@ -89,9 +89,10 @@ class Skeleton:
         self.extras = extras
         
     @classmethod
-    def from_dataframe(cls, row: pd.Series):
+    def from_dataframe(cls, row: pd.Series, used_points: List[int] = None):
         kps = {}
-        for kp_type_val in USED_KEYPOINTS:
+        used_points = used_points or USED_KEYPOINTS
+        for kp_type_val in used_points:
             kp_type = KeypointType(kp_type_val)
             kp_type_name_lower = kp_type.name.lower()
             x, y, z = row[f'{kp_type_name_lower}_x'], row[f'{kp_type_name_lower}_y'], row[f'{kp_type_name_lower}_z']
@@ -99,6 +100,20 @@ class Skeleton:
             kps[kp_type] = Keypoint(kp_type, x, y, z, connections)
         return Skeleton(row['timestamp'], row['unix_ms'], kps)
 
+    @classmethod
+    def from_sequence(cls, sequence: list[float], used_points: List[int] = None, order: Literal['xyz', 'xzy'] = 'xyz'):
+        kps = {}
+        swap_order = order == 'xzy'
+        used_points = used_points or USED_KEYPOINTS
+        for i, kp_type_val in enumerate(used_points):
+            kp_type = KeypointType(kp_type_val)
+            x, y, z = sequence[i*3:i*3+3]
+            if swap_order:
+                y, z = z, y
+            connections = Connectivity.get(kp_type, [])
+            kps[kp_type] = Keypoint(kp_type, x, y, z, connections)
+        return Skeleton(0, 0, kps)
+    
 Connectivity = {
     KeypointType.SPINE_BASE: [KeypointType.SPINE_MID],
     KeypointType.SPINE_MID: [KeypointType.SPINE_BASE, KeypointType.NECK],

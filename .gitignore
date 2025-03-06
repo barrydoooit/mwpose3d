@@ -3,3 +3,8 @@
 DumpKinectSkeleton
 data
 dl_engine/checkpoints/*
+exp_data
+visualization
+checkpoints
+work_dirs
+playground.py

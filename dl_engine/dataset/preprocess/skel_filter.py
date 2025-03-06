@@ -8,7 +8,10 @@ from .base import TRANSFORM, BaseTransform
 class SkeletonKeypointFilter(BaseTransform):
     def __init__(self,
                  keypoint_involved: List[int],
-                 with_pcd_ts: bool = False):
+                 with_pcd_ts: bool = False,
+                 online_mode: bool = False
+                 ):
+        super().__init__(online_mode)
         self.keypoint_involved = keypoint_involved
         self.with_pcd_ts = with_pcd_ts
     

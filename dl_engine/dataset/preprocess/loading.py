@@ -11,6 +11,7 @@ class LoadSingleFrameFromH5(BaseTransform):
     def __init__(self,
                  load_pcd_dim: int
                  ):
+        super().__init__()
         self.load_pcd_dim = load_pcd_dim
     
     def transform(self, input: dict):
@@ -41,6 +42,7 @@ class LoadMultiFrameFromH5(BaseTransform):
                  num_frames: int,
                  load_all_skeletons: bool = False
                  ):
+        super().__init__()
         self.load_pcd_dim = load_pcd_dim
         self.num_frames = num_frames
         self.load_all_skeletons = load_all_skeletons

@@ -8,8 +8,10 @@ from .base import TRANSFORM, BaseTransform
 @TRANSFORM.register_module()
 class AddRangeDimension(BaseTransform):
     def __init__(self,
-                 insert_idx: int = 4
+                 insert_idx: int = 4,
+                 online_mode: bool = False
                  ):
+        super().__init__(online_mode)
         self.insert_idx = insert_idx
     
     @staticmethod
@@ -25,4 +27,17 @@ class AddRangeDimension(BaseTransform):
             pcd_frame = np.insert(pcd_frame, self.insert_idx, range, axis=1)
             added_frames.append(pcd_frame)
         input['pcd_frames'] = tuple(added_frames)
+        return input
+
+    def transform_online(self, input: dict):
+        pcd_frames: Tuple[np.ndarray] = input['pcd_frames']
+        num_recent_frames = input.get('num_recent_frames', 1)
+        recent_frames = pcd_frames[-num_recent_frames:]
+        
+        added_recent_frames = []
+        for pcd_frame in recent_frames:
+            range = self._calc_range(pcd_frame)
+            pcd_frame = np.insert(pcd_frame, self.insert_idx, range, axis=1)
+            added_recent_frames.append(pcd_frame)
+        input['pcd_frames'] = tuple(pcd_frames[:-num_recent_frames] + added_recent_frames)
         return input
