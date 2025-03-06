@@ -5,7 +5,7 @@ from apps.common.loops.onlineReader import OnlineReaderLoop, TestingLoop
 from apps.common.pcd.pointCloud import SimplePointCloud5D
 from apps.pc_collection.gui.main_window import DataCollectorMainWindow
 from apps.pc_collection.gui.popups.calib_instruction import TimeCalibInstructionPopup
-from apps.pc_collection.pc_buffer import PointCloudBuffer
+from apps.common.pcd.pc_buffer import PointCloudBuffer
 import kinect_toolkits as kntk
 
 from radario.base import BaseBufferedReader

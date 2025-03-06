@@ -5,7 +5,7 @@ from typing import Any, Optional, Callable, TYPE_CHECKING, Tuple
 import threading
 
 if TYPE_CHECKING:
-    from apps.pc_collection.pc_buffer import PointCloudBuffer
+    from apps.common.pcd.pc_buffer import PointCloudBuffer
 
 
 
@@ -44,7 +44,7 @@ class TimeCalibInstructionPopup(tk.Toplevel):
         
         self.timer_id = None
         self.remaining_time = 0
-        self.current_stage: self.Stages = self.Stages.ENTRY_STAGE
+        self.current_stage: 'TimeCalibInstructionPopup.Stages' = self.Stages.ENTRY_STAGE
         
         self.title("Time Calibration")
         self.geometry(geometry)

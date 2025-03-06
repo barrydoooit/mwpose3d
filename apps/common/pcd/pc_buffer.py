@@ -13,7 +13,7 @@ from contextlib import contextmanager
 class PointCloudBuffer:
     def __init__(self,
                  max_buffer_size,
-                 output_dir: str):
+                 output_dir: str = None):
         self.max_buffer_size = max_buffer_size
         self.output_dir = output_dir
         

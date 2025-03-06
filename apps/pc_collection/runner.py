@@ -5,7 +5,7 @@ import serial
 from apps.pc_collection.gui.cli import CommandProcessor
 from apps.pc_collection.gui.main_window import DataCollectorMainWindow
 from apps.pc_collection.onlineCollectLoop import OnlineDataCollectionLoop
-from apps.pc_collection.pc_buffer import PointCloudBuffer
+from apps.common.pcd.pc_buffer import PointCloudBuffer
 from radario.base import BaseBufferedReader, build_reader
 from radario.chirpConfig.chirpConfigIWR6843 import ChirpConfigIWR6843
 

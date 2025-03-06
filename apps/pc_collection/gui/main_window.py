@@ -6,7 +6,7 @@ from apps.common.pcd.pointCloudVis import PointCloudFigureFrame
 from apps.pc_collection.gui.cli import CommandProcessor
 from apps.pc_collection.gui.popups.calib_instruction import TimeCalibInstructionPopup
 from apps.pc_collection.gui.popups.midbreak import MidBreakPopup
-from apps.pc_collection.pc_buffer import PointCloudBuffer
+from apps.common.pcd.pc_buffer import PointCloudBuffer
 from kinect_toolkits.kinectData import Skeleton
 from kinect_toolkits.kinectVis import SkeletonFigureFrame
 

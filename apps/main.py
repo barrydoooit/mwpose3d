@@ -3,6 +3,8 @@ import sys
 import os
 import debugpy
 from mmengine.config import Config, DictAction
+
+from apps.online_skeleton_estim.runner import OnlineSkeletonEstimationRunner
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 print(sys.path)
 from apps.lateral_tracking.breakoutRunner import BreakoutRunner
@@ -39,6 +41,8 @@ if __name__ == "__main__":
         runner = PcdCollectVisRunner.from_cfg(cfg)
     elif app_type == "simple":
         runner = SimpleReaderRunner.from_cfg(cfg)
+    elif app_type == "infengine":
+        runner = OnlineSkeletonEstimationRunner.from_cfg(cfg)
     else:
         raise ValueError("Unknown type of the application")
     
