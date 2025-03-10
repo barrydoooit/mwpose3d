@@ -53,14 +53,17 @@ class OnlineReaderPredictLoop(OnlineReaderLoop):
         """
         data_ok, frame_number, det_obj = data
         if data_ok:
-            point_cloud = SimplePointCloud5D.from_dict(det_obj)
-            inference_output = self.inference_engine.infer(point_cloud)
-            skeleton_value_list = inference_output['tensor'][0, -1, :].tolist()
-            skeleton = Skeleton.from_sequence(skeleton_value_list, 
-                                              used_points=self.inference_engine.keypoints_involved,
-                                              order='xzy')
-            if self.visualize and self.gui_initialized:
-                self.root.after(0, self.figure_frame.update,skeleton)
+            try:
+                point_cloud = SimplePointCloud5D.from_dict(det_obj)
+                inference_output = self.inference_engine.infer(point_cloud)
+                skeleton_value_list = inference_output['tensor'][0, -1, :].tolist()
+                skeleton = Skeleton.from_sequence(skeleton_value_list, 
+                                                used_points=self.inference_engine.keypoints_involved,
+                                                order='xzy')
+                if self.visualize and self.gui_initialized:
+                    self.root.after(0, self.figure_frame.update,skeleton)
+            except RuntimeError as e:
+                print(e)
             return data
 
     def _after_stop_hook(self):
@@ -77,5 +80,6 @@ class OnlineReaderPredictLoop(OnlineReaderLoop):
             reader=cfg.get("reader"),
             interval=cfg.get("interval"),
             visualize=cfg.get("visualize", False),
-            figure_cfg=cfg.get("figure_cfg", None)
+            figure_cfg=cfg.get("figure_cfg", None),
+            inference_engine=cfg.get("inference_engine")
         )

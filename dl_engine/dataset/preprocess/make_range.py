@@ -39,5 +39,5 @@ class AddRangeDimension(BaseTransform):
             range = self._calc_range(pcd_frame)
             pcd_frame = np.insert(pcd_frame, self.insert_idx, range, axis=1)
             added_recent_frames.append(pcd_frame)
-        input['pcd_frames'] = tuple(pcd_frames[:-num_recent_frames] + added_recent_frames)
+        input['pcd_frames'] = pcd_frames[:-num_recent_frames] + tuple(added_recent_frames)
         return input

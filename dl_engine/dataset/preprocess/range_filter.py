@@ -68,6 +68,6 @@ class PointCloudRangeFilter(BaseTransform):
             #         filtered_recent_frames[idx] = pcd_frames[-num_recent_frames - 1].copy()
             #     else:
             #         filtered_recent_frames[idx] = filtered_recent_frames[idx - 1].copy()
-        input['pcd_frames'] = tuple(pcd_frames[:-num_recent_frames] + filtered_recent_frames)
+        input['pcd_frames'] = pcd_frames[:-num_recent_frames] + tuple(filtered_recent_frames)
         
         return input        

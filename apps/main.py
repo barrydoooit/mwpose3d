@@ -4,13 +4,14 @@ import os
 import debugpy
 from mmengine.config import Config, DictAction
 
-from apps.online_skeleton_estim.runner import OnlineSkeletonEstimationRunner
+
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 print(sys.path)
 from apps.lateral_tracking.breakoutRunner import BreakoutRunner
 # from apps.skeleton_estim.skeletonRunner import SktEstimRunner
 from apps.pc_collection.runner import PcdCollectVisRunner
 from apps.simpler_reader.runner import SimpleReaderRunner
+from apps.online_skeleton_estim.runner import OnlineSkeletonEstimationRunner
 # import apps.skeleton_estim.constants as skeleton_const
 
 if __name__ == "__main__":

@@ -24,7 +24,8 @@ class InferenceEngine:
         self.model: torch.nn.Module = MODELS.build(model)
         self.model.to(get_device())
         self.pipeline = self._make_pipeline(pipeline)
-        self.model.load_state_dict(torch.load(load_from))
+        self.model.load_state_dict(torch.load(load_from, map_location=torch.device(get_device())))
+        self.model.eval()
         self.output: dict = None
         self.keypoints_involved = keypoints_involved
         
@@ -35,7 +36,7 @@ class InferenceEngine:
         pipeline = [TRANSFORM.build(dict(transform, online_mode=True)) for transform in pipeline]
         return tuple(pipeline)
     
-    def _preprocess(self, point_cloud: SimplePointCloud5D) -> dict:
+    def _preprocess(self, point_cloud: 'SimplePointCloud5D') -> dict:
         input_dict = {
             'pcd_frames': (np.asarray(point_cloud.serialize(compact=True)),),
             'num_recent_frames': 1
@@ -48,12 +49,12 @@ class InferenceEngine:
         ]) # make a batch dimension
         return input
     
-    def infer(self, point_cloud: SimplePointCloud5D):
+    def infer(self, point_cloud: 'SimplePointCloud5D'):
         data_batch_dict = self._preprocess(point_cloud)
         if self.output is not None:
-            input.update(dict(self.output))
-        input.pop('tensor', None)
-        batch_inputs, data_samples = self.runner.model.pack_input(data_batch_dict)
+            data_batch_dict.update(dict(self.output))
+        data_batch_dict.pop('tensor', None)
+        batch_inputs, data_samples = self.model.pack_input_online(data_batch_dict)
         with torch.no_grad():
             self.output = self.model(batch_inputs, data_samples, mode='predict')
         return self.output

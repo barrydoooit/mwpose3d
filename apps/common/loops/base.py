@@ -1,5 +1,6 @@
 import threading
 import time
+import traceback
 
 
 class BaseRadarProcessLoop:
@@ -22,6 +23,7 @@ class BaseRadarProcessLoop:
             print("Keyboard interrupt")
         except Exception as e:
             print("Exception in loop:", e)
+            traceback.print_exc()
         finally:
             self._running = False
 

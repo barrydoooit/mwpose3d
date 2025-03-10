@@ -141,4 +141,4 @@ class Runner:
         torch.save(self.model.state_dict(), self.work_dir / filename)
     
     def load_checkpoint(self, filename: str):
-        self.model.load_state_dict(torch.load(filename))
+        self.model.load_state_dict(torch.load(filename, map_location=torch.device(get_device())))

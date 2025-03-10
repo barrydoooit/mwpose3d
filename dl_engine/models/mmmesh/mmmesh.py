@@ -1,3 +1,4 @@
+import warnings
 from typing import List, Tuple
 import numpy as np
 import torch
@@ -6,7 +7,10 @@ from mmengine.device import get_device
 
 from dl_engine.dataset.skel_data_sample import SkeletonDataSample
 from dl_engine.models.base import BaseSkeletonEstimModel, MODELS
-from dl_engine.models.utils.sdtw_cuda_loss import SoftDTW
+try:
+    from dl_engine.models.utils.sdtw_cuda_loss import SoftDTW
+except Exception:
+    warnings.warn("SoftDTW is not available. Training with SoftDTW will trigger error")
 
 
 
@@ -62,12 +66,14 @@ class MmMeshPredictor(BaseSkeletonEstimModel):
         return loss
     
     def predict(self, batch_inputs, data_samples):
-        tensor, hn_g, cn_g, hn_a, cn_a = tuple(self._forward(batch_inputs, data_samples).values())
+        output = self._forward(batch_inputs, data_samples)
+        tensor, hn_g, cn_g, hn_a, cn_a = tuple(output.values())
         for b, data_sample in enumerate(data_samples):
             data_sample.pred = tensor[b]
             data_sample.pred = data_sample.pred[-1, :]
-            data_sample.gt = data_sample.gt[-1, :]
-        return tensor, hn_g, cn_g, hn_a, cn_a
+            if data_sample.gt is not None:
+                data_sample.gt = data_sample.gt[-1, :]
+        return output
 
     def _forward(self, batch_inputs, data_samples):
         final_pcd_tensor = batch_inputs['final_pcd_tensor']
@@ -177,4 +183,4 @@ class MmMeshPredictor(BaseSkeletonEstimModel):
             c0_a=c0_a
         )
         
-        return batch_inputs, [SkeletonDataSample(gt=None) for _ in final_pcd_tensor.shape[0]]
+        return batch_inputs, [SkeletonDataSample(gt=None) for _ in range(final_pcd_tensor.shape[0])]

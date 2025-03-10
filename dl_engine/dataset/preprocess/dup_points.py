@@ -59,5 +59,5 @@ class PointDuplicator(BaseTransform):
             upsampled_frame = np.concatenate([recent_frame, duplicate_points], axis=0)
             upsampled_recent_frames.append(upsampled_frame)
         
-        input['pcd_frames'] = tuple(pcd_frames[:-num_recent_frames] + upsampled_recent_frames)
+        input['pcd_frames'] = pcd_frames[:-num_recent_frames] + tuple(upsampled_recent_frames)
         return input

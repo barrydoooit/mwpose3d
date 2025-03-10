@@ -127,5 +127,5 @@ class CoordinateTransform(BaseTransform):
             else:
                 transformed_frame = transformed_points
             transformed_recent_frames.append(transformed_frame)
-        input['pcd_frames'] = tuple(pcd_frames[:-num_recent_frames] + transformed_recent_frames)
+        input['pcd_frames'] = pcd_frames[:-num_recent_frames] + tuple(transformed_recent_frames)
         return input

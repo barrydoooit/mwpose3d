@@ -1,5 +1,6 @@
 import signal
 import sys
+import time
 from typing import List
 import serial
 from mmengine.config import Config
@@ -53,7 +54,9 @@ class OnlineSkeletonEstimationRunner:
         return cls(
             reader_cfg=cfg.get("reader_cfg"),
             loop_cfg=cfg.get("loop_cfg"),
-            visualize=cfg.get("visualize", False)
+            visualize=cfg.get("visualize", False),
+            deep_model_cfg_path=cfg.get("deep_model_cfg_path"),
+            checkpoint_path=cfg.get("checkpoint_path")
         )
     
     def start(self):
@@ -77,5 +80,6 @@ class OnlineSkeletonEstimationRunner:
                     
             except KeyboardInterrupt:
                 print("KeyboardInterrupt captured.")
+                self.loop.root.focus()
                 self.loop.stop()
                 sys.exit(0)

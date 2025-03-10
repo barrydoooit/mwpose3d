@@ -5,17 +5,18 @@ from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from kinect_toolkits.kinectData import Skeleton
 from kinect_toolkits.transforms import kinect_coord_to_radar
 
-class SkeletonFigure(Figure):
-    # NOTE TODO: This new version has bugs and cannot display skeleton. To be fixed later.
+
+
+class SkeletonFigure:
     def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.ax = self.add_subplot(111, projection='3d')
+        self.figure = Figure(*args, **kwargs)
+        self.ax = self.figure.add_subplot(111, projection='3d')
         self._setup_axes()
         # Pre-create a scatter plot object (empty for now)
         self.scatter = self.ax.scatter([], [], [], c='b', marker='o')
         # Dictionary to hold line objects for each connection
-        self.lines = {}
-
+        self.lines = {} # NOTE: If SkeletonFigure inherits from Figure, this will be considered as Figure children and cause errors.
+    
     def _setup_axes(self):
         """Configure the 3D axis for the skeleton display."""
         self.ax.set_title("3D Skeleton Visualization")
@@ -42,7 +43,7 @@ class SkeletonFigure(Figure):
         for key, keypoint in skeleton.keypoints.items():
             for conn in keypoint.connections:
                 if conn in skeleton.keypoints:
-                    line_key = (key, conn)
+                    line_key = tuple(sorted((key.value, conn.value)))
                     k1x, k1y, k1z = coords[key]
                     k2x, k2y, k2z = coords[conn]
                     
@@ -54,6 +55,7 @@ class SkeletonFigure(Figure):
                     else:
                         # Create a new line and store it.
                         line_obj = self.ax.plot([k1x, k2x], [k1y, k2y], [k1z, k2z], 'r-')[0]
+                        print(type(line_obj))
                         self.lines[line_key] = line_obj
 
 class SkeletonFigureFrame(tk.Frame):
@@ -63,7 +65,7 @@ class SkeletonFigureFrame(tk.Frame):
         figure_cfg.setdefault('dpi', 100)
         self.figure = SkeletonFigure(**figure_cfg)
         
-        self.canvas = FigureCanvasTkAgg(self.figure, master=self)
+        self.canvas = FigureCanvasTkAgg(self.figure.figure, master=self)
         self.canvas_widget = self.canvas.get_tk_widget()
         self.canvas_widget.pack(fill=tk.BOTH, expand=True)
 
@@ -73,5 +75,4 @@ class SkeletonFigureFrame(tk.Frame):
     
     def reset(self):
         self.figure.ax.clear()
-        self.figure._setup_axes()
         self.canvas.draw()
