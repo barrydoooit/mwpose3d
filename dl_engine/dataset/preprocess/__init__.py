@@ -5,8 +5,9 @@ from .skel_filter import SkeletonKeypointFilter
 from .make_range import AddRangeDimension
 from .dup_points import PointDuplicator
 from .coord_trans import CoordinateTransform
+from .sequence_clip import SequenceClip
 
-__all__ = ['LoadSingleFrameFromH5', 'PointCloudRangeFilter', 'SkeletonKeypointFilter', 'AddRangeDimension', 'PointDuplicator', 'CoordinateTransform']
+__all__ = ['LoadSingleFrameFromH5', 'PointCloudRangeFilter', 'SkeletonKeypointFilter', 'AddRangeDimension', 'PointDuplicator', 'CoordinateTransform', 'SequenceClip']
 
 WITH_ONLINE_FUNCTIONALITY = [
     'AddRangeDimension',

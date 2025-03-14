@@ -55,6 +55,7 @@ class EpochBasedTrainLoop(BaseLoop):
                     and (self._epoch % self.val_interval == 0
                          or self._epoch == self._max_epochs)):
                 self.runner.val_loop.run()
+                self.runner.save_checkpoint(f'epoch_{self._epoch}.pth')
         return self.runner.model
     
     def _run_epoch(self) -> None:

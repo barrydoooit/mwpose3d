@@ -129,7 +129,7 @@ class Runner:
         print('Start training')
         self.train_loop.run()
         print('Training finished')
-        self.save_checkpoint('latest.pth')
+        
 
     def test(self):
         print('Start testing')

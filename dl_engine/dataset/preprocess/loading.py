@@ -40,17 +40,17 @@ class LoadMultiFrameFromH5(BaseTransform):
     def __init__(self,
                  load_pcd_dim: int,
                  num_frames: int,
+                 backup_frames: int = 0,
                  load_all_skeletons: bool = False
                  ):
         super().__init__()
+        self.backup_frames = backup_frames
         self.load_pcd_dim = load_pcd_dim
         self.num_frames = num_frames
         self.load_all_skeletons = load_all_skeletons
     
     def transform(self, input: dict):
         local_idx: int = input['local_idx']
-        if local_idx < 9:
-            raise ValueError("local_idx is less than 9")
         file_path: Path = input['file_path']
         
         pcd_frames = []
@@ -73,11 +73,27 @@ class LoadMultiFrameFromH5(BaseTransform):
                     pcd_data = grp['data'][start:end]
                     pcd_data = pcd_data[:, :self.load_pcd_dim]
                     pcd_frames.insert(0, pcd_data)
-            input['pcd_frames'] = tuple(pcd_frames)
             
             for i in range(self.num_frames if self.load_all_skeletons else 1):
                 skel_data = f['skel'][local_idx - i]
                 skel_frames.insert(0, skel_data)
-            input['skel_frames'] = tuple(skel_frames)
             
+            last_backup_idx = cur_idx - 1
+            for i in range(self.backup_frames):
+                cur_idx = last_backup_idx - i
+                if cur_idx < 0:
+                    pcd_frames.insert(0, np.zeros((0, self.load_pcd_dim), dtype=np.float32))
+                else:
+                    start = index[cur_idx]
+                    end = index[cur_idx + 1]
+                    pcd_data = grp['data'][start:end]
+                    pcd_data = pcd_data[:, :self.load_pcd_dim]
+                    pcd_frames.insert(0, pcd_data)
+            input['pcd_frames'] = tuple(pcd_frames)
+            
+            for i in range(self.backup_frames if self.load_all_skeletons else 1):
+                skel_data = f['skel'][last_backup_idx - i]
+                skel_frames.insert(0, skel_data)
+            input['skel_frames'] = tuple(skel_frames)
+                    
         return input

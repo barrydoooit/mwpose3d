@@ -13,11 +13,15 @@ class PivotRotationAnalyzer(BaseMetric):
                  bones: Tuple[Tuple[int, int], ...],
                  keypoint_involved: Tuple[int, ...],
                  pos_pivot: Literal['first', 'mid', 'last'] = 'mid',
-                 window_size_frames: int = 1):
+                 window_size_frames: int = 1,
+                 log_name: str = 'pos_angle_norm.json',
+                 output_dir: str = 'exp_data/test_logs'):
         self.keypoint_involved = sorted(keypoint_involved)
         self.bones = bones
         self.pos_pivot = pos_pivot
         self.window_size_frames = window_size_frames
+        self.log_name = log_name
+        self.output_dir = output_dir
         self.get_pos_pivot: Callable[[torch.Tensor, torch.Tensor], torch.Tensor] = None
         if self.pos_pivot == 'mid':
             self.get_pos_pivot = lambda joint1, joint2: (joint1 + joint2) / 2.0
@@ -124,8 +128,8 @@ class PivotRotationAnalyzer(BaseMetric):
             }
         
         # TODO: Implement hooking management in runner to handle all data dumping
-        output_dir = 'exp_data/test_logs'
-        file_name = 'mmmesh_pos_angle_norm_w1.json'
+        output_dir = self.output_dir
+        file_name = self.log_name
 
         with open(f'{output_dir}/{file_name}', 'w') as f:
             json.dump(summary, f)

@@ -62,7 +62,7 @@ class MmMeshPredictor(BaseSkeletonEstimModel):
             mse_loss = nn.MSELoss()(tensor, gt)
             tensor = tensor.reshape(batch_size, length_size, -1)
             gt = gt.reshape(batch_size, length_size, -1)
-            loss = sdtw(tensor, gt).mean() + mse_loss
+            loss = 0.01 * sdtw(tensor, gt).mean() + mse_loss
         return loss
     
     def predict(self, batch_inputs, data_samples):

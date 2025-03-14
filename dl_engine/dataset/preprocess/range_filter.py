@@ -1,4 +1,4 @@
-from typing import List, Tuple
+from typing import List, Literal, Tuple
 
 import h5py
 import numpy as np
@@ -9,12 +9,16 @@ from .base import TRANSFORM, BaseTransform
 class PointCloudRangeFilter(BaseTransform):
     def __init__(self,
                  point_cloud_range: List[float],
-                 load_pcd_dim: int,
+                 empty_frame_op: Literal['duplicate', 'shift', 'error'] = 'duplicate',
+                 backup_frames: int = 0,
                  online_mode: bool = False
                  ):
         super().__init__(online_mode)
+        self.empty_frame_op = empty_frame_op
+        if self.online_mode:
+            self.empty_frame_op = 'error'
+        self.backup_frames = backup_frames
         self.point_cloud_range = point_cloud_range[:6]
-        self.load_pcd_dim = load_pcd_dim
     
     def get_filtered_frames(self, pcd_frames: Tuple[np.ndarray]):
         filtered_frames = []
@@ -33,24 +37,41 @@ class PointCloudRangeFilter(BaseTransform):
         filtered_frames = self.get_filtered_frames(pcd_frames)
         empty_frame_indices = [i for i, frame in enumerate(filtered_frames) if frame.shape[0] == 0]
         if len(empty_frame_indices) > 0:
-            with h5py.File(input['file_path'], 'r') as f:
-                for idx in empty_frame_indices:
-                    filtered_frames[idx] = self.find_previous_non_empty_frame(input['local_idx'] - len(pcd_frames) + 1 + idx, f)
+           filtered_frames = self.operate_empty_frames(input, filtered_frames, empty_frame_indices)
         input['pcd_frames'] = tuple(filtered_frames)
         return input
-
-    def find_previous_non_empty_frame(self, local_idx: int, file: h5py.File):
-        grp = file['pcd']
-        index = grp['index'][:]
-        for i in range(local_idx - 1, -1, -1):
-            start = index[i]
-            end = index[i + 1]
-            pcd_data = grp['data'][start:end]
-            filtered_frame = self.get_filtered_frames((pcd_data[:,:self.load_pcd_dim],))[0]
-            if filtered_frame.shape[0] > 0:
-                return filtered_frame
-        raise ValueError("No previous non-empty frame found.")
     
+    def operate_empty_frames(self, input: dict, filtered_frames: List[np.ndarray], empty_frame_indices: List[int]):
+        if self.empty_frame_op == 'duplicate':
+            for idx in empty_frame_indices:
+                if idx < self.backup_frames:
+                    continue # no need to fix the backup frames
+                for i in range(idx - 1, -1, -1):
+                    if i not in empty_frame_indices:
+                        filtered_frames[idx] = filtered_frames[i].copy()
+                        break
+                else:
+                    raise ValueError("No previous non-empty frame found.")
+            return filtered_frames
+        elif self.empty_frame_op == 'shift':
+            shifted_frames = []
+            for idx, frame in enumerate(filtered_frames):
+                if idx in empty_frame_indices:
+                    continue
+                shifted_frames.append(frame)
+            if len(input['skel_frames']) > 1:
+                shifted_skel_frames = []
+                for idx in range(len(input['skel_frames'])):
+                    if idx in empty_frame_indices:
+                        continue
+                    shifted_skel_frames.append(input['skel_frames'][idx])
+                input['skel_frames'] = shifted_skel_frames
+            return shifted_frames
+        elif self.empty_frame_op == 'error':
+            raise RuntimeError("Empty frame found in online mode. Current frame should be skipped.")
+        else:
+            raise ValueError(f"Unknown operation for empty frames: {self.empty_frame_op}")
+        
     def transform_online(self, input: dict):
         pcd_frames: Tuple[np.ndarray] = input['pcd_frames']
         num_recent_frames = input.get('num_recent_frames', 1)
@@ -60,14 +81,7 @@ class PointCloudRangeFilter(BaseTransform):
         empty_frame_indices = [i for i, frame in enumerate(filtered_recent_frames) if frame.shape[0] == 0]
         
         if empty_frame_indices:
-            raise RuntimeError("Empty frame found in online mode. Current frame should be skipped.")
-            # for idx in empty_frame_indices:
-            #     if idx == 0:
-            #         if len(pcd_frames) <= num_recent_frames:
-            #             raise ValueError("Sequence starts with an empty frame.")
-            #         filtered_recent_frames[idx] = pcd_frames[-num_recent_frames - 1].copy()
-            #     else:
-            #         filtered_recent_frames[idx] = filtered_recent_frames[idx - 1].copy()
+            filtered_recent_frames = self.operate_empty_frames(input, filtered_recent_frames, empty_frame_indices)
         input['pcd_frames'] = pcd_frames[:-num_recent_frames] + tuple(filtered_recent_frames)
         
         return input        
