@@ -10,7 +10,7 @@ from radario.parseTLVs6843 import TLVTYPES, tlv2parser
 
 log = logging.getLogger(__name__)
 from datetime import datetime, timezone
-from .base import register_reader,BaseBufferedReader, bytes_to_int16
+from .base import READERS, BaseBufferedReader, bytes_to_int16
 
 from typing import TYPE_CHECKING, Union
 
@@ -18,7 +18,7 @@ if TYPE_CHECKING:
     from . import ChirpConfigIWR1443
 
 
-@register_reader
+@READERS.register_module()
 class BufferedPcdReaderIWR6843(BaseBufferedReader):
     MAGIC_STRUCT = "Q"
     HEADER_STRUCT = "8I"
@@ -109,9 +109,11 @@ class BufferedPcdReaderIWR6843(BaseBufferedReader):
         # print(f"Bytes in waiting: {in_waiting}")
         _income_bytes = self.Data_port.read(in_waiting)
         if in_waiting >= self.max_buffer_size:
-            self.byte_buffer[:] = np.frombuffer(_income_bytes[-self.max_buffer_size:], dtype=np.uint8)
-            self.byte_buffer_volume = self.max_buffer_size
-            self._read_ptr = 0
+            raise RuntimeError("Reading Buffer overflow")
+            # print("Warning! Buffer overflow")
+            # self.byte_buffer[:] = np.frombuffer(_income_bytes[-self.max_buffer_size:], dtype=np.uint8)
+            # self.byte_buffer_volume = self.max_buffer_size
+            # self._read_ptr = 0
         else:
             potential_volume = self.byte_buffer_volume + in_waiting
             if potential_volume > self.max_buffer_size:
@@ -136,12 +138,7 @@ class BufferedPcdReaderIWR6843(BaseBufferedReader):
         return data_ok, frame_number, det_obj
 
     def close(self):
-        self.CLI_port.write("sensorStop\n".encode())
         self.CLI_port.close()
         self.Data_port.close()
-        log.info("Ports closed successfully")
-        
-        
-
-        
+        log.info("Ports closed")
         

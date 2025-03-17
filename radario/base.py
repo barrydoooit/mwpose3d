@@ -5,8 +5,7 @@ log = logging.getLogger(__name__)
 
 import numpy as np
 import serial
-import logging
-log = logging.getLogger(__name__)
+
 
 
 UART_MAGIC_WORD = [2, 1, 4, 3, 6, 5, 8, 7]#bytearray(b'\x02\x01\x04\x03\x06\x05\x08\x07')
@@ -41,7 +40,7 @@ class BaseBufferedReader:
         self.CLI_port = serial.Serial(CLI_port, self.CLI_BAUDRATE) if isinstance(CLI_port, str) else CLI_port
         self.Data_port = serial.Serial(Data_port, self.DATA_BAUDRATE) if isinstance(Data_port, str) else Data_port
         
-        self.max_buffer_size = 2**15
+        self.max_buffer_size = 2**20
         self.byte_buffer = np.zeros(self.max_buffer_size, dtype=np.uint8)
         self.byte_buffer_volume = 0
         self._read_ptr = 0
@@ -167,14 +166,9 @@ class BaseBufferedReader:
         raise NotImplementedError
 
 
-READERS = {
-    
-}
-def register_reader(cls):
-    READERS[cls.__name__] = cls
-    return cls
+from mmengine.registry import Registry
+READERS = Registry(name="mmwave_readers")
 
 def build_reader(**kwargs):
     assert 'type' in kwargs, "type must be provided in kwargs"
-    reader_name = kwargs.pop('type')
-    return READERS[reader_name](**kwargs)
+    return READERS.build(kwargs)

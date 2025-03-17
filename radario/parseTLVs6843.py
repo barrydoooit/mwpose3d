@@ -8,7 +8,6 @@ import numpy as np
 log = logging.getLogger(__name__)
 
 
-
 class TLVTYPES(Enum):
     MMWDEMO_OUTPUT_MSG_DETECTED_POINTS = 1
     MMWDEMO_OUTPUT_MSG_DETECTED_POINTS_SIDE_INFO = 7
@@ -62,7 +61,6 @@ class SideInfoTLVParser(BaseParser):
             point_cloud[i, 4] = snr * 0.1
             point_cloud[i, 5] = noise * 0.1
         output_dict['pointCloud'] = point_cloud
-                
     
 class CompressedSphericalPointCloudTLVParser(BaseParser):
     @staticmethod
@@ -107,7 +105,7 @@ class CompressedSphericalPointCloudTLVParser(BaseParser):
             point_cloud[i, 0] = rng * p_unit[3]
             point_cloud[i, 1] = azimuth * p_unit[1]
             point_cloud[i, 2] = elevation * p_unit[0]
-            point_cloud[i, 3] = doppler# * p_unit[2]
+            point_cloud[i, 3] = doppler * p_unit[2]
             point_cloud[i, 4] = snr * p_unit[4]
         
         point_cloud[:, :3] = CompressedSphericalPointCloudTLVParser.spherical2cartersian(
@@ -146,5 +144,5 @@ def tlv2parser(tlv_type: int) -> Callable:
         # log.error(f"{tlv_type} is not a valid TLV type")
         return None
     except KeyError:
-        log.error(f"TLV type {tlv_type} not found in TLV2PARSER")
+        log.info(f"TLV type {tlv_type} not found in TLV2PARSER")
         return None
