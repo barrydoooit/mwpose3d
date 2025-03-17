@@ -32,6 +32,10 @@ class KeypointType(Enum):
 USED_KEYPOINTS = tuple(range(20))
 ALL_KEYPOINTS = tuple(range(25))
 
+LEFT_KEYPOINTS = (KeypointType.SHOULDER_LEFT, KeypointType.ELBOW_LEFT, KeypointType.WRIST_LEFT, KeypointType.HAND_LEFT,
+                  KeypointType.HIP_LEFT, KeypointType.KNEE_LEFT, KeypointType.ANKLE_LEFT, KeypointType.FOOT_LEFT)
+RIGHT_KEYPOINTS = (KeypointType.SHOULDER_RIGHT, KeypointType.ELBOW_RIGHT, KeypointType.WRIST_RIGHT, KeypointType.HAND_RIGHT,
+                   KeypointType.HIP_RIGHT, KeypointType.KNEE_RIGHT, KeypointType.ANKLE_RIGHT, KeypointType.FOOT_RIGHT)
 
 class Keypoint:
     def __init__(self, keypoint_type: KeypointType, x: float, y: float, z: float, 

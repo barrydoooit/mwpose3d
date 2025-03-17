@@ -59,6 +59,8 @@ class PointCloudRangeFilter(BaseTransform):
                 if idx in empty_frame_indices:
                     continue
                 shifted_frames.append(frame)
+            if len(filtered_frames) - len(shifted_frames) > self.backup_frames:
+                raise ValueError("Not enough backup frames to shift.")
             if len(input['skel_frames']) > 1:
                 shifted_skel_frames = []
                 for idx in range(len(input['skel_frames'])):

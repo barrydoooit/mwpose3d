@@ -2,6 +2,7 @@ import tkinter as tk
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 
+import kinect_toolkits as kntk
 from kinect_toolkits.kinectData import Skeleton
 from kinect_toolkits.transforms import kinect_coord_to_radar
 
@@ -29,16 +30,32 @@ class SkeletonFigure:
         self.ax.set_zlim(-2, 2)
         
     def update_skeleton(self, skeleton: Skeleton):
-        # Cache coordinate conversion results to avoid duplicate work.
+        # # Cache coordinate conversion results to avoid duplicate work.
         coords = {}
         for key, keypoint in skeleton.keypoints.items():
             coords[key] = kinect_coord_to_radar(keypoint.x, keypoint.y, keypoint.z)
         
-        # Update scatter plot data.
-        xs, ys, zs = zip(*coords.values())
-        # Note: For 3D scatter, you may need to remove and redraw if set_data methods are limited.
-        self.scatter._offsets3d = (xs, ys, zs)
-        
+        # # Update scatter plot data.
+        # xs, ys, zs = zip(*coords.values())
+        # # Note: For 3D scatter, you may need to remove and redraw if set_data methods are limited.
+        # self.scatter._offsets3d = (xs, ys, zs)
+        red_keypoints =  kntk.LEFT_KEYPOINTS
+        xs, ys, zs, colors = [], [], [], []
+        for key, keypoint in skeleton.keypoints.items():
+            # Convert coordinates
+            x, y, z = kinect_coord_to_radar(keypoint.x, keypoint.y, keypoint.z)
+            xs.append(x)
+            ys.append(y)
+            zs.append(z)
+            # Assign red if the key is in the predefined list, otherwise blue.
+            if key in red_keypoints:
+                colors.append('r')
+            else:
+                colors.append('b')
+        # Update the scatter plot with new data and colors.
+        # Note: In 3D scatter plots, updating colors dynamically might require re-plotting.
+        self.scatter.remove()
+        self.scatter = self.ax.scatter(xs, ys, zs, c=colors, marker='o')
         # Update or create line objects for connections.
         for key, keypoint in skeleton.keypoints.items():
             for conn in keypoint.connections:

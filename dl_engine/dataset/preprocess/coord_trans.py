@@ -102,8 +102,8 @@ class CoordinateTransform(BaseTransform):
             # Convert from Kinect's coordinate system to the radar's coordinate system.
             converted = (conversion @ translated.T).T
             # Flatten back to 1D if needed.
-            transformed_frame = converted.flatten()
-            transformed_skel_frames.append(transformed_frame)
+            frame[:len(frame) // 3 * 3] = converted.flatten()
+            transformed_skel_frames.append(frame)
         input['skel_frames'] = tuple(transformed_skel_frames)
 
         return input
