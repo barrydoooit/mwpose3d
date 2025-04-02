@@ -6,7 +6,7 @@ from mmengine.device import get_device
 
 from apps.common.pcd.pc_buffer import PointCloudBuffer
 from dl_engine.dataset.preprocess import WITH_ONLINE_FUNCTIONALITY, TRANSFORM, BaseTransform
-from dl_engine.models.base import MODELS
+from dl_engine.model.base import MODELS
 
 if TYPE_CHECKING:
     from apps.common.pcd.pointCloud import SimplePointCloud5D

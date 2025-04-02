@@ -1,14 +1,14 @@
 import warnings
-from typing import List, Tuple
+from typing import List, Literal, Tuple
 import numpy as np
 import torch
 import torch.nn as nn
 from mmengine.device import get_device
 
 from dl_engine.dataset.skel_data_sample import SkeletonDataSample
-from dl_engine.models.base import BaseSkeletonEstimModel, MODELS
+from dl_engine.model.base import BaseSkeletonEstimModel, MODELS
 try:
-    from dl_engine.models.utils.sdtw_cuda_loss import SoftDTW
+    from dl_engine.model.utils.sdtw_cuda_loss import SoftDTW
 except Exception:
     warnings.warn("SoftDTW is not available. Training with SoftDTW will trigger error")
 
@@ -25,6 +25,7 @@ class MmMeshPredictor(BaseSkeletonEstimModel):
                  frame_len: int = 1,
                  in_channels: int= 6,
                  sort_dim: int = -1,
+                 sort_order: Literal["asc", "desc"] = "desc",
                  intensity_norm: tuple = (22.876, 5.058),
                  keypoints_involved: List[int] = [x for x in range(20) if x not in [7, 11, 15, 19]],
                  criterion: str = "MSELoss"
@@ -35,6 +36,7 @@ class MmMeshPredictor(BaseSkeletonEstimModel):
         self.frame_len = frame_len
         self.intensity_norm = intensity_norm
         self.sort_dim = sort_dim
+        self.sort_order = 1 if sort_order == "asc" else -1
         self.keypoints_involved = keypoints_involved
         self.base_pointnet = MODELS.build(base_pointnet_cfg)
         self.global_module = MODELS.build(global_module_cfg)
@@ -103,16 +105,16 @@ class MmMeshPredictor(BaseSkeletonEstimModel):
         
         for frame_seq, batched_frames in enumerate(pcd_frame_list):
             for batch_idx, pcd_frame in enumerate(batched_frames):
-                point_count, _ = pcd_frame.shape
-                pcd_frame[:, -1] = (pcd_frame[:, -1] - self.intensity_norm[0]) / self.intensity_norm[1]
+                point_count, _ = pcd_frame.shape    
                 if point_count < self.point_cloud_size:
                     raise ValueError("Point cloud should be padded in advance")
                     padding = np.zeros((self.point_cloud_size - point_count, self.in_channels))
                     pcd_frame = np.concatenate([pcd_frame, padding], axis=0) 
                 else:
-                    pcd_frame = pcd_frame[:self.point_cloud_size]
-                sorted_indices = np.argsort(pcd_frame[:, self.sort_dim])
-                final_pcd_frame[frame_seq, batch_idx] = pcd_frame[sorted_indices]
+                    sorted_indices = np.argsort(self.sort_order * pcd_frame[:, self.sort_dim])
+                    pcd_frame = pcd_frame[sorted_indices]
+                    pcd_frame[:, -1] = (pcd_frame[:, -1] - self.intensity_norm[0]) / self.intensity_norm[1]
+                final_pcd_frame[frame_seq, batch_idx] = pcd_frame[:self.point_cloud_size]
                 
         final_pcd_tensor = torch.from_numpy(final_pcd_frame).float().to(get_device())
         final_pcd_tensor = final_pcd_tensor.permute(1, 0, 2, 3).contiguous() # B x F x N x C

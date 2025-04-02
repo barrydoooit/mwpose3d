@@ -21,7 +21,6 @@ class SequenceClip(BaseTransform):
     def transform(self, input: dict):
         pcd_frames: List[np.ndarray] = input['pcd_frames']
         skel_frames: List[np.ndarray] = input['skel_frames']
-        
         assert len(pcd_frames) == len(skel_frames)
         assert len(pcd_frames) >= self.sequence_length
         

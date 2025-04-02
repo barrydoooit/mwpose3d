@@ -6,14 +6,16 @@ train_info = 'info_train.pkl'
 val_info = 'info_test.pkl'
 test_info = 'info_test.pkl'
 
-keypoint_involved=[0,1,2,3,4,5,6,8,9,10]
+keypoint_involved=[0,1,4,5,6,8,9,10]
 # keypoint_involved=[x for x in range(20) if x not in [7, 11, 15, 19]]
 point_cloud_size = 96
 model = dict(
     type="MmMeshPredictor",
     point_cloud_size=point_cloud_size,
     keypoints_involved=keypoint_involved,
-    intensity_norm=(43.75604688636036, 69.36111451909099),
+    sort_dim=1,
+    sort_order='asc',
+    intensity_norm=(43.75604688636036, 5.0),
     criterion='sdtw',
     base_pointnet_cfg=dict(
         type="BasePointNet",
@@ -77,7 +79,6 @@ train_pipeline = [
         load_pcd_dim=5,
         num_frames=num_frames,
         backup_frames=backup_frames,
-        load_all_skeletons=True,
     ),
     dict(
         type='CoordinateTransform',
@@ -88,7 +89,7 @@ train_pipeline = [
     ),
     dict(
         type='RandomFlip',
-        flip_prob=0.3,
+        flip_prob=0.5,
         duplicate_prob=0.1
     ),
     dict(
@@ -106,7 +107,7 @@ train_pipeline = [
     ),
     dict(
         type='RandomTransform',
-        transform_prob=0.2,
+        transform_prob=0.5,
         sigma_xyz=(0.15, 0.15, 0.05),
         max_d_xyz=(0.3, 0.3, 0.1)
     ),
@@ -164,7 +165,6 @@ val_pipeline = [
         load_pcd_dim=5,
         num_frames=num_frames,
         backup_frames=backup_frames,
-        load_all_skeletons=True,
     ),
     dict(
         type='CoordinateTransform',
@@ -237,7 +237,7 @@ test_dataloader = dict(
 
 vis_metric = dict(metric, visualizer_cfg=dict(
         keypoint_involved=keypoint_involved,
-        keypoint_for_stats=[0, 6, 10],
+        keypoint_for_stats=[0, 5, 9],
         error_type='abs_error'
     )
 )
@@ -251,6 +251,22 @@ ana_metric = dict(
     pos_pivot='first',
     output_dir='exp_data/test_logs',
     log_name=f'mmmesh_vital_spv2_pos_angle_norm_w{ana_window_size}.json'
+)
+
+res_metric = dict(
+    type='ControlResolutionAnalyzer',
+    keypoint_involved=keypoint_involved,
+    controlled_keypoints=[5, 6, 9, 10],
+    seg_length_n=1,
+    seg_correct_threshold=0.8,
+    motion_range_clip_ratio_xyz=[1.0, 0.8, 0.8],
+    acc_guarantee_k=[0.7, 0.8, 0.9]
+)
+
+vol_metric = dict(
+    type='VelocityEntropyAnalyzer',
+    keypoint_involved=keypoint_involved,
+    controlled_keypoints=[5, 9]
 )
 test_cfg = dict(
     type='TestLoop',

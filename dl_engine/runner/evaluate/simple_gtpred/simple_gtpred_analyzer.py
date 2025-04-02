@@ -15,6 +15,7 @@ class SimpleGTPredAnalyzer(BaseMetric):
         self.report = []
         self.gt_data = []
         self.pred_data = []
+        self.pcd_data = []
         if self.visuzalize:
             self._make_visualizer(visualizer_cfg)
         else:
@@ -27,9 +28,10 @@ class SimpleGTPredAnalyzer(BaseMetric):
             error_type=visualizer_cfg.get("error_type", "abs_error")
         )
         
-    def process_sample(self, data_sample):
+    def process_sample(self, data_sample, data_batch):
         gt = data_sample.gt
         pred = data_sample.pred
+        pcd = data_batch.get("final_pcd_tensor")[:, -2:, ...]
         assert isinstance(gt, torch.Tensor) and isinstance(pred, torch.Tensor), "Currently only support torch.Tensor as gt type, make conversion in the data_sample first"
         assert gt.shape == pred.shape, "gt and pred should have the same shape"
         frame_report = {}
@@ -45,9 +47,10 @@ class SimpleGTPredAnalyzer(BaseMetric):
         self.report.append(frame_report)
         self.gt_data.append(gt)
         self.pred_data.append(pred)
+        self.pcd_data.append(pcd)
         
         if self.visuzalize:
-            self.visualizer.update(gt, pred, frame_report)
+            self.visualizer.update(gt, pred, pcd, frame_report)
     
     def evaluate(self, show=True):
         joint_errors = {}
@@ -66,14 +69,14 @@ class SimpleGTPredAnalyzer(BaseMetric):
         
         if not show:
             if self.visualize:
-                self.visualizer.finalize(self.gt_data, self.pred_data, self.report)
+                self.visualizer.finalize(self.gt_data, self.pred_data, self.report, pc_data=self.pcd_data)
             return summary
         
         print("Summary Report:")
         for joint, metrics in summary.items():
             print(f"{joint}: MAE = {metrics['mae']:.4f}, RMSE = {metrics['rmse']:.4f}, MSE = {metrics['mse']:.4f}")   
         if self.visuzalize:
-            self.visualizer.finalize(self.gt_data, self.pred_data, self.report)
+            self.visualizer.finalize(self.gt_data, self.pred_data, self.report, pc_data=self.pcd_data)
         return summary
     
     def reset(self):

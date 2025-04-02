@@ -1,7 +1,7 @@
 from typing import List
 import torch
 import torch.nn as nn
-from ..base import MODELS
+from ...model.base import MODELS
 
 
 

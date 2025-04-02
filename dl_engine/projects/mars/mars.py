@@ -6,7 +6,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from mmengine.device import get_device
 from dl_engine.dataset.skel_data_sample import SkeletonDataSample
-from dl_engine.models.base import MODELS, BaseSkeletonEstimModel
+from dl_engine.model.base import MODELS, BaseSkeletonEstimModel
 
 @MODELS.register_module()
 class MarsPredictor(BaseSkeletonEstimModel):
@@ -14,16 +14,12 @@ class MarsPredictor(BaseSkeletonEstimModel):
                  point_cloud_size: int = 64, 
                  frame_len: int = 1,
                  in_channels: int= 5,
-                 sort_dim: int = 0,
-                 intensity_norm: tuple = (22.876, 5.058),
                  keypoints_involved: List[int] = [x for x in range(20) if x not in [7, 11, 15, 19]]
                  ):
         super().__init__()
         self.point_cloud_size = point_cloud_size
         self.in_channels = in_channels
         self.frame_len = frame_len
-        self.intensity_norm = intensity_norm
-        self.sort_dim = sort_dim
         self.keypoints_involved = keypoints_involved
         self.make_layers()
 
@@ -81,28 +77,21 @@ class MarsPredictor(BaseSkeletonEstimModel):
         
         for frame_seq, batched_frames in enumerate(pcd_frame_list):
             for batch_idx, pcd_frame in enumerate(batched_frames):
-                point_count, _ = pcd_frame.shape
-                pcd_frame[:, 4] = (pcd_frame[:, 4] - self.intensity_norm[0]) / self.intensity_norm[1]
-                if point_count < self.point_cloud_size:
-                    padding = np.zeros((self.point_cloud_size - point_count, 5))
-                    pcd_frame = np.concatenate([pcd_frame, padding], axis=0) 
-                else:
-                    pcd_frame = pcd_frame[:self.point_cloud_size]
-                sorted_indices = np.argsort(pcd_frame[:, self.sort_dim])
-                final_pcd_frame[frame_seq, batch_idx] = pcd_frame[sorted_indices]
+                final_pcd_frame[frame_seq, batch_idx] = pcd_frame[:self.point_cloud_size]
                 
         final_pcd_tensor = torch.from_numpy(final_pcd_frame).float().to(get_device())
         final_pcd_tensor = final_pcd_tensor.permute(1, 0, 2, 3).contiguous() # B x F x N x C
         
         
         skel_frame_list: List[Tuple[np.ndarray]] = data_batch_dict['skel_frames']
-        data_sample_list = []
-        assert len(skel_frame_list) == 1, "Currently only support single skeleton as ground truth"
-        batched_skel_frames = skel_frame_list[0]
-        for skel_frame in batched_skel_frames:
-            skel_frame = torch.from_numpy(skel_frame).float().to(get_device())
-            data_sample = SkeletonDataSample(gt=skel_frame)
-            data_sample_list.append(data_sample)
+        skel_frame_tensors = [
+           torch.tensor(np.stack(frame_batches, axis=0), dtype=torch.float32, device=get_device()) \
+               for frame_batches in list(zip(*skel_frame_list))
+        ]
+        data_sample_list = [
+            SkeletonDataSample(gt=skel_frame_tensor[:, :(skel_frame_tensor.shape[1] // 3) * 3])#.reshape(skel_frame_tensor.shape[0], -1, 3))
+            for skel_frame_tensor in skel_frame_tensors
+        ]
         
         return final_pcd_tensor, data_sample_list
         

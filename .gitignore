@@ -8,3 +8,6 @@ visualization
 checkpoints
 work_dirs
 playground.py
+**build
+**dist
+**.egg-info

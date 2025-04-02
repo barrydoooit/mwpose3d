@@ -36,9 +36,14 @@ class ValLoop(BaseLoop):
         return self._iter
 
     def run(self) -> torch.nn.Module:
+        self.runner.call_hook('before_val')
+        self.runner.call_hook('before_val_epoch')
         self._run_epoch()
         summary = self.evaluator.evaluate()
         self.evaluator.reset()
+        self.runner.call_hook('after_val_epoch', metrics=summary)
+        self.runner.call_hook('after_val')
+        
         return self.runner.model
     
     def _run_epoch(self) -> None:
@@ -46,13 +51,22 @@ class ValLoop(BaseLoop):
         with torch.no_grad():
             for idx, data_batch in enumerate(self.dataloader):
                 self._run_iter(idx, data_batch)
-    
+
+        
     def _run_iter(self, idx: int, data_batch: dict) -> None:
+        self.runner.call_hook(
+            'before_val_iter', batch_idx=idx, data_batch=data_batch)
         assert hasattr(self.runner.model, 'pack_input')
         batch_inputs, data_samples = self.runner.model.pack_input(data_batch)
         assert len(data_samples) == 1, 'TestLoop only supports batch_size=1'
-        _ = self.runner.model(batch_inputs, data_samples, mode='predict')
+        outputs = self.runner.model(batch_inputs, data_samples, mode='predict')
 
-        self.evaluator.process_sample(data_samples[0])
+        self.evaluator.process_sample(data_samples[0], data_batch=data_batch)
+        self.runner.call_hook(
+            'after_val_iter',
+            batch_idx=idx,
+            data_batch=data_batch,
+            outputs=outputs)
+                
         self._iter += 1
 

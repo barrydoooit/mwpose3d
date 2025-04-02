@@ -5,7 +5,7 @@ import torch
 import torch.nn as nn
 from mmengine.device import get_device
 from . import utils as msh_utils
-from ..base import MODELS
+from ...model.base import MODELS
 
 
 

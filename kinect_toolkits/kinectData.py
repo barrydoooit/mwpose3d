@@ -140,3 +140,12 @@ Connectivity = {
     KeypointType.ANKLE_RIGHT: [KeypointType.KNEE_RIGHT, KeypointType.FOOT_RIGHT],
     KeypointType.FOOT_RIGHT: [KeypointType.ANKLE_RIGHT],
 }
+
+ConnectivityUni = {key: [neighbor for neighbor in neighbors if key.value < neighbor.value]
+                   for key, neighbors in Connectivity.items()
+                   if any(key.value < neighbor.value for neighbor in neighbors)}
+ConnectivityVal = {key.value: [neighbor.value for neighbor in neighbors]
+                     for key, neighbors in Connectivity.items()}
+ConnectivityValUni = {key.value: [neighbor.value for neighbor in neighbors]
+                     for key, neighbors in ConnectivityUni.items()}
+    

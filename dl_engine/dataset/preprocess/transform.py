@@ -135,3 +135,53 @@ class RandomScale(BaseTransform):
             keypoints *= self.scale_factors
             frame[:len(frame) // 3 * 3] = keypoints.flatten()
         return input
+    
+@TRANSFORM.register_module()
+class RandomRot3D(BaseTransform):
+    def __init__(self,
+                 azimuth_range: Tuple[float, float] = (-10, 10),
+                 elevation_range: Tuple[float, float] = (-5, 5),
+                 roll_range: Tuple[float, float] = (-5, 5)):
+        super().__init__(online_mode=False)
+        self.azimuth_range = azimuth_range
+        self.elevation_range = elevation_range
+        self.roll_range = roll_range
+
+    def get_rotation_matrix(self, angle: float, axis: np.ndarray) -> np.ndarray:
+        angle_rad = np.radians(angle)
+        axis = axis / np.linalg.norm(axis)
+        cos_a = np.cos(angle_rad)
+        sin_a = np.sin(angle_rad)
+        one_minus_cos = 1 - cos_a
+        
+        x, y, z = axis
+        rot_matrix = np.array([
+            [cos_a + x*x*one_minus_cos, x*y*one_minus_cos - z*sin_a, x*z*one_minus_cos + y*sin_a],
+            [y*x*one_minus_cos + z*sin_a, cos_a + y*y*one_minus_cos, y*z*one_minus_cos - x*sin_a],
+            [z*x*one_minus_cos - y*sin_a, z*y*one_minus_cos + x*sin_a, cos_a + z*z*one_minus_cos]
+        ])
+        return rot_matrix
+
+    def transform(self, input: dict):
+        pcd_frames: Tuple[np.ndarray] = input['pcd_frames']
+        skel_frames: Tuple[np.ndarray] = input['skel_frames']
+        
+        azimuth = np.random.uniform(*self.azimuth_range)
+        elevation = np.random.uniform(*self.elevation_range)
+        roll = np.random.uniform(*self.roll_range) 
+        
+        rot_z = self.get_rotation_matrix(azimuth, np.array([0, 0, 1]))
+        rot_x = self.get_rotation_matrix(elevation, np.array([1, 0, 0]))
+        rot_y = self.get_rotation_matrix(roll, np.array([0, 1, 0]))
+        
+        rotation_matrix = rot_y @ rot_x @ rot_z
+        
+        for frame in pcd_frames:
+            frame[:, :3] = frame[:, :3] @ rotation_matrix 
+        
+        for frame in skel_frames:
+            keypoints = frame[:len(frame)//3*3].reshape(-1, 3)
+            keypoints = keypoints @ rotation_matrix
+            frame[:len(frame)//3*3] = keypoints.flatten()
+        
+        return input

@@ -4,8 +4,7 @@ from kinect_toolkits.kinectData import KeypointType, Connectivity
 import tkinter as tk
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
-    
-    
+import matplotlib.pyplot as plt  # Needed for colormap
 
 class SimpleGTPredVisualizer:
     def __init__(self, 
@@ -20,32 +19,40 @@ class SimpleGTPredVisualizer:
         self.root = tk.Tk()
         self.root.title("3D Skeleton Visualization")
 
-        # Top frame for skeletons
+        # Top frame for skeletons and point cloud
         top_frame = tk.Frame(self.root)
         top_frame.pack(side=tk.TOP, fill=tk.BOTH, expand=True)
 
-        # Ground Truth and Prediction frames
+        # Create three frames: Ground Truth, Point Cloud, and Prediction
         frame_gt = tk.Frame(top_frame)
+        frame_pc = tk.Frame(top_frame)
         frame_pred = tk.Frame(top_frame)
         frame_gt.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-        frame_pred.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True)
+        frame_pc.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        frame_pred.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
 
-        # Initialize GT plot
+        # Initialize Ground Truth plot
         self.fig_gt = Figure(figsize=(5, 5))
         self.ax_gt = self.fig_gt.add_subplot(111, projection='3d')
         self._setup_axes(self.ax_gt, "Ground Truth")
         self.canvas_gt = FigureCanvasTkAgg(self.fig_gt, master=frame_gt)
         self.canvas_gt.get_tk_widget().pack(fill=tk.BOTH, expand=True)
 
-        # Initialize Pred plot
+        # Initialize Point Cloud plot
+        self.fig_pc = Figure(figsize=(5, 5))
+        self.ax_pc = self.fig_pc.add_subplot(111, projection='3d')
+        self._setup_axes(self.ax_pc, "Point Cloud")
+        self.canvas_pc = FigureCanvasTkAgg(self.fig_pc, master=frame_pc)
+        self.canvas_pc.get_tk_widget().pack(fill=tk.BOTH, expand=True)
+
+        # Initialize Prediction plot
         self.fig_pred = Figure(figsize=(5, 5))
         self.ax_pred = self.fig_pred.add_subplot(111, projection='3d')
         self._setup_axes(self.ax_pred, "Prediction")
         self.canvas_pred = FigureCanvasTkAgg(self.fig_pred, master=frame_pred)
         self.canvas_pred.get_tk_widget().pack(fill=tk.BOTH, expand=True)
 
-        # Initialize persistent plot objects instead of redrawing every frame
-        # Precompute connectivity pairs (only include if both keypoints are involved)
+        # Initialize persistent plot objects for skeletons
         self.connectivity_pairs = []
         for kp in self.keypoint_involved:
             if kp in Connectivity:
@@ -109,6 +116,7 @@ class SimpleGTPredVisualizer:
         # Data storage for replay
         self.gt_data = []
         self.pred_data = []
+        self.pc_data = []  # New storage for point cloud data
         self.report = []
         self.num_frames = 0
 
@@ -146,10 +154,58 @@ class SimpleGTPredVisualizer:
             line.set_data([source[0], target[0]], [source[1], target[1]])
             line.set_3d_properties([source[2], target[2]])
 
-    def update(self, gt_tensor, pred_tensor, frame_report=None):
-        # Update the skeleton plots using the persistent objects
+    def update_point_cloud(self, pc_tensor):
+        """
+        Update the point cloud plot with the provided tensor.
+        pc_tensor: torch tensor of shape [1, F, N, C]
+                   where F is the number of frames, N is the number of points,
+                   and C is the point attributes (first three are X, Y, Z).
+        If F > 1, a gradient color from blue to green is used to represent different frames.
+        """
+        # Clear the axis and reset settings
+        self.ax_pc.cla()
+        self._setup_axes(self.ax_pc, "Point Cloud")
+        
+        # Determine the number of frames and points
+        _, F, N, C = pc_tensor.shape
+        
+        if F > 1:
+            cmap = plt.get_cmap("winter_r")  # reversed colormap: transitions from green to blue
+            for f in range(F):
+                frame_points = pc_tensor[0, f]  # shape [N, C]
+                # Extract X, Y, Z coordinates
+                x = frame_points[:, 0].cpu().numpy() if isinstance(frame_points, torch.Tensor) else frame_points[:, 0]
+                y = frame_points[:, 1].cpu().numpy() if isinstance(frame_points, torch.Tensor) else frame_points[:, 1]
+                z = frame_points[:, 2].cpu().numpy() if isinstance(frame_points, torch.Tensor) else frame_points[:, 2]
+                # Calculate a gradient color based on the frame index
+                fraction = f / (F - 1)
+                color = cmap(fraction)
+                self.ax_pc.scatter(x, y, z, color=color)
+        else:
+            # Single frame: use a default color
+            frame_points = pc_tensor[0, 0]  # shape [N, C]
+            x = frame_points[:, 0].cpu().numpy() if isinstance(frame_points, torch.Tensor) else frame_points[:, 0]
+            y = frame_points[:, 1].cpu().numpy() if isinstance(frame_points, torch.Tensor) else frame_points[:, 1]
+            z = frame_points[:, 2].cpu().numpy() if isinstance(frame_points, torch.Tensor) else frame_points[:, 2]
+            self.ax_pc.scatter(x, y, z, color="blue")
+            
+        self.canvas_pc.draw_idle()
+
+    def update(self, gt_tensor, pred_tensor, pc_tensor, frame_report=None):
+        """
+        Update the skeleton and point cloud plots.
+        
+        Parameters:
+            gt_tensor: Ground truth skeleton tensor.
+            pred_tensor: Prediction skeleton tensor.
+            pc_tensor: Point cloud tensor of shape [1, F, N, C].
+            frame_report: (Optional) Dictionary with frame error reports.
+        """
+        # Update the skeleton plots
         self._update_skeleton(gt_tensor, self.scatter_gt, self.lines_gt)
         self._update_skeleton(pred_tensor, self.scatter_pred, self.lines_pred)
+        # Update the point cloud plot
+        self.update_point_cloud(pc_tensor)
         self.canvas_gt.draw_idle()
         self.canvas_pred.draw_idle()
 
@@ -158,6 +214,7 @@ class SimpleGTPredVisualizer:
             self.report.append(frame_report)
         self.gt_data.append(gt_tensor)
         self.pred_data.append(pred_tensor)
+        self.pc_data.append(pc_tensor)
 
         # Update stats errors for each keypoint in keypoint_for_stats
         if frame_report is not None:
@@ -210,17 +267,22 @@ class SimpleGTPredVisualizer:
         self.canvas_stats.draw_idle()
 
     def _update_replay(self, frame_idx):
-        if frame_idx < len(self.gt_data) and frame_idx < len(self.pred_data):
+        # Update skeleton and point cloud for the selected replay frame
+        if (frame_idx < len(self.gt_data) and 
+            frame_idx < len(self.pred_data) and 
+            frame_idx < len(self.pc_data)):
             self._update_skeleton(self.gt_data[frame_idx], self.scatter_gt, self.lines_gt)
             self._update_skeleton(self.pred_data[frame_idx], self.scatter_pred, self.lines_pred)
+            self.update_point_cloud(self.pc_data[frame_idx])
             self.canvas_gt.draw_idle()
             self.canvas_pred.draw_idle()
 
-    def setup_replay(self, gt_data, pred_data, report):
+    def setup_replay(self, gt_data, pred_data, report, pc_data):
         self.gt_data = gt_data
         self.pred_data = pred_data
+        self.pc_data = pc_data
         self.report = report
     
-    def finalize(self, gt_data, pred_data, report):
-        self.setup_replay(gt_data, pred_data, report)
+    def finalize(self, gt_data, pred_data, report, pc_data):
+        self.setup_replay(gt_data, pred_data, report, pc_data)
         self.root.mainloop()

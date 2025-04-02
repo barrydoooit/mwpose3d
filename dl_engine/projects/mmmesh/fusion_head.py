@@ -2,7 +2,7 @@ from typing import List
 import torch
 import torch.nn as nn
 
-from dl_engine.models.base import MODELS
+from dl_engine.model.base import MODELS
 
 
 

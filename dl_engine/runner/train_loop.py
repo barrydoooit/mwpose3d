@@ -48,6 +48,8 @@ class EpochBasedTrainLoop(BaseLoop):
         return self._iter
 
     def run(self) -> torch.nn.Module:
+        self.runner.call_hook('before_train')
+        
         while self._epoch < self._max_epochs and not self.stop_training:
             self._run_epoch()
             if (self.runner.val_loop is not None
@@ -56,17 +58,23 @@ class EpochBasedTrainLoop(BaseLoop):
                          or self._epoch == self._max_epochs)):
                 self.runner.val_loop.run()
                 self.runner.save_checkpoint(f'epoch_{self._epoch}.pth')
+        
+        self.runner.call_hook('after_train')
         return self.runner.model
     
     def _run_epoch(self) -> None:
+        self.runner.call_hook('before_train_epoch')
         self.runner.model.train()
         if self._epoch % 50 == 0:
             print(f'Epoch [{self._epoch}/{self._max_epochs}]')
         for idx, data_batch in enumerate(self.dataloader):
             self._run_iter(idx, data_batch)
+            
+        self.runner.call_hook('after_train_epoch')
         self._epoch += 1
     
     def _run_iter(self, idx: int, data_batch: dict) -> None:
+        self.runner.call_hook('before_train_iter', batch_idx=idx, data_batch=data_batch)
         assert hasattr(self.runner.model, 'pack_input')
         batch_inputs, data_samples = self.runner.model.pack_input(data_batch)
         loss = self.runner.model(batch_inputs, data_samples, mode='loss')
@@ -75,6 +83,12 @@ class EpochBasedTrainLoop(BaseLoop):
         self.runner.optimizer.zero_grad()
         loss.backward()
         self.runner.optimizer.step()
+        
+        self.runner.call_hook(
+            'after_train_iter',
+            batch_idx=idx,
+            data_batch=data_batch,
+            outputs=loss)
         self._iter += 1
         
         

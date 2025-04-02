@@ -41,3 +41,37 @@ class AddRangeDimension(BaseTransform):
             added_recent_frames.append(pcd_frame)
         input['pcd_frames'] = pcd_frames[:-num_recent_frames] + tuple(added_recent_frames)
         return input
+
+@TRANSFORM.register_module()
+class NormalizePointAttr(BaseTransform):
+    def __init__(self,
+                 attr_indices: Tuple[int],
+                 means: Tuple[float],
+                 stds: Tuple[float],
+                 online_mode: bool = False
+                 ):
+        super().__init__(online_mode)
+        self.attr_indices = attr_indices
+        self.means = means
+        self.stds = stds
+
+    def transform(self, input: dict):
+        pcd_frames: Tuple[np.ndarray] = input['pcd_frames']
+        normed_frames = []
+        for pcd_frame in pcd_frames:
+            pcd_frame[:, self.attr_indices] = (pcd_frame[:, self.attr_indices] - self.means) / self.stds
+            normed_frames.append(pcd_frame)
+        input['pcd_frames'] = tuple(normed_frames)
+        return input
+    
+    def transform_online(self, input: dict):
+        pcd_frames: Tuple[np.ndarray] = input['pcd_frames']
+        num_recent_frames = input.get('num_recent_frames', 1)
+        recent_frames = pcd_frames[-num_recent_frames:]
+        
+        normed_recent_frames = []
+        for pcd_frame in recent_frames:
+            pcd_frame[:, self.attr_indices] = (pcd_frame[:, self.attr_indices] - self.means) / self.stds
+            normed_recent_frames.append(pcd_frame)
+        input['pcd_frames'] = pcd_frames[:-num_recent_frames] + tuple(normed_recent_frames)
+        return input
