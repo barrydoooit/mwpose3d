@@ -4,7 +4,7 @@ custom_imports = dict(
 data_root = './data/neat/vital'
 train_info = 'info_train.pkl'
 val_info = 'info_test.pkl'
-test_info = 'info_test.pkl'
+test_info = 'info_train.pkl'
 
 keypoints_involved=[0,1,4,5,6,8,9,10]
 num_joints = len(keypoints_involved)
@@ -31,8 +31,8 @@ model = dict(
         seq_tag=seq_tag,
         nblocks=5,
         n_p=num_joints,
-        dropout=0.01,
-        drop_key=0.01,
+        dropout=0.1,
+        drop_key=0.1,
         dim=512, # 32 * 2^(nblocks-1)
         depth=5,
         dim_head=128,
@@ -92,7 +92,7 @@ train_pipeline = [
     dict(
         type='RandomFlip',
         flip_prob=0.5,
-        duplicate_prob=0.1
+        duplicate_prob=0.
     ),
     dict(
         type='PointCloudRangeFilter',
@@ -101,11 +101,16 @@ train_pipeline = [
         backup_frames=backup_frames
     ),
     dict(
+        type='RandomFrameDrop',
+        drop_prob=0.1,
+        max_drop=2,
+    ),
+    dict(
         type='RandomScale',
-        scale_prob=0.2,
-        scale_range_x=(0.95, 1.05),
+        scale_prob=0.3,
+        scale_range_x=(0.9, 1.1),
         scale_range_y=(0.95, 1.05),
-        scale_range_z=(0.9, 1.1)
+        scale_range_z=(0.8, 1.1)
     ),
     dict(
         type='RandomRot3D',
@@ -117,12 +122,17 @@ train_pipeline = [
         type='RandomTransform',
         transform_prob=0.5,
         sigma_xyz=(0.15, 0.15, 0.1),
-        max_d_xyz=(0.3, 0.3, 0.3)
+        max_d_xyz=(0.5, 0.5, 0.5)
     ),
     dict(
         type='SequenceClip',
         mode='last',
         sequence_length=seq_frames # NOTE: This is for phase 1. Phase 2 will use num_frames
+    ),
+    dict(
+        type='SequenceReverse',
+        reverse_prob=0.5,
+        velocity_idx=3
     ),
     dict(
         type='PointDuplicator',
@@ -238,6 +248,7 @@ train_cfg = dict(
     pretrain_max_epochs=400,
     train_max_epochs=0,
     val_interval=20,
+    load_pretrain_from="work_dirs/mmdiff/phase_1-epoch_380.pth",
     phase_cfg = dict(
         phase1=dict(
             amp=False,
@@ -255,7 +266,7 @@ train_cfg = dict(
             lr=lr_phase2,
             num_frames=num_frames,
             backup_frames=backup_frames,
-            batch_size=128
+            batch_size=128,
         )
     )
 )

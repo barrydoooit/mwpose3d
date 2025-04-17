@@ -139,7 +139,7 @@ class MmMeshPredictor(BaseSkeletonEstimModel):
             h0_a=h0_a,
             c0_a=c0_a
         )
-        
+        data_batch_dict["final_pcd_tensor"] = final_pcd_tensor
         return batch_inputs, data_sample_list
         
     def pack_input_online(self, data_batch_dict: dict):
@@ -184,5 +184,5 @@ class MmMeshPredictor(BaseSkeletonEstimModel):
             h0_a=h0_a,
             c0_a=c0_a
         )
-        
+        data_batch_dict["final_pcd_tensor"] = final_pcd_tensor
         return batch_inputs, [SkeletonDataSample(gt=None) for _ in range(final_pcd_tensor.shape[0])]

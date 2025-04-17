@@ -112,11 +112,10 @@ class RandomScale(BaseTransform):
                  ):
         super().__init__(online_mode=False)
         self.scale_prob = scale_prob
-        self.scale_factors = np.array([
-            np.random.uniform(scale_range_x[0], scale_range_x[1]),
-            np.random.uniform(scale_range_y[0], scale_range_y[1]),
-            np.random.uniform(scale_range_z[0], scale_range_z[1])
-        ])
+        self.scale_range_x = scale_range_x
+        self.scale_range_y = scale_range_y
+        self.scale_range_z = scale_range_z
+
     
     
     def transform(self, input):
@@ -126,13 +125,17 @@ class RandomScale(BaseTransform):
         to_scale = np.random.rand() < self.scale_prob
         if not to_scale:
             return input
-        
+        scale_factors = np.array([
+            np.random.uniform(*self.scale_range_x),
+            np.random.uniform(*self.scale_range_y),
+            np.random.uniform(*self.scale_range_z)
+        ])
         for frame in pcd_frames:
-            frame[:, :3] *= self.scale_factors
+            frame[:, :3] *= scale_factors
         
         for frame in skel_frames:
             keypoints = frame[:len(frame) // 3 * 3].reshape(-1, 3)
-            keypoints *= self.scale_factors
+            keypoints *= scale_factors
             frame[:len(frame) // 3 * 3] = keypoints.flatten()
         return input
     
@@ -183,5 +186,61 @@ class RandomRot3D(BaseTransform):
             keypoints = frame[:len(frame)//3*3].reshape(-1, 3)
             keypoints = keypoints @ rotation_matrix
             frame[:len(frame)//3*3] = keypoints.flatten()
+        
+        return input
+
+@TRANSFORM.register_module()
+class SequenceReverse(BaseTransform):
+    def __init__(self, reverse_prob: float = 0.3, velocity_idx: int = 3):
+        super().__init__(online_mode=False)
+        self.reverse_prob = reverse_prob
+        self.velocity_idx = velocity_idx
+
+    def transform(self, input: dict):
+        pcd_frames: Tuple[np.ndarray] = input['pcd_frames']
+        skel_frames: Tuple[np.ndarray] = input['skel_frames']
+
+        to_reverse = np.random.rand() < self.reverse_prob
+        if not to_reverse:
+            return input
+        
+        input['pcd_frames'] = pcd_frames[::-1]
+        input['skel_frames'] = skel_frames[::-1]
+        
+        for frame in input['pcd_frames']:
+            frame[:, self.velocity_idx] *= -1
+            
+        return input
+
+@TRANSFORM.register_module()
+class RandomFrameDrop(BaseTransform):
+    def __init__(self, drop_prob: float, max_drop: int, min_frame_len: int=None):
+        super().__init__(online_mode=False)
+        self.drop_prob = drop_prob
+        self.max_drop = max_drop
+        self.min_frame_len = min_frame_len
+    
+    def transform(self, input: dict):
+        pcd_frames: Tuple[np.ndarray] = input['pcd_frames']
+        skel_frames: Tuple[np.ndarray] = input['skel_frames']
+
+        to_drop = np.random.rand() < self.drop_prob
+        if not to_drop:
+            return input
+        
+        drop_count = np.random.randint(1, self.max_drop + 1)
+        if self.min_frame_len is None:
+            self.min_frame_len = input.get('target_num_frames', 0)
+        if len(pcd_frames) - drop_count < self.min_frame_len:
+            drop_count = max(0, len(pcd_frames) - self.min_frame_len)
+        if drop_count == 0:
+            return input
+        drop_indices = np.random.choice(len(pcd_frames), drop_count, replace=False)
+        
+        pcd_frames = [frame for i, frame in enumerate(pcd_frames) if i not in drop_indices]
+        skel_frames = [frame for i, frame in enumerate(skel_frames) if i not in drop_indices]
+        
+        input['pcd_frames'] = pcd_frames
+        input['skel_frames'] = skel_frames
         
         return input

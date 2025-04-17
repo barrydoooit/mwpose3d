@@ -92,7 +92,7 @@ class MarsPredictor(BaseSkeletonEstimModel):
             SkeletonDataSample(gt=skel_frame_tensor[:, :(skel_frame_tensor.shape[1] // 3) * 3])#.reshape(skel_frame_tensor.shape[0], -1, 3))
             for skel_frame_tensor in skel_frame_tensors
         ]
-        
+        data_batch_dict["final_pcd_tensor"] = final_pcd_tensor
         return final_pcd_tensor, data_sample_list
         
             

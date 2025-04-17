@@ -6,10 +6,10 @@ from .point_value_control import AddRangeDimension, NormalizePointAttr
 from .point_number_control import PointDuplicator, PointSortAndClip
 from .coord_trans import CoordinateTransform
 from .sequence_clip import SequenceClip
-from .transform import RandomFlip, RandomScale, RandomTransform, RandomRot3D
+from .transform import RandomFlip, RandomScale, RandomTransform, RandomRot3D, SequenceReverse, RandomFrameDrop
 
 __all__ = ['LoadSingleFrameFromH5', 'PointCloudRangeFilter', 'SkeletonKeypointFilter', 
-           'AddRangeDimension', 'PointDuplicator', 'CoordinateTransform', 'SequenceClip', 
+           'AddRangeDimension', 'PointDuplicator', 'CoordinateTransform', 'SequenceClip', 'SequenceReverse', 'RandomFrameDrop',
            'RandomFlip', 'RandomScale', 'RandomTransform', 'RandomRot3D',
            'PointSortAndClip', 'NormalizePointAttr']
 

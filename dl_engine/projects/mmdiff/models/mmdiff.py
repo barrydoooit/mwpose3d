@@ -40,9 +40,9 @@ class mmDiffPredictor(BaseSkeletonEstimModel):
                  input_shape: Tuple[int, int, int, int],
                  output_shape: Tuple[Tuple[int, int, int], Tuple[int, int, int]],
                  global_flag: Literal[0, 1],
-                 local_flag: Literal[0, 1],
+                 local_flag: Literal[0, 1, 2],
                  temp_flag: Literal[0, 1],
-                 limb_flag: Literal[0, 1],
+                 limb_flag: Literal[0, 1, 2],
                  gt_norm_joint: int = 1,
                 ):
         super().__init__()
@@ -158,21 +158,15 @@ class mmDiffPredictor(BaseSkeletonEstimModel):
             return loss
         
         with torch.no_grad():
-            out_pose_pr_curr, out_pose_feat = self.extract_feat(batch_inputs['final_pcd_tensor'], only_current_frame=True)
-        out_pose_pr_list = []
-        gt = torch.stack([data_sample.gt for data_sample in data_samples], dim=0)
-        for i in range(self.past_frames):
-            idx_curr = gt.shape[1] - 1 - self.past_frames + i
-            out_pose = gt[:, idx_curr, :, :]
-            out_pose_pr_list.append(out_pose)
-            # out_pose_pr_list.append(out_pose[:,:,:] - out_pose[:, [self.gt_norm_joint], :]) # NOTE: gt normal now disabled
-        out_pose_pr_list.append(out_pose_pr_curr)
-        # out_pose_pr_list.append(out_pose_pr_curr[:,:,:] - out_pose_pr_curr[:, [self.gt_norm_joint], :]) # NOTE: gt normal now disabled
+            out_pose_pr_list, out_pose_feat = self.extract_feat(batch_inputs['final_pcd_tensor'], only_current_frame=False, return_list=True)
+        gt = torch.stack([data_sample.gt[-1] for data_sample in data_samples], dim=0)
+        out_pose_pr_list.pop(-1)
+        out_pose_pr_list.append(gt)
         out_pose_pr = torch.concat(out_pose_pr_list, dim=2)
 
-        out_pose_noise_scale = torch.ones_like(out_pose_pr_curr, dtype=torch.float32, device=get_device())
+        out_pose_noise_scale = torch.ones_like(gt, dtype=torch.float32, device=get_device())
 
-        out_pose_3d = torch.stack([data_sample.gt[-1] for data_sample in data_samples], dim=0)
+        out_pose_3d = gt
         # out_pose_3d = out_pose_3d[:,:,:] - out_pose_3d[:, [self.gt_norm_joint], :] # NOTE: gt normal now disabled
         limb_list = []
         for i in range(len(self.edges_compressed)):

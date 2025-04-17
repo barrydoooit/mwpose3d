@@ -23,8 +23,10 @@ class MMDiffPipelineHook(Hook):
         
         train_loop.grad_scaler = torch.GradScaler(device=get_device(), enabled=train_loop.phase1_cfg.get('amp', False))
 
-        if train_loop.load_pretrain_from is not None:
-            raise NotImplementedError("TODO: load pretrain from checkpoint and skip phase 1")
+        if train_loop.load_pretrain_from is not None and train_loop.pretrain_max_epochs == 0:
+                checkpoint = torch.load(train_loop.load_pretrain_from, map_location=get_device(), weights_only=False)
+                print("Loading pretrained feature encoder from: ", train_loop.load_pretrain_from)
+                runner.model.load_state_dict(checkpoint, strict=True)
         
         train_loop.ema_helper = None if not train_loop.phase2_cfg.get('ema', False) else EMAHelper(
             mu=train_loop.phase2_cfg.get('ema_rate')
@@ -65,7 +67,9 @@ class MMDiffPipelineHook(Hook):
             new_lr = train_loop.phase2_cfg.get('lr')
             for param_group in runner.optimizer.param_groups:
                 param_group['lr'] = new_lr
-        
+        if train_loop.epoch >= train_loop.pretrain_max_epochs:
+            runner.model.model_feat.eval()
+                
     def _before_epoch(self, runner, mode = 'train'):
         if mode == 'val':
             train_loop = runner._train_loop

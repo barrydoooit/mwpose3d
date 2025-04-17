@@ -46,7 +46,7 @@ class LoadMultiFrameFromH5(BaseTransform):
         self.backup_frames = backup_frames
         self.load_pcd_dim = load_pcd_dim
         self.num_frames = num_frames
-    
+            
     def transform(self, input: dict):
         local_idx: int = input['local_idx']
         file_path: Path = input['file_path']
@@ -93,5 +93,6 @@ class LoadMultiFrameFromH5(BaseTransform):
                 skel_data = f['skel'][last_backup_idx - i]
                 skel_frames.insert(0, skel_data)
             input['skel_frames'] = tuple(skel_frames)
-                    
+        
+        input['target_num_frames'] = self.num_frames
         return input

@@ -1,6 +1,7 @@
 import copy
 from logging import config
 from pathlib import Path
+import os.path as osp
 from typing import Dict, List, Optional, Union
 from mmengine.config import Config, ConfigDict
 from mmengine.device import get_device
@@ -55,6 +56,7 @@ class Runner:
         self.register_hooks(default_hooks, custom_hooks)
 
         self.cfg = copy.deepcopy(cfg) if cfg is not None else None
+        self.dump_config()
         
     @staticmethod
     def build_dataloader(dataloader_cfg: dict):
@@ -137,6 +139,14 @@ class Runner:
         )
         return runner
     
+    def dump_config(self) -> None:
+        """Dump config to `work_dir`."""
+        if self.cfg.filename is not None:
+            filename = osp.basename(self.cfg.filename)
+        else:
+            filename = f'{self.timestamp}.py'
+        self.cfg.dump(osp.join(self.work_dir, filename))
+        
     def train(self):
         print('Start training')
         self.train_loop.run()
