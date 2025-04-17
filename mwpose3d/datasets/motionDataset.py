@@ -1,7 +1,7 @@
 from pathlib import Path
 import pickle
 from typing import TYPE_CHECKING
-
+from mmengine.dataset import Compose
 import numpy as np
 
 from mwpose3d.datasets.transforms.base import TRANSFORMS, BaseTransform
@@ -33,14 +33,18 @@ class MotionDataset:
         self.cum_frames, self.file_names = self._build_global_idx_to_file_table()
         self.total_frames = self.cum_frames[-1] if self.cum_frames.size > 0 else 0
         
-        self.pipeline: list['BaseTransform'] = self._build_pipeline(pipeline)
+        self.pipeline: list['BaseTransform'] = Compose(pipeline)
         print("MotionDataset initialized with total_frames:", self.total_frames)
         
     def _build_pipeline(self, pipeline: list):
-        if isinstance(pipeline[0], dict):
-            return [TRANSFORMS.build(p) for p in pipeline]
-        else:
-            return pipeline
+        transforms = []
+        for p in pipeline:
+            if isinstance(p, dict):
+                transforms.append(TRANSFORMS.build(p))
+            elif isinstance(p, BaseTransform):
+                transforms.append(p)
+            else:
+                raise TypeError(f"Pipeline item {p} is not a valid transform.")
     
     def _build_global_idx_to_file_table(self):
         cum_list = []
@@ -92,6 +96,5 @@ class MotionDataset:
         sample =  {'global_idx': idx, 
                 'local_idx': local_idx,
                 'file_path': self.data_root / file_name,}
-        for transform in self.pipeline:
-            sample = transform(sample)
+        sample = self.pipeline(sample)
         return sample

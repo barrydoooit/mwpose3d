@@ -1,0 +1,1 @@
+default_scope = 'mwpose3d'

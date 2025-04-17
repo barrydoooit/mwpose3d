@@ -15,7 +15,7 @@ def main():
     parser = argparse.ArgumentParser(description='Create data.')
     parser.add_argument('--gui', action='store_true', help='Use GUI to select files.', default=False)
     parser.add_argument('--raw-dir', type=str, help='Data directory.', default='./data/raw')
-    parser.add_argument('--output-dir', type=str, help='Output directory.', default='./data/neat')
+    parser.add_argument('--output-dir', type=str, help='Output directory.', default='./data/experimental/neat')
     args = parser.parse_args()
     
     raw_dir = Path(args.raw_dir)

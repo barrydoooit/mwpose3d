@@ -2,11 +2,14 @@ import copy
 from logging import config
 from pathlib import Path
 import os.path as osp
+import time
 from typing import Dict, List, Optional, Union
+import mmengine
 from mmengine.config import Config, ConfigDict
 from mmengine.device import get_device
 from mmengine.hooks import Hook
 from mmengine.runner import Priority, get_priority
+from mmengine.registry import DefaultScope
 import torch
 from torch.utils.data import DataLoader
 from mwpose3d.registry import HOOKS, DATASETS, MODELS, LOOPS
@@ -32,13 +35,23 @@ class Runner:
                  custom_hooks: Optional[List[Union[Hook, Dict]]] = None,
                  optimizer_cfg: Optional[dict] = None,
                  load_from: Optional[str] = None,
+                env_cfg: Dict = dict(dist_cfg=dict(backend='nccl')),
+                 default_scope: str = 'mmengine',
+                 experiment_name: Optional[str] = None,
                  cfg: Optional[ConfigType] = None,):
-        self.work_dir = Path(work_dir)
-        self.work_dir.mkdir(parents=True, exist_ok=True)
-        
-        self.model: torch.nn.Module = MODELS.build(model)
-        self.model.to(get_device())
-        
+        self._work_dir = Path(work_dir)
+        mmengine.mkdir_or_exist(self._work_dir)
+
+        # recursively copy the `cfg` because `self.cfg` will be modified
+        # everywhere.
+        if cfg is not None:
+            if isinstance(cfg, Config):
+                self.cfg = copy.deepcopy(cfg)
+            elif isinstance(cfg, dict):
+                self.cfg = Config(cfg)
+        else:
+            self.cfg = Config(dict())
+
         self._train_dataloader = train_dataloader
         self._train_loop = train_cfg
         self._optimizer_cfg = optimizer_cfg
@@ -49,6 +62,24 @@ class Runner:
         self._test_dataloader = test_dataloader
         self._test_loop = test_cfg
         self._load_from = load_from
+
+        self.setup_env(env_cfg)
+        if experiment_name is not None:
+            self._experiment_name = f'{experiment_name}_{self._timestamp}'
+        elif self.cfg.filename is not None:
+            filename_no_ext = osp.splitext(osp.basename(self.cfg.filename))[0]
+            self._experiment_name = f'{filename_no_ext}_{self._timestamp}'
+        else:
+            self._experiment_name = self.timestamp
+        
+        if default_scope is not None:
+            default_scope = DefaultScope.get_instance(  # type: ignore
+                self._experiment_name,
+                scope_name=default_scope)
+        self.default_scope = default_scope
+        print(f"Default scope: {self.default_scope.scope_name}")
+        self.model: torch.nn.Module = MODELS.build(model)
+        self.model.to(get_device())
         
         self._hooks: List[Hook] = []
         self.register_hooks(default_hooks, custom_hooks)
@@ -133,6 +164,8 @@ class Runner:
             custom_hooks=cfg.get('custom_hooks', None),
             optimizer_cfg=cfg.get('optimizer_cfg'),
             load_from=cfg.get('load_from', None),
+            default_scope=cfg.get('default_scope', 'mmengine'),
+            experiment_name=cfg.get('experiment_name', None),
             cfg=cfg
         )
         return runner
@@ -144,7 +177,7 @@ class Runner:
         else:
             filename = f'{self.timestamp}.py'
         self.cfg.dump(osp.join(self.work_dir, filename))
-        
+    
     def train(self):
         print('Start training')
         self.train_loop.run()
@@ -157,6 +190,13 @@ class Runner:
         self.test_loop.run()
         print('Testing finished')
 
+    def setup_env(self, env_cfg: Dict) -> None: 
+        timestamp = torch.tensor(time.time(), dtype=torch.float64)
+        # broadcast timestamp from 0 process to other processes
+        self._timestamp = time.strftime('%Y%m%d_%H%M%S',
+                                        time.localtime(timestamp.item()))
+
+            
     def save_checkpoint(self, filename: str):
         torch.save(self.model.state_dict(), self.work_dir / filename)
     
@@ -168,6 +208,10 @@ class Runner:
     @property
     def hooks(self) -> List[Hook]:
         return self._hooks
+    
+    @property
+    def work_dir(self) -> str:
+        return str(self._work_dir)
     
     def register_hook(
             self,

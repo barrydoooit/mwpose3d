@@ -1,3 +1,6 @@
+_base_ = [
+    '../../../mwpose3d/configs/__base__/default_runtime.py',
+]
 custom_imports = dict(
     imports=['mwpose3d', 'projects.mars'], allow_failed_imports=False)
 

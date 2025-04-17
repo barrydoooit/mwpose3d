@@ -4,7 +4,7 @@ import pickle
 
 def main():
     train_val_test_rario = (6, 1, 1)
-    data_root = Path('./data/neat')
+    data_root = Path('./data/experimental/neat')
     assert data_root.exists(), f"Data root directory {data_root} does not exist."
     info_all_f = 'info_all.pkl'
     train_info_f = 'info_train.pkl'
@@ -45,6 +45,6 @@ def main():
 
 if __name__ == '__main__':
     main()
-    # with open('./data/neat/info_train.pkl', 'rb') as f:
+    # with open('./data/experimental/neat/info_train.pkl', 'rb') as f:
     #     info = pickle.load(f)
     # print(info)
