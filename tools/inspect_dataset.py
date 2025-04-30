@@ -6,7 +6,7 @@ import sys
 
 import numpy as np
 
-sys.path.insert(0, osp.join(osp.dirname(osp.abspath(__file__)), '../..'))
+sys.path.insert(0, osp.join(osp.dirname(osp.abspath(__file__)), '..'))
 
 import debugpy
 from mmengine.config import Config, DictAction
@@ -45,8 +45,8 @@ def main():
     # Check that the required dataloaders exist in the config
     required_dataloader_keys = dict(
         train='train_dataloader',
-        val='val_dataloader',
-        test='test_dataloader'
+        # val='val_dataloader',
+        # test='test_dataloader'
     )
     existing_dataloader_keys = required_dataloader_keys.copy()
     for key, dataloader_key in required_dataloader_keys.items():

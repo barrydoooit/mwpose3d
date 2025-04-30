@@ -18,8 +18,8 @@ import os
 sys.path.append(os.path.join(os.path.dirname(__file__), '../..'))
 
 from .widgets import CheckList, MultiColumnCheckList
-from mwpose3d.tools.rawproc.episode import Episode
-from mwpose3d.tools.rawproc.hdf5_dumper import ToHdf5
+from ...rawproc.episode import Episode
+from ...rawproc.hdf5_dumper import ToHdf5
 
 
 

@@ -211,7 +211,7 @@ class Runner:
     
     @property
     def work_dir(self) -> str:
-        return str(self._work_dir)
+        return self._work_dir
     
     def register_hook(
             self,

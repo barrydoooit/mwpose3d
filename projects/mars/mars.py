@@ -25,6 +25,7 @@ class MarsPredictor(BaseSkeletonEstimModel):
         self.frame_len = frame_len
         self.keypoints_involved = keypoints_involved
         self.make_layers()
+        self.criterion = nn.MSELoss()
 
     def make_layers(self):
         self.conv1 = nn.Conv2d(self.in_channels, 16, kernel_size=3, stride=1, padding=1)
@@ -46,9 +47,9 @@ class MarsPredictor(BaseSkeletonEstimModel):
         
     def loss(self, batch_inputs, data_samples):
         tensor = self._forward(batch_inputs, data_samples)
-        criterion = nn.MSELoss()
+
         gt = torch.stack([data_sample.gt for data_sample in data_samples], dim=0)
-        loss = criterion(tensor, gt)
+        loss = self.criterion(tensor, gt)
         return loss
     
     def predict(self, batch_inputs, data_samples):
@@ -87,13 +88,11 @@ class MarsPredictor(BaseSkeletonEstimModel):
         
         
         skel_frame_list: List[Tuple[np.ndarray]] = data_batch_dict['skel_frames']
-        skel_frame_tensors = [
-           torch.tensor(np.stack(frame_batches, axis=0), dtype=torch.float32, device=get_device()) \
-               for frame_batches in list(zip(*skel_frame_list))
-        ]
+        
+        last_skel_frame = torch.from_numpy(np.stack(skel_frame_list[-1], axis=0)).float().to(get_device())
         data_sample_list = [
-            SkeletonDataSample(gt=skel_frame_tensor[:, :(skel_frame_tensor.shape[1] // 3) * 3])#.reshape(skel_frame_tensor.shape[0], -1, 3))
-            for skel_frame_tensor in skel_frame_tensors
+            SkeletonDataSample(gt=last_skel_frame_tensor[:(last_skel_frame_tensor.shape[0] // 3) * 3])
+            for last_skel_frame_tensor in last_skel_frame
         ]
         data_batch_dict["final_pcd_tensor"] = final_pcd_tensor
         return final_pcd_tensor, data_sample_list
