@@ -1,4 +1,5 @@
 import argparse
+from copy import deepcopy
 import logging
 import os
 import os.path as osp
@@ -13,11 +14,14 @@ from mmengine.config import Config, DictAction
 
 from mwpose3d.runner.runner import Runner
 
+
+
 def parse_args():
     parser = argparse.ArgumentParser(description='Inspect a dataset')
     parser.add_argument('config', help='path to config file')
     parser.add_argument('--cfg-options', nargs='+', action=DictAction)
     parser.add_argument('--work-dir', help='the dir to save logs and models', default=None)
+    parser.add_argument('--vis', action='store_true', help='visualize the dataset', default=False)
     parser.add_argument('--debug', action='store_true', help='enable debug mode')
     
     return parser.parse_args()
@@ -57,29 +61,58 @@ def main():
         dataloader = getattr(cfg, dataloader_key, None)
         if dataloader is not None:
             print(f'Inspecting {label} dataloader...')
-            inspect(runner, dataloader)
+            inspect(runner, dataloader, args.vis)
             
-def inspect(runner, dataloader: Config):
-    # dataloader = dataloader.to_dict()
+def inspect(runner, dataloader: Config, vis: bool = False):
+    dataloader_new = deepcopy(dataloader.to_dict())
     for transform in dataloader['dataset']['pipeline']:
-        if transform['type'] == 'PointDuplicator':
-            dataloader['dataset']['pipeline'].remove(transform)
-    dataloader.update(dict(batch_size=1, shuffle=False))
-    dataloader = runner.build_dataloader(dataloader)
+        if transform['type'] in ['PointDuplicator', 'PointSortAndClip', 'RandomTransform']:
+            dataloader_new['dataset']['pipeline'].remove(transform)
+    dataloader_new.update(dict(batch_size=1, num_workers=0, shuffle=False))
+    dataloader = runner.build_dataloader(dataloader_new)
     
-    indice_to_check = (3, 4,)
-    names = ('VOL', 'SNR',)
-    values = [[], []]
-    for idx, data_batch in enumerate(dataloader):
-        pcd_frame_list = data_batch['pcd_frames']
-        for i, (ind, name) in enumerate(zip(indice_to_check, names)):
-            values[i].append(pcd_frame_list[-1][0][:, ind])
+    if not vis:
+        indice_to_check = (3, 4,)
+        names = ('VOL', 'SNR',)
+        values = [[], []]
+        for idx, data_batch in enumerate(dataloader):
+            pcd_frame_list = data_batch['pcd_frames']
+            for i, (ind, name) in enumerate(zip(indice_to_check, names)):
+                values[i].append(pcd_frame_list[-1][0][:, ind])
 
-    for i, name in enumerate(names):
-        values[i] = np.concatenate(values[i], axis=0)
-        print(f'{name} shape: {values[i].shape}')
-        print(f'{name} mean: {values[i].mean()}')
-        print(f'{name} std: {values[i].std()}')
-    print('--------------------------------------------------')
+        for i, name in enumerate(names):
+            values[i] = np.concatenate(values[i], axis=0)
+            print(f'{name} shape: {values[i].shape}')
+            print(f'{name} mean: {values[i].mean()}')
+            print(f'{name} std: {values[i].std()}')
+        print('--------------------------------------------------')
+    
+    if vis:
+        from PySide2.QtWidgets import QApplication
+        from mwpose3d.visualization import PointCloudOfflineVisualizerSK
+
+        def dataloader_generator():
+            for idx, data_batch in enumerate(dataloader):
+                assert len(data_batch['pcd_frames'][-1]) == 1
+                yield data_batch['pcd_frames'][-1][0]
+        def pcd_generator():
+            for idx, data_batch in enumerate(dataloader):
+                assert len(data_batch['pcd_frames'][-1]) == 1
+                yield data_batch['pcd_frames'][-1][0]
+        
+        def skel_generator():
+            for idx, data_batch in enumerate(dataloader):
+                yield data_batch['skel_frames'][-1][0]
+        
+        app = QApplication(sys.argv)
+        total = len(dataloader) if hasattr(dataloader, '__len__') else None
+        visualizer = PointCloudOfflineVisualizerSK(
+            pcd_generator(),
+            skel_generator(),
+            total_frames=total,
+            play_fps=5,
+        )
+        visualizer.show()
+        app.exec_()
 if __name__ == '__main__':
     main()

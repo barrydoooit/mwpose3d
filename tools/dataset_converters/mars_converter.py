@@ -62,6 +62,9 @@ class MarsDatasetConverter:
             skel_cols.append(f"{camel_to_snake(joint)}_{axis.lower()}")
         skel_df.columns = skel_cols
         skel_data = skel_df.to_numpy(np.float64)
+        num_frames = skel_data.shape[0]
+        num_joints = len(skel_cols) // 3
+        skel_data = skel_data.reshape(num_frames, 3, num_joints).transpose(0, 2, 1).reshape(num_frames, 3 * num_joints)
         return skel_data, skel_cols
     
     @staticmethod

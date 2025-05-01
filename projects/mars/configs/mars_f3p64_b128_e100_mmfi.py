@@ -18,7 +18,7 @@ keypoint_involved=list(range(0, 17))
 num_frames =3
 backup_frames = 0
 total_frames = num_frames + backup_frames
-point_cloud_size=128
+point_cloud_size=64
 model = dict(
     type='MarsPredictor',
     point_cloud_size=point_cloud_size,
@@ -32,13 +32,6 @@ train_pipeline = [
         load_pcd_dim=5,
         num_frames=num_frames,
         backup_frames=backup_frames,
-    ),
-    dict(
-        type='CoordinateTransform',
-        radar_tilt=0,
-        kinect_tilt=0,
-        pcd_tran=(0, 0, 0),
-        skel_tran=(0, 0, 0)
     ),
     dict(
         type='RandomTransform',
@@ -92,7 +85,7 @@ optimizer_cfg = dict(
 
 train_cfg = dict(
     type='EpochBasedTrainLoop',
-    max_epochs=50,
+    max_epochs=100,
     val_interval=10
 )
 
@@ -106,6 +99,12 @@ val_pipeline = [
     dict(
         type='PointDuplicator',
         target_num_points=point_cloud_size
+    ),
+    dict(
+        type='PointSortAndClip',
+        target_num_points=point_cloud_size,
+        sort_dim=1, # 1 for Distance
+        sort_order='asc'
     ),
     dict(
         type='SkeletonKeypointFilter',
@@ -157,14 +156,7 @@ test_dataloader = dict(
     )
 )
 
-vis_metric = dict(metric, visualizer_cfg=dict(
-        keypoint_involved=keypoint_involved,
-        keypoint_for_stats=[0, 5, 9],
-        error_type='abs_error'
-    )
-)
-
 test_cfg = dict(
     type='TestLoop',
-    metric_cfg=vis_metric
+    metric_cfg=metric
 )

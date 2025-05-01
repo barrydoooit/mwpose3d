@@ -1,11 +1,11 @@
 .vscode
 **__pycache__**
-data
-exp_data
-visualization
-checkpoints
-work_dirs
-playground.py
+/data
+/exp_data
+/visualization
+/checkpoints
+/work_dirs
+/playground**
 **build
 **dist
 **.egg-info

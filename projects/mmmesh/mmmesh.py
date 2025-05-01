@@ -25,20 +25,12 @@ class MmMeshPredictor(BaseSkeletonEstimModel):
                  point_cloud_size: int = 32, 
                  frame_len: int = 1,
                  in_channels: int= 6,
-                 sort_dim: int = -1,
-                 sort_order: Literal["asc", "desc"] = "desc",
-                 intensity_norm: tuple = (22.876, 5.058),
-                 keypoints_involved: List[int] = [x for x in range(20) if x not in [7, 11, 15, 19]],
                  criterion: str = "MSELoss"
                  ):
         super().__init__()
         self.point_cloud_size = point_cloud_size
         self.in_channels = in_channels
         self.frame_len = frame_len
-        self.intensity_norm = intensity_norm
-        self.sort_dim = sort_dim
-        self.sort_order = 1 if sort_order == "asc" else -1
-        self.keypoints_involved = keypoints_involved
         self.base_pointnet = MODELS.build(base_pointnet_cfg)
         self.global_module = MODELS.build(global_module_cfg)
         self.anchor_module = MODELS.build(anchor_module_cfg)
@@ -106,15 +98,6 @@ class MmMeshPredictor(BaseSkeletonEstimModel):
         
         for frame_seq, batched_frames in enumerate(pcd_frame_list):
             for batch_idx, pcd_frame in enumerate(batched_frames):
-                point_count, _ = pcd_frame.shape    
-                if point_count < self.point_cloud_size:
-                    raise ValueError("Point cloud should be padded in advance")
-                    padding = np.zeros((self.point_cloud_size - point_count, self.in_channels))
-                    pcd_frame = np.concatenate([pcd_frame, padding], axis=0) 
-                else:
-                    sorted_indices = np.argsort(self.sort_order * pcd_frame[:, self.sort_dim])
-                    pcd_frame = pcd_frame[sorted_indices]
-                    pcd_frame[:, -1] = (pcd_frame[:, -1] - self.intensity_norm[0]) / self.intensity_norm[1]
                 final_pcd_frame[frame_seq, batch_idx] = pcd_frame[:self.point_cloud_size]
                 
         final_pcd_tensor = torch.from_numpy(final_pcd_frame).float().to(get_device())
@@ -144,6 +127,7 @@ class MmMeshPredictor(BaseSkeletonEstimModel):
         return batch_inputs, data_sample_list
         
     def pack_input_online(self, data_batch_dict: dict):
+        raise NotImplementedError("Online mode is out of maintenance")
         pcd_frame_list: List[Tuple[np.ndarray]] = data_batch_dict['pcd_frames']
         num_recent_frames = data_batch_dict.get('num_recent_frames', 1)
         pcd_frame_list = pcd_frame_list[-num_recent_frames:]

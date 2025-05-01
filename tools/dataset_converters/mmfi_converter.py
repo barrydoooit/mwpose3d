@@ -228,7 +228,7 @@ class MMFiDatasetConverter:
             pm = self.output_root / modality / fname
             with h5py.File(pm, 'w') as h5f:
                 grp = h5f.create_group('pcd')
-                ds = grp.create_dataset('data', data=pcd_data)
+                ds = grp.create_dataset('data', data=self.point_remap(pcd_data))
                 ds.attrs['columns'] = pcd_cols
                 grp.create_dataset('index', data=pcd_idx)
                 if frame_idx is not None:
@@ -267,11 +267,25 @@ class MMFiDatasetConverter:
         "WRIST_RIGHT": 16,
     }
     
+    CONNECTIVITY = {
+        0: {1, 4, 7},
+        1: {2},
+        2: {3},
+        
+    }
+    
+    def point_remap(self, pcd_array_2d: np.ndarray):
+        pcd_array = pcd_array_2d.copy()
+        pcd_array[:, 0] = pcd_array_2d[:, 1].copy()
+        pcd_array[:, 1] = pcd_array_2d[:, 0].copy()
+        pcd_array[:, 2] = -pcd_array_2d[:, 2].copy()
+        return pcd_array
+    
     def joint_remap(self, skel_array_2d: np.ndarray, flatten: bool = True):
         skel_array = skel_array_2d.copy()
-        skel_array[:, :, 0] = -skel_array[:, :, 0].copy()
-        skel_array[:, :, 1] = skel_array[:, :, 2].copy()
-        skel_array[:, :, 2] = -skel_array[:, :, 1].copy()
+        skel_array[:, :, 0] = -skel_array_2d[:, :, 0].copy()
+        skel_array[:, :, 1] = skel_array_2d[:, :, 2].copy()
+        skel_array[:, :, 2] = -skel_array_2d[:, :, 1].copy()
         if flatten:
             skel_array = skel_array.reshape(skel_array.shape[0], -1)
         return skel_array

@@ -2,7 +2,7 @@ _base_ = [
     '../../../configs/__base__/default_runtime.py',
 ]
 custom_imports = dict(
-    imports=['mwpose3d', 'projects.mars'], allow_failed_imports=False)
+    imports=['mwpose3d', 'projects.mmmesh'], allow_failed_imports=False)
 
 data_prefix = dict(
     pcd='mmwave',
@@ -13,17 +13,67 @@ train_info = 'info_train.pkl'
 val_info = 'info_val.pkl'
 test_info = 'info_test.pkl'
 
-keypoint_involved=list(range(0, 18))#[0,1,4,5,6,8,9,10]
+keypoint_involved=list(range(0, 20))
 
-num_frames =3
+num_frames = 64
 backup_frames = 0
 total_frames = num_frames + backup_frames
-point_cloud_size=64
+point_cloud_size = 64
 model = dict(
-    type='MarsPredictor',
+    type="MmMeshPredictor",
     point_cloud_size=point_cloud_size,
-    keypoints_involved=keypoint_involved,
-    frame_len=num_frames,
+    criterion='sdtw',
+    base_pointnet_cfg=dict(
+        type="BasePointNet",
+        channels=[6, 8, 16, 24],
+        kernel_size=1
+    ),
+    global_module_cfg=dict(
+        type="GlobalModule",
+        global_pointnet_cfg=dict(
+            channels=[24+4, 32, 48, 64],
+            kernel_size=1
+        ),
+        global_rnn_cfg=dict(
+            in_channel=64,
+            hidden_size=64,
+            num_layers=3,
+            batch_first=True,
+            dropout=0.1,
+            fc_channels=[64, 16, 2]
+        )
+    ),
+    anchor_module_cfg=dict(
+        type="AnchorModule",
+        anchor_cfg=dict(
+            grouping_nsample=8,
+            # xyz_range=[-0.9, -0.4, -0.9, 0.9, 0.2, 1.5],
+            # xyz_interval=[0.3, 0.1, 0.3]
+            xyz_range=[-0.3, -0.3, -0.9, 0.3, 0.3, 1.5],
+            xyz_interval=[0.3, 0.3, 0.3]
+        ),
+        anchor_pointnet_cfg=dict(
+            channels=[24+4+3, 32, 48, 64],
+            kernel_size=1
+        ),
+        anchor_voxelnet_cfg=dict(
+            channels=[64, 96, 128, 64],
+            # kernel_size=((3,3,3), (5,3,3),(3,3,3),),
+            kernel_size=((3,3,3), (5,1,1), (3,1,1)),
+        ),
+        anchor_rnn_cfg=dict(
+            input_size=64,
+            hidden_size=64,
+            num_layers=3,
+            batch_first=True,
+            dropout=0.1,
+            bidirectional=False
+        )
+    ),
+    fusion_module_cfg=dict(
+        type="SimpleKpFusionHead",
+        channels=[128, 128, len(keypoint_involved)*3],
+    )
 )
 
 train_pipeline = [
@@ -41,7 +91,7 @@ train_pipeline = [
     ),
     dict(
         type='PointDuplicator',
-        target_num_points=point_cloud_size,
+        target_num_points=point_cloud_size
     ),
     dict(
         type='PointSortAndClip',
@@ -57,15 +107,20 @@ train_pipeline = [
     dict(
         type='NormalizePointAttr',
         attr_indices=(3, 4,),
-        means=(0.00067, 43.26571),
-        stds=(0.49076, 62.30057)
-    )
+        means=(-0.99117, 33.58460),
+        stds=(2.68049, 7.88112)
+    ),
+    dict(
+        type='AddRangeDimension',
+        insert_idx=3,
+    ),
 ]
 
 train_dataloader = dict(
-    batch_size=128,
+    batch_size=32,
     num_workers=16,
     shuffle=True,
+    drop_last=True,
     dataset=dict(
         type='MotionDataset',
         data_root=f"{data_root}",
@@ -89,6 +144,7 @@ train_cfg = dict(
     val_interval=50
 )
 
+
 val_pipeline = [
     dict(
         type='LoadMultiFrameFromH5',
@@ -101,6 +157,13 @@ val_pipeline = [
         target_num_points=point_cloud_size
     ),
     dict(
+        type='PointSortAndClip',
+        target_num_points=point_cloud_size,
+        sort_dim=1, # 1 for Distance
+        sort_order='asc'
+    ),
+
+    dict(
         type='SkeletonKeypointFilter',
         keypoint_involved=keypoint_involved,
         with_pcd_ts=False
@@ -108,10 +171,15 @@ val_pipeline = [
     dict(
         type='NormalizePointAttr',
         attr_indices=(3, 4,),
-        means=(0.00067, 43.26571),
-        stds=(0.49076, 62.30057)
-    )
+        means=(-0.99117, 33.58460),
+        stds=(2.68049, 7.88112)
+    ),
+    dict(
+        type='AddRangeDimension',
+        insert_idx=3,
+    ),
 ]
+
 val_dataloader = dict(
     batch_size=1,
     num_workers=4,
@@ -150,14 +218,7 @@ test_dataloader = dict(
     )
 )
 
-vis_metric = dict(metric, visualizer_cfg=dict(
-        keypoint_involved=keypoint_involved,
-        keypoint_for_stats=[0, 5, 9],
-        error_type='abs_error'
-    )
-)
-
 test_cfg = dict(
     type='TestLoop',
-    metric_cfg=vis_metric
+    metric_cfg=metric
 )

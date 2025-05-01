@@ -5,12 +5,12 @@ from .base import BaseTransform
 from mwpose3d.registry import TRANSFORMS
 
 @TRANSFORMS.register_module()
-class CoordinateTransform(BaseTransform):
+class Kinect2TICoordinateTransform(BaseTransform):
     def __init__(self,
                  radar_tilt: float = 5,
                  kinect_tilt: float = 5,  
-                 pcd_tran: Tuple[float, float, float] = (0, -2, 0),
-                 skel_tran: Tuple[float, float, float] = (-0.37, 0, -2),
+                 pcd_tran: Tuple[float, float, float] = (0, 0, 0),
+                 skel_tran: Tuple[float, float, float] = (0, 0, 0),
                  online_mode: bool = False):
         super().__init__(online_mode)
         self.radar_tilt = radar_tilt
