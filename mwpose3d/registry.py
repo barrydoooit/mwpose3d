@@ -13,7 +13,7 @@ LOOPS = Registry(
     'loop',
     parent=MMENGINE_LOOPS)
 HOOKS = Registry(
-    'hook', parent=MMENGINE_HOOKS, locations=['mmdet3d.engine.hooks'])
+    'hook', parent=MMENGINE_HOOKS, locations=['mwpose3d.runner.hooks'])
 DATASETS = Registry(
     'dataset', parent=MMENGINE_DATASETS, locations=['mwpose3d.datasets'])
 TRANSFORMS = Registry(

@@ -122,7 +122,6 @@ class LoadMultiFrameFromH5(BaseTransform):
             for i in range(self.backup_frames):
                 idx = to_skel_idx(last_backup_idx - i)
                 skel_data = skel_sequence[idx]
-                assert skel_data.shape[0] == 17 * 3
                 skel_frames.insert(0, skel_data)
 
             input['skel_frames'] = tuple(skel_frames)

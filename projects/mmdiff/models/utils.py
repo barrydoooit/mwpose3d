@@ -4,7 +4,7 @@ import numpy as np
 import torch
 import scipy.sparse as sp
 
-from kinect_toolkits.kinectData import ConnectivityValUni
+from mwpose3d.utils.kinect_toolkits.kinectData import ConnectivityValUni
 
 
 
