@@ -79,6 +79,7 @@ class MMFiDatasetConverter:
                  input_root: Path,
                  output_root: Path,
                  modality: List[Literal['mmwave', 'mmwave_filtered']] = ['mmwave', 'mmwave_filtered'],
+                 unify_coordinate: bool = False,
                  config: dict = DEFAULT_CONFIG):
         self.input_root = input_root
         self.output_root = output_root
@@ -93,7 +94,8 @@ class MMFiDatasetConverter:
 
         self.all_subjects = [f"S{i:02d}" for i in range(1, 41)]
         self.all_actions = [f"A{i:02d}" for i in range(1, 28)]
-    
+
+        self.unify_coordinate = unify_coordinate
         self.info_prefix = 'info'
         self.train_form, self.val_form = self._decode_config()
         self.records = {'train': [], 'val': []}
@@ -275,6 +277,8 @@ class MMFiDatasetConverter:
     }
     
     def point_remap(self, pcd_array_2d: np.ndarray):
+        if not self.unify_coordinate:
+            return pcd_array_2d
         pcd_array = pcd_array_2d.copy()
         pcd_array[:, 0] = pcd_array_2d[:, 1].copy()
         pcd_array[:, 1] = pcd_array_2d[:, 0].copy()
@@ -282,6 +286,8 @@ class MMFiDatasetConverter:
         return pcd_array
     
     def joint_remap(self, skel_array_2d: np.ndarray, flatten: bool = True):
+        if not self.unify_coordinate:
+            return skel_array_2d if not flatten else skel_array_2d.reshape(skel_array_2d.shape[0], -1)
         skel_array = skel_array_2d.copy()
         skel_array[:, :, 0] = -skel_array_2d[:, :, 0].copy()
         skel_array[:, :, 1] = skel_array_2d[:, :, 2].copy()

@@ -67,11 +67,13 @@ def mars_data_prep(root_path: str,
 def mmfi_data_prep(root_path: str,
                    out_dir: str,
                    modality: List[Literal['mmwave', 'mmwave_filtered']],
+                   unify_coordinate: bool = False,
                    ):
     from tools.dataset_converters.mmfi_converter import MMFiDatasetConverter
     converter = MMFiDatasetConverter(
         input_root=Path(root_path),
         output_root=Path(out_dir),
+        unify_coordinate=unify_coordinate,
         modality=modality)
     converter.process_all()
 
@@ -112,9 +114,16 @@ def main():
             print("Invalid option. Please choose 'm', 'mf', or 'both'")
             modality = input("Create dataset with mmwave (m), mmwave_filtered (mf), or both (both)? ").strip().lower()
         modality = ['mmwave', 'mmwave_filtered'] if modality == 'both' else [{'m': 'mmwave', 'mf': 'mmwave_filtered'}[modality]]
+        
+        unify_coordinate = input("Unify coordinate (y/n)? ").strip().lower()
+        while unify_coordinate not in ['y', 'n']:
+            print("Invalid option. Please choose 'y' or 'n'")
+            unify_coordinate = input("Unify coordinate (y/n)? ").strip().lower()
+        unify_coordinate = unify_coordinate == 'y'
         mmfi_data_prep(
             root_path=args.root_path,
             out_dir=args.out_dir,
-            modality=modality)
+            modality=modality,
+            unify_coordinate=unify_coordinate)
 if __name__ == '__main__':
     main()

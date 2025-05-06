@@ -35,7 +35,7 @@ class Runner:
                  custom_hooks: Optional[List[Union[Hook, Dict]]] = None,
                  optimizer_cfg: Optional[dict] = None,
                  load_from: Optional[str] = None,
-                env_cfg: Dict = dict(dist_cfg=dict(backend='nccl')),
+                 env_cfg: Dict = dict(dist_cfg=dict(backend='nccl')),
                  default_scope: str = 'mmengine',
                  experiment_name: Optional[str] = None,
                  cfg: Optional[ConfigType] = None,):
@@ -191,6 +191,8 @@ class Runner:
         print('Testing finished')
 
     def setup_env(self, env_cfg: Dict) -> None: 
+        if env_cfg.get('cudnn_benchmark', False):
+            torch.backends.cudnn.benchmark = True
         timestamp = torch.tensor(time.time(), dtype=torch.float64)
         # broadcast timestamp from 0 process to other processes
         self._timestamp = time.strftime('%Y%m%d_%H%M%S',

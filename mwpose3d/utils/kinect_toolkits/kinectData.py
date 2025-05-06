@@ -28,6 +28,11 @@ class KeypointType(Enum):
     KNEE_RIGHT = 17
     ANKLE_RIGHT = 18
     FOOT_RIGHT = 19
+    SPINE_SHOULDER = 20
+    HAND_TIP_LEFT = 21
+    THUMB_LEFT = 22
+    HAND_TIP_RIGHT = 23
+    THUMB_RIGHT = 24
 
 USED_KEYPOINTS = tuple(range(20))
 ALL_KEYPOINTS = tuple(range(25))

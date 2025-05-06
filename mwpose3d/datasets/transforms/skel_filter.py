@@ -34,3 +34,27 @@ class SkeletonKeypointFilter(BaseTransform):
         input['skel_frames'] = tuple(filtered_skel_frames)
         return input
 
+@TRANSFORMS.register_module()
+class SkeletonCoordNormalization(BaseTransform):
+    def __init__(self,
+                 keypoint_involved: List[int],
+                 refrence_keypoint: int = 1,
+                 online_mode: bool = False
+                 ):
+        super().__init__(online_mode)
+        self.keypoint_involved = keypoint_involved
+        self.reference_idx = keypoint_involved.index(refrence_keypoint)
+
+    def transform(self, input: dict):
+        skel_frames: Tuple[np.ndarray] = input['skel_frames']
+        nomalized_skel_frames = []
+        for skel_frame in skel_frames:
+            skel_array = skel_frame.copy().reshape(-1, 3)
+            for joint in range(skel_array.shape[0]):
+                if joint == self.reference_idx:
+                    continue
+                skel_array[joint] -= skel_array[self.reference_idx]
+            skel_array = skel_array.flatten()
+            nomalized_skel_frames.append(skel_array)
+        input['skel_frames'] = tuple(nomalized_skel_frames)
+        return input
