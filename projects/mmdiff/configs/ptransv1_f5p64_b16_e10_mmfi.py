@@ -98,7 +98,7 @@ train_pipeline = [
     dict(
         type='SequenceClip',
         mode='last',
-        sequence_length=num_frames
+        sequence_length=seq_frames
     ),
     dict(
         type='SkeletonKeypointFilter',
@@ -162,7 +162,7 @@ val_pipeline = [
     dict(
         type='SequenceClip',
         mode='last',
-        sequence_length=num_frames
+        sequence_length=seq_frames
     ),
     dict(
         type='SkeletonKeypointFilter',

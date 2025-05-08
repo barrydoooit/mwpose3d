@@ -1,7 +1,9 @@
 from typing import Optional
 import torch
-
-from .simple_gtpred_visualizer import SimpleGTPredVisualizer
+try:
+    from .simple_gtpred_visualizer import SimpleGTPredVisualizer
+except Exception as e:
+    print("Visualizer not available.")
 from ..base import BaseMetric
 from mwpose3d.registry import METRICS
 
