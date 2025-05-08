@@ -87,8 +87,10 @@ class AnchorRNN(nn.Module):
                  batch_first: bool = True,
                  dropout: float = 0.1,
                  bidirectional: bool = False,
+                 learnable_init_state: bool = False,
                  ):
         super().__init__()
+        self.num_layers = num_layers * 2 if bidirectional else num_layers
         self.input_size = input_size
         self.hidden_size = hidden_size
         self.rnn = nn.LSTM(input_size=input_size,
@@ -97,8 +99,17 @@ class AnchorRNN(nn.Module):
                            batch_first=batch_first,
                            dropout=dropout,
                            bidirectional=bidirectional)
+        
+        self.learnable_init_state = learnable_init_state
+        if learnable_init_state:
+            self.h0 = nn.Parameter(torch.zeros(self.num_layers, 1, self.hidden_size))
+            self.c0 = nn.Parameter(torch.zeros(self.num_layers, 1, self.hidden_size))
     
-    def forward(self, x, h0, c0):
+    def forward(self, x, h0=None, c0=None):
+        batch_size = x.size(0)
+        if self.learnable_init_state:
+            h0 = self.h0.expand(-1, batch_size, -1).contiguous()
+            c0 = self.c0.expand(-1, batch_size, -1).contiguous()
         a_vec, (hn, cn) = self.rnn(x, (h0, c0))
         return a_vec, hn, cn
 

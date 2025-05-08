@@ -5,7 +5,7 @@ custom_imports = dict(
     imports=['mwpose3d', 'projects.mmmesh'], allow_failed_imports=False)
 
 data_prefix = dict(
-    pcd='mmwave_filtered',
+    pcd='mmwave',
     skel='skeleton'
 )
 data_root = './data/mmfi'
@@ -15,8 +15,8 @@ test_info = 'info_subj_val.pkl'
 
 keypoint_involved=list(range(0, 17))
 
-num_frames = 64
-backup_frames = 0
+num_frames = 32
+backup_frames = 5
 total_frames = num_frames + backup_frames
 point_cloud_size = 64
 model = dict(
@@ -40,15 +40,14 @@ model = dict(
             num_layers=3,
             batch_first=True,
             dropout=0.1,
-            fc_channels=[64, 16, 2]
+            fc_channels=[64, 16, 2],
+            learnable_init_state=True,
         )
     ),
     anchor_module_cfg=dict(
         type="AnchorModule",
         anchor_cfg=dict(
             grouping_nsample=8,
-            # xyz_range=[-0.9, -0.4, -0.9, 0.9, 0.2, 1.5],
-            # xyz_interval=[0.3, 0.1, 0.3]
             xyz_range=[-0.3, -0.3, -0.9, 0.3, 0.3, 1.5],
             xyz_interval=[0.3, 0.3, 0.3]
         ),
@@ -67,7 +66,8 @@ model = dict(
             num_layers=3,
             batch_first=True,
             dropout=0.1,
-            bidirectional=False
+            bidirectional=False,
+            learnable_init_state=True,
         )
     ),
     fusion_module_cfg=dict(
@@ -82,12 +82,35 @@ train_pipeline = [
         load_pcd_dim=5,
         num_frames=num_frames,
         backup_frames=backup_frames,
+        empty_frame_op='prev',
+    ),
+    dict(
+        type='RandomFrameDrop',
+        drop_prob=0.05,
+        max_drop=5,
+    ),
+    dict(
+        type='SequenceClip',
+        mode='last',
+        sequence_length=num_frames
+    ),
+    dict(
+        type='SkeletonKeypointFilter',
+        keypoint_involved=keypoint_involved,
+    ),
+    dict(
+        type='SkeletonCoordinateTransform',
+        tran_xyz=(0, -3.15, 0)
+    ),
+    dict(
+        type='PointCloudCoordinateTransform',
+        tran_xyz=(0, -3.15, 0),
     ),
     dict(
         type='RandomTransform',
         transform_prob=0.5,
-        sigma_xyz=(0.15, 0.15, 0.05),
-        max_d_xyz=(0.3, 0.3, 0.1)
+        sigma_xyz=(0.05, 0.05, 0.05),
+        max_d_xyz=(0.2, 0.2, 0.1)
     ),
     dict(
         type='PointDuplicator',
@@ -96,19 +119,14 @@ train_pipeline = [
     dict(
         type='PointSortAndClip',
         target_num_points=point_cloud_size,
-        sort_dim=1, # 1 for Distance
-        sort_order='asc'
-    ),
-    dict(
-        type='SkeletonKeypointFilter',
-        keypoint_involved=keypoint_involved,
-        with_pcd_ts=False
+        sort_dim=4,
+        sort_order='desc'
     ),
     dict(
         type='NormalizePointAttr',
         attr_indices=(3, 4,),
-        means=(-0.99117, 33.58460),
-        stds=(2.68049, 7.88112)
+        means=(-0.00047, 16.56169),
+        stds=(0.79512, 3.88067)
     ),
     dict(
         type='AddRangeDimension',
@@ -117,7 +135,7 @@ train_pipeline = [
 ]
 
 train_dataloader = dict(
-    batch_size=32,
+    batch_size=64,
     num_workers=16,
     shuffle=True,
     drop_last=True,
@@ -151,6 +169,24 @@ val_pipeline = [
         load_pcd_dim=5,
         num_frames=num_frames,
         backup_frames=backup_frames,
+        empty_frame_op='prev',
+    ),
+    dict(
+        type='SequenceClip',
+        mode='last',
+        sequence_length=num_frames
+    ),
+    dict(
+        type='SkeletonKeypointFilter',
+        keypoint_involved=keypoint_involved,
+    ),
+    dict(
+        type='SkeletonCoordinateTransform',
+        tran_xyz=(0, -3.15, 0)
+    ),
+    dict(
+        type='PointCloudCoordinateTransform',
+        tran_xyz=(0, -3.15, 0),
     ),
     dict(
         type='PointDuplicator',
@@ -159,20 +195,14 @@ val_pipeline = [
     dict(
         type='PointSortAndClip',
         target_num_points=point_cloud_size,
-        sort_dim=1, # 1 for Distance
-        sort_order='asc'
-    ),
-
-    dict(
-        type='SkeletonKeypointFilter',
-        keypoint_involved=keypoint_involved,
-        with_pcd_ts=False
+        sort_dim=4,
+        sort_order='desc'
     ),
     dict(
         type='NormalizePointAttr',
         attr_indices=(3, 4,),
-        means=(-0.99117, 33.58460),
-        stds=(2.68049, 7.88112)
+        means=(-0.00047, 16.56169),
+        stds=(0.79512, 3.88067)
     ),
     dict(
         type='AddRangeDimension',

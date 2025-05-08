@@ -13,6 +13,7 @@ from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 
 if TYPE_CHECKING:
     from mwpose3d.runner.runner import Runner
+from tqdm import tqdm
 
 @LOOPS.register_module()
 class TestLoop(BaseLoop):
@@ -43,11 +44,13 @@ class TestLoop(BaseLoop):
         self.runner.call_hook('after_test_epoch', metrics=summary)
         self.runner.call_hook('after_test')
         return self.runner.model
-    
+        
     def _run_epoch(self) -> None:
         self.runner.model.eval()
         with torch.no_grad():
-            for idx, data_batch in enumerate(self.dataloader):
+            for idx, data_batch in tqdm(enumerate(self.dataloader), 
+                          total=len(self.dataloader),
+                          desc='Testing'):
                 self._run_iter(idx, data_batch)
 
     def _run_iter(self, idx: int, data_batch: dict) -> None:

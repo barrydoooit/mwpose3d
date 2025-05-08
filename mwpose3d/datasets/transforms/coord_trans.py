@@ -129,3 +129,85 @@ class Kinect2TICoordinateTransform(BaseTransform):
             transformed_recent_frames.append(transformed_frame)
         input['pcd_frames'] = pcd_frames[:-num_recent_frames] + tuple(transformed_recent_frames)
         return input
+
+@TRANSFORMS.register_module()
+class SkeletonCoordinateTransform(BaseTransform):
+    def __init__(self,
+                 rotate_xyz: Tuple[float, float, float] = (0, 0, 0),
+                 tran_xyz: Tuple[float, float, float] = (0, 0, 0),
+                 online_mode: bool = False):
+        super().__init__(online_mode)
+        self.R = self._build_rotation_matrix(np.deg2rad(rotate_xyz))
+        self.t = np.array(tran_xyz, dtype=np.float32)
+
+    def _build_rotation_matrix(self, angles_rad: np.ndarray) -> np.ndarray:
+        rx, ry, rz = angles_rad
+        # X, then Y, then Z rotations
+        Rx = np.array([[1, 0, 0],
+                       [0, np.cos(rx), -np.sin(rx)],
+                       [0, np.sin(rx),  np.cos(rx)]], dtype=np.float32)
+        Ry = np.array([[ np.cos(ry), 0, np.sin(ry)],
+                       [          0, 1,          0],
+                       [-np.sin(ry), 0, np.cos(ry)]], dtype=np.float32)
+        Rz = np.array([[np.cos(rz), -np.sin(rz), 0],
+                       [np.sin(rz),  np.cos(rz), 0],
+                       [         0,           0, 1]], dtype=np.float32)
+        return Rz @ Ry @ Rx
+
+    def _transform_frame(self, frame: np.ndarray) -> np.ndarray:
+        # split coords vs extras
+        n3 = (len(frame) // 3) * 3
+        joints = frame[:n3].reshape(-1, 3)
+        # rotate + translate
+        joints = joints.dot(self.R.T) + self.t
+        # re–flatten and append any tail (e.g. confidences)
+        return np.concatenate([joints.ravel(), frame[n3:]])
+
+    def transform(self, input: dict) -> dict:
+        input['skel_frames'] = tuple(
+            self._transform_frame(f) for f in input['skel_frames']
+        )
+        return input
+            
+@TRANSFORMS.register_module()
+class PointCloudCoordinateTransform(BaseTransform):
+    def __init__(self,
+                 rotate_xyz: Tuple[float, float, float] = (0, 0, 0),
+                 tran_xyz: Tuple[float, float, float] = (0, 0, 0),
+                 online_mode: bool = False):
+        super().__init__(online_mode)
+        self.R = self._build_rotation_matrix(np.deg2rad(rotate_xyz))
+        self.t = np.array(tran_xyz, dtype=np.float32)
+
+    def _build_rotation_matrix(self, angles_rad: np.ndarray) -> np.ndarray:
+        rx, ry, rz = angles_rad
+        # X, then Y, then Z rotations
+        Rx = np.array([[1, 0, 0],
+                       [0, np.cos(rx), -np.sin(rx)],
+                       [0, np.sin(rx),  np.cos(rx)]], dtype=np.float32)
+        Ry = np.array([[ np.cos(ry), 0, np.sin(ry)],
+                       [          0, 1,          0],
+                       [-np.sin(ry), 0, np.cos(ry)]], dtype=np.float32)
+        Rz = np.array([[np.cos(rz), -np.sin(rz), 0],
+                       [np.sin(rz),  np.cos(rz), 0],
+                       [         0,           0, 1]], dtype=np.float32)
+        return Rz @ Ry @ Rx
+    
+    def _transform_frame(self, frame: np.ndarray) -> np.ndarray:
+        # frame shape: (N, C), where first three columns are (x,y,z)
+        # rotate + translate
+        pts = frame[:, :3]
+        pts = pts.dot(self.R.T) + self.t
+        # If additional values exist in the row, preserve them.
+        if frame.shape[1] > 3:
+            extra = frame[:, 3:]
+            transformed_frame = np.hstack([pts, extra])
+        else:
+            transformed_frame = pts
+        return transformed_frame
+    
+    def transform(self, input: dict) -> dict:
+        input['pcd_frames'] = tuple(
+            self._transform_frame(f) for f in input['pcd_frames']
+        )
+        return input

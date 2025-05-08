@@ -5,7 +5,7 @@ custom_imports = dict(
     imports=['mwpose3d', 'projects.mars'], allow_failed_imports=False)
 
 data_prefix = dict(
-    pcd='mmwave_filtered',
+    pcd='mmwave',
     skel='skeleton'
 )
 data_root = './data/mmfi'
@@ -15,29 +15,49 @@ test_info = 'info_subj_val.pkl'
 
 keypoint_involved=list(range(0, 17))
 
-num_frames =3
-backup_frames = 0
+num_frames =1
+backup_frames = 1
 total_frames = num_frames + backup_frames
 point_cloud_size=64
+pcd_dim = 5
 model = dict(
     type='MarsPredictor',
     point_cloud_size=point_cloud_size,
+    in_channels=pcd_dim,
+    input_size=(8, 8),
     keypoints_involved=keypoint_involved,
-    frame_len=num_frames,
 )
 
 train_pipeline = [
     dict(
         type='LoadMultiFrameFromH5',
-        load_pcd_dim=5,
+        load_pcd_dim=pcd_dim,
         num_frames=num_frames,
         backup_frames=backup_frames,
+        empty_frame_op='prev'
+    ),
+    dict(
+        type='SequenceClip',
+        mode='last',
+        sequence_length=num_frames
+    ),
+    dict(
+        type='SkeletonKeypointFilter',
+        keypoint_involved=keypoint_involved,
+    ),
+    dict(
+        type='SkeletonCoordinateTransform',
+        tran_xyz=(0, -3.15, 0)
+    ),
+    dict(
+        type='PointCloudCoordinateTransform',
+        tran_xyz=(0, -3.15, 0),
     ),
     dict(
         type='RandomTransform',
         transform_prob=0.5,
-        sigma_xyz=(0.15, 0.15, 0.05),
-        max_d_xyz=(0.3, 0.3, 0.1)
+        sigma_xyz=(0.05, 0.05, 0.05),
+        max_d_xyz=(0.2, 0.2, 0.1)
     ),
     dict(
         type='PointDuplicator',
@@ -46,19 +66,15 @@ train_pipeline = [
     dict(
         type='PointSortAndClip',
         target_num_points=point_cloud_size,
-        sort_dim=1, # 1 for Distance
-        sort_order='asc'
-    ),
-    dict(
-        type='SkeletonKeypointFilter',
-        keypoint_involved=keypoint_involved,
-        with_pcd_ts=False
+        sort_dim=(0,1,2,),
+        sort_order='asc',
+        sort_effective=True
     ),
     dict(
         type='NormalizePointAttr',
         attr_indices=(3, 4,),
-        means=(-0.99117, 33.58460),
-        stds=(2.68049, 7.88112)
+        means=(-0.00047, 16.56169),
+        stds=(0.79512, 3.88067)
     )
 ]
 
@@ -92,30 +108,50 @@ train_cfg = dict(
 val_pipeline = [
     dict(
         type='LoadMultiFrameFromH5',
-        load_pcd_dim=5,
+        load_pcd_dim=pcd_dim,
         num_frames=num_frames,
         backup_frames=backup_frames,
+        empty_frame_op='prev'
     ),
     dict(
-        type='PointDuplicator',
-        target_num_points=point_cloud_size
-    ),
-    dict(
-        type='PointSortAndClip',
-        target_num_points=point_cloud_size,
-        sort_dim=1, # 1 for Distance
-        sort_order='asc'
+        type='SequenceClip',
+        mode='last',
+        sequence_length=num_frames
     ),
     dict(
         type='SkeletonKeypointFilter',
         keypoint_involved=keypoint_involved,
-        with_pcd_ts=False
+    ),
+    dict(
+        type='SkeletonCoordinateTransform',
+        tran_xyz=(0, -3.15, 0)
+    ),
+    dict(
+        type='PointCloudCoordinateTransform',
+        tran_xyz=(0, -3.15, 0),
+    ),
+    dict(
+        type='RandomTransform',
+        transform_prob=0.5,
+        sigma_xyz=(0.05, 0.05, 0.05),
+        max_d_xyz=(0.2, 0.2, 0.1)
+    ),
+    dict(
+        type='PointDuplicator',
+        target_num_points=point_cloud_size,
+    ),
+    dict(
+        type='PointSortAndClip',
+        target_num_points=point_cloud_size,
+        sort_dim=(0,1,2,),
+        sort_order='asc',
+        sort_effective=True
     ),
     dict(
         type='NormalizePointAttr',
         attr_indices=(3, 4,),
-        means=(-0.99117, 33.58460),
-        stds=(2.68049, 7.88112)
+        means=(-0.00047, 16.56169),
+        stds=(0.79512, 3.88067)
     )
 ]
 val_dataloader = dict(

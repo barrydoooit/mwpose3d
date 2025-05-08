@@ -44,21 +44,30 @@ def custom_data_prep(root_path: str,
 def mars_data_prep(root_path: str,
                    out_dir: str,
                    outlier_option: str = 'wo',
+                   use_official_split: bool = False,
                    clip_size: int = 512):
     from tools.dataset_converters.mars_converter import MarsDatasetConverter
     converters: List[MarsDatasetConverter] = []
-    if outlier_option == 'w' or outlier_option == 'both':
-        root_path = Path(root_path) / 'woutlier',
-        out_dir = Path(out_dir) / 'woutlier',
+    if outlier_option == 'pr':
         converters.append(MarsDatasetConverter(
-            input_root=root_path,
-            output_root=out_dir,
+            input_root=Path(root_path) / 'feature',
+            output_root=Path(out_dir) / 'feature',
+            use_processed_features=True,
+            use_official_split=use_official_split,
+            clip_size=clip_size))
+        
+    if outlier_option == 'w' or outlier_option == 'both':
+        converters.append(MarsDatasetConverter(
+            input_root=Path(root_path) / 'woutlier',
+            output_root=Path(out_dir) / 'woutlier',
+            use_official_split=use_official_split,
             clip_size=clip_size))
     
     if outlier_option == 'wo' or outlier_option == 'both':
         converters.append(MarsDatasetConverter(
             input_root=Path(root_path) / 'wooutlier',
             output_root=Path(out_dir) / 'wooutlier',
+            use_official_split=use_official_split,
             clip_size=clip_size))
     
     for converter in converters:
@@ -76,6 +85,13 @@ def mmfi_data_prep(root_path: str,
         unify_coordinate=unify_coordinate,
         modality=modality)
     converter.process_all()
+
+def ask_for_option(prompt: str, options: List[str]) -> str:
+    option = input(prompt).strip().lower()
+    while option not in options:
+        print(f"Invalid option. Please choose from {options}")
+        option = input(prompt).strip().lower()
+    return option
 
 def main():
     parser = argparse.ArgumentParser(description='Data converter arg parser')
@@ -100,30 +116,31 @@ def main():
             out_dir=args.out_dir,
             use_gui=True)
     elif args.dataset == 'mars':
-        outlier_option = input("Create dataset with outliers (w), without outliers (wo), or both (both)? ").strip().lower()
-        while outlier_option not in ['w', 'wo', 'both']:
-            print("Invalid option. Please choose 'w', 'wo', or 'both'")
-            outlier_option = input("Create dataset with outliers (w), without outliers (wo), or both (both)? ").strip().lower()
+        outlier_option = ask_for_option(
+            prompt="Create dataset with outliers (w), without outliers (wo), both (both), or use preprocessed features (pr)? ",
+            options=['w', 'wo', 'both', 'pr'])
+        official_split_option = ask_for_option(
+            prompt="Use official split (y/n)? ",
+            options=['y', 'n']) == 'y' if outlier_option != 'pr' else True
         mars_data_prep(
             root_path=args.root_path,
             out_dir=args.out_dir,
-            outlier_option=outlier_option)
+            outlier_option=outlier_option,
+            use_official_split=official_split_option)
     elif args.dataset == 'mmfi':
-        modality = input("Create dataset with mmwave (m), mmwave_filtered (mf), or both (both)? ").strip().lower()
-        while modality not in ['m', 'mf', 'both']:
-            print("Invalid option. Please choose 'm', 'mf', or 'both'")
-            modality = input("Create dataset with mmwave (m), mmwave_filtered (mf), or both (both)? ").strip().lower()
+        modality = ask_for_option(
+            prompt="Create dataset with mmwave (m), mmwave_filtered (mf), or both (both)? ",
+            options=['m', 'mf', 'both']
+        )
         modality = ['mmwave', 'mmwave_filtered'] if modality == 'both' else [{'m': 'mmwave', 'mf': 'mmwave_filtered'}[modality]]
-        
-        unify_coordinate = input("Unify coordinate (y/n)? ").strip().lower()
-        while unify_coordinate not in ['y', 'n']:
-            print("Invalid option. Please choose 'y' or 'n'")
-            unify_coordinate = input("Unify coordinate (y/n)? ").strip().lower()
-        unify_coordinate = unify_coordinate == 'y'
+        unify_coordinate = ask_for_option(
+            prompt="Unify coordinate (y/n)? ",
+            options=['y', 'n']) == 'y'
         mmfi_data_prep(
             root_path=args.root_path,
             out_dir=args.out_dir,
             modality=modality,
             unify_coordinate=unify_coordinate)
+
 if __name__ == '__main__':
     main()

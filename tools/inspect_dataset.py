@@ -6,6 +6,7 @@ import os.path as osp
 import sys
 
 import numpy as np
+from tqdm import tqdm
 
 sys.path.insert(0, osp.join(osp.dirname(osp.abspath(__file__)), '..'))
 
@@ -48,8 +49,8 @@ def main():
 
     # Check that the required dataloaders exist in the config
     required_dataloader_keys = dict(
-        train='train_dataloader',
-        # val='val_dataloader',
+        # train='train_dataloader',
+        val='val_dataloader',
         # test='test_dataloader'
     )
     existing_dataloader_keys = required_dataloader_keys.copy()
@@ -66,7 +67,7 @@ def main():
 def inspect(runner, dataloader: Config, vis: bool = False):
     dataloader_new = deepcopy(dataloader.to_dict())
     for transform in dataloader['dataset']['pipeline']:
-        if transform['type'] in ['PointDuplicator', 'PointSortAndClip', 'RandomTransform']:
+        if transform['type'] in ['PointDuplicator', 'PointPadding', 'PointSortAndClip', 'RandomTransform', 'NormalizePointAttr', 'SkeletonCoordNormalization']:
             dataloader_new['dataset']['pipeline'].remove(transform)
     dataloader_new.update(dict(batch_size=1, num_workers=0, shuffle=False))
     dataloader = runner.build_dataloader(dataloader_new)
@@ -74,30 +75,43 @@ def inspect(runner, dataloader: Config, vis: bool = False):
     if not vis:
         indice_to_check = (3, 4,)
         names = ('VOL', 'SNR',)
-        values = [[], []]
-        for idx, data_batch in enumerate(dataloader):
+        pcd_values = [[], []]
+        skel_values = []
+        total = len(dataloader) if hasattr(dataloader, '__len__') else None
+        for idx, data_batch in tqdm(enumerate(dataloader), desc='Processing data', total=total):
             pcd_frame_list = data_batch['pcd_frames']
             for i, (ind, name) in enumerate(zip(indice_to_check, names)):
-                values[i].append(pcd_frame_list[-1][0][:, ind])
-
+                pcd_values[i].append(pcd_frame_list[-1][0][:, ind])
+            
+            skel_frame_list = data_batch['skel_frames']
+            skel_batch = skel_frame_list[-1][0]
+            skel_values.append(skel_batch)
+            
         for i, name in enumerate(names):
-            values[i] = np.concatenate(values[i], axis=0)
-            print(f'{name} shape: {values[i].shape}')
-            print(f'{name} mean: {values[i].mean()}')
-            print(f'{name} std: {values[i].std()}')
+            pcd_values[i] = np.concatenate(pcd_values[i], axis=0)
+            print(f'{name} shape: {pcd_values[i].shape}')
+            print(f'{name} mean: {pcd_values[i].mean()}')
+            print(f'{name} std: {pcd_values[i].std()}')
         print('--------------------------------------------------')
+
+        skel_all = np.stack(skel_values, axis=0)
+        skel_means = skel_all.mean(axis=0)
+        skel_stds = skel_all.std(axis=0)
+
+        skel_means_axis = skel_means.reshape(-1, 3).mean(axis=0)
+        print(f'Skeleton mean: x={skel_means_axis[0]:.2f}, y={skel_means_axis[1]:.2f}, z={skel_means_axis[2]:.2f}')
+        # print('Skeleton mean:', [round(x, 2) for x in skel_means])
+        # print('Skeleton std:', [round(x, 2) for x in skel_stds])
+        
     
     if vis:
         from PySide2.QtWidgets import QApplication
         from mwpose3d.visualization import PointCloudOfflineVisualizerSK
 
-        def dataloader_generator():
-            for idx, data_batch in enumerate(dataloader):
-                assert len(data_batch['pcd_frames'][-1]) == 1
-                yield data_batch['pcd_frames'][-1][0]
         def pcd_generator():
             for idx, data_batch in enumerate(dataloader):
                 assert len(data_batch['pcd_frames'][-1]) == 1
+                print(f'pcd size: {data_batch["pcd_frames"][-1][0].shape}')
                 yield data_batch['pcd_frames'][-1][0]
         
         def skel_generator():
@@ -110,7 +124,7 @@ def inspect(runner, dataloader: Config, vis: bool = False):
             pcd_generator(),
             skel_generator(),
             total_frames=total,
-            play_fps=5,
+            play_fps=60,
         )
         visualizer.show()
         app.exec_()

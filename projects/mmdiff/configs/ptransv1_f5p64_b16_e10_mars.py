@@ -5,15 +5,15 @@ custom_imports = dict(
     imports=['mwpose3d', 'projects.mmdiff'], allow_failed_imports=False)
 
 data_prefix = dict(
-    pcd='mmwave_filtered',
+    pcd='mmwave',
     skel='skeleton'
 )
-data_root = './data/mmfi'
-train_info = 'info_subj_train.pkl'
-val_info = 'info_subj_val.pkl'
-test_info = 'info_subj_val.pkl'
+data_root = './data/mars/woutlier'
+train_info = 'info_train.pkl'
+val_info = 'info_val.pkl'
+test_info = 'info_test.pkl'
 
-keypoints_involved=list(range(0, 17))
+keypoints_involved=[i for i in range(0, 21) if i not in [7, 11]]
 num_joints = len(keypoints_involved)
 
 point_cloud_size = 64
@@ -91,15 +91,31 @@ train_pipeline = [
         backup_frames=backup_frames,
     ),
     dict(
+        type='SkeletonKeypointFilter',
+        keypoint_involved=keypoints_involved,
+    ),
+    dict(
+        type='SkeletonCoordinateTransform',
+        tran_xyz=(0, -1.92, 0)
+    ),
+    dict(
+        type='PointCloudCoordinateTransform',
+        tran_xyz=(0, -1.92, 0),
+    ),
+    dict(
         type='RandomFrameDrop',
-        drop_prob=0.1,
+        drop_prob=0.05,
         max_drop=1,
     ),
     dict(
         type='RandomTransform',
         transform_prob=0.5,
-        sigma_xyz=(0.15, 0.15, 0.05),
-        max_d_xyz=(0.5, 0.5, 0.2)
+        sigma_xyz=(0.05, 0.05, 0.05),
+        max_d_xyz=(0.2, 0.2, 0.1)
+    ),
+    dict(
+        type='PointDuplicator',
+        target_num_points=point_cloud_size,
     ),
     dict(
         type='SequenceClip',
@@ -107,31 +123,17 @@ train_pipeline = [
         sequence_length=seq_frames # NOTE: This is for phase 1. Phase 2 will use num_frames
     ),
     dict(
-        type='SequenceReverse',
-        reverse_prob=0.2,
-        velocity_idx=3
-    ),
-    dict(
-        type='PointDuplicator',
-        target_num_points=point_cloud_size
-    ),
-    dict(
         type='PointSortAndClip',
         target_num_points=point_cloud_size,
-        sort_dim=1, # 1 for Distance
-        sort_order='asc'
-    ),
-    dict(
-        type='SkeletonKeypointFilter',
-        keypoint_involved=keypoints_involved,
-        with_pcd_ts=False
+        sort_dim=4,
+        sort_order='desc'
     ),
     dict(
         type='NormalizePointAttr',
         attr_indices=(3, 4,),
-        means=(-0.99117, 33.58460),
-        stds=(2.68049, 7.88112)
-    )
+        means=(-0.00096, 43.60179),
+        stds=(0.49076, 63.31943)
+    ),
 ]
 
 train_dataloader = dict(
@@ -153,36 +155,42 @@ val_pipeline = [
     dict(
         type='LoadMultiFrameFromH5',
         load_pcd_dim=radar_input_c,
-        num_frames=num_frames,
+        num_frames=seq_frames, # NOTE: This is for phase 1. Phase 2 will use num_frames
         backup_frames=backup_frames,
-    ),
-    dict(
-        type='SequenceClip',
-        mode='last',
-        sequence_length=num_frames
-    ),
-    dict(
-        type='PointDuplicator',
-        target_num_points=point_cloud_size,
-        noise_std=0.
-    ),
-    dict(
-        type='PointSortAndClip',
-        target_num_points=point_cloud_size,
-        sort_dim=1, # 1 for Distance
-        sort_order='asc'
     ),
     dict(
         type='SkeletonKeypointFilter',
         keypoint_involved=keypoints_involved,
-        with_pcd_ts=False
+    ),
+    dict(
+        type='SkeletonCoordinateTransform',
+        tran_xyz=(0, -1.92, 0)
+    ),
+    dict(
+        type='PointCloudCoordinateTransform',
+        tran_xyz=(0, -1.92, 0),
+    ),
+    dict(
+        type='PointDuplicator',
+        target_num_points=point_cloud_size,
+    ),
+    dict(
+        type='SequenceClip',
+        mode='last',
+        sequence_length=seq_frames # NOTE: This is for phase 1. Phase 2 will use num_frames
+    ),
+    dict(
+        type='PointSortAndClip',
+        target_num_points=point_cloud_size,
+        sort_dim=4,
+        sort_order='desc'
     ),
     dict(
         type='NormalizePointAttr',
         attr_indices=(3, 4,),
-        means=(-0.99117, 33.58460),
-        stds=(2.68049, 7.88112)
-    )
+        means=(-0.00096, 43.60179),
+        stds=(0.49076, 63.31943)
+    ),
 ]
 
 val_dataloader = dict(
@@ -256,7 +264,7 @@ test_dataloader = dict(
         data_root=f"{data_root}",
         info_path=f"{data_root}/{test_info}",
         data_prefix=data_prefix,
-        pipeline=val_pipeline,
+        pipeline=test_pipeline,
         sequence_length=seq_frames + backup_frames,
         allow_pad_sequence=False
     )

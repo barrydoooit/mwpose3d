@@ -150,7 +150,7 @@ train_pipeline = [
     dict(
         type='SkeletonKeypointFilter',
         keypoint_involved=keypoints_involved,
-        with_pcd_ts=False
+        
     ),
     dict(
         type='NormalizePointAttr',
@@ -213,7 +213,7 @@ val_pipeline = [
     dict(
         type='SkeletonKeypointFilter',
         keypoint_involved=keypoints_involved,
-        with_pcd_ts=False
+        
     ),
     dict(
         type='NormalizePointAttr',

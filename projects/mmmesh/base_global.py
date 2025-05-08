@@ -82,16 +82,29 @@ class GlobalRNN(nn.Module):
                  num_layers: int = 3,
                  batch_first: bool = True,
                  dropout: float = 0.1,
-                 fc_channels: List[int] = [64, 16, 2]):
+                 fc_channels: List[int] = [64, 16, 2],
+                 learnable_init_state: bool = False,
+                 bidirectional: bool = False,):
         super().__init__()
+        self.num_layers = num_layers * 2 if bidirectional else num_layers
         self.in_channel = in_channel
         self.hidden_size = hidden_size
-        self.rnn = nn.LSTM(in_channel, hidden_size, num_layers, batch_first=batch_first, dropout=dropout)
+        self.rnn = nn.LSTM(in_channel, hidden_size, num_layers, batch_first=batch_first, dropout=dropout, bidirectional=bidirectional)
         self.fc1 = nn.Linear(fc_channels[0], fc_channels[1])
         self.faf1 = nn.ReLU()
         self.fc2 = nn.Linear(fc_channels[1], fc_channels[2])
-    
-    def forward(self, x, h0, c0):
+
+        self.learnable_init_state = learnable_init_state
+        if learnable_init_state:
+            self.h0 = nn.Parameter(torch.zeros(self.num_layers, 1, hidden_size))
+            self.c0 = nn.Parameter(torch.zeros(self.num_layers, 1, hidden_size))
+        
+        
+    def forward(self, x, h0=None, c0=None):
+        batch_size = x.size(0)
+        if self.learnable_init_state:
+            h0 = self.h0.expand(-1, batch_size, -1).contiguous()
+            c0 = self.c0.expand(-1, batch_size, -1).contiguous()
         g_vec, (hn, cn) = self.rnn(x, (h0, c0))
         g_loc = self.fc2(self.faf1(self.fc1(g_vec)))
         return g_vec, g_loc, hn, cn

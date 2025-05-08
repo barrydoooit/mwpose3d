@@ -9,20 +9,16 @@ from mwpose3d.registry import TRANSFORMS
 class SkeletonKeypointFilter(BaseTransform):
     def __init__(self,
                  keypoint_involved: List[int],
-                 with_pcd_ts: bool = False,
                  online_mode: bool = False
                  ):
         super().__init__(online_mode)
         self.keypoint_involved = keypoint_involved
-        self.with_pcd_ts = with_pcd_ts
     
     def get_sub_skeleton(self, skel_frame: np.ndarray):
         selected = []
         for joint in self.keypoint_involved:
             start = joint * 3
-            selected.extend(skel_frame[start:start+3])
-        if self.with_pcd_ts:
-            selected.append(skel_frame[-1])
+            selected.extend(skel_frame[start:start+3].copy())
         
         return np.array(selected)
 
@@ -37,24 +33,19 @@ class SkeletonKeypointFilter(BaseTransform):
 @TRANSFORMS.register_module()
 class SkeletonCoordNormalization(BaseTransform):
     def __init__(self,
-                 keypoint_involved: List[int],
-                 refrence_keypoint: int = 1,
+                 means: List[float],
+                 stds: List[float],
                  online_mode: bool = False
                  ):
         super().__init__(online_mode)
-        self.keypoint_involved = keypoint_involved
-        self.reference_idx = keypoint_involved.index(refrence_keypoint)
+        self.means = np.array(means)
+        self.stds = np.array(stds)
 
     def transform(self, input: dict):
         skel_frames: Tuple[np.ndarray] = input['skel_frames']
         nomalized_skel_frames = []
         for skel_frame in skel_frames:
-            skel_array = skel_frame.copy().reshape(-1, 3)
-            for joint in range(skel_array.shape[0]):
-                if joint == self.reference_idx:
-                    continue
-                skel_array[joint] -= skel_array[self.reference_idx]
-            skel_array = skel_array.flatten()
+            skel_array = (skel_frame - self.means) / self.stds
             nomalized_skel_frames.append(skel_array)
         input['skel_frames'] = tuple(nomalized_skel_frames)
         return input

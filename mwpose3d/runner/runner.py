@@ -186,6 +186,7 @@ class Runner:
 
     def test(self):
         print('Start testing')
+        print(f'Load checkpoint from {self._load_from}')
         self.load_checkpoint(self._load_from)
         self.test_loop.run()
         print('Testing finished')

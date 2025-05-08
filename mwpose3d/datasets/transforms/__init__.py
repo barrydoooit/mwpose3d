@@ -4,7 +4,7 @@ from .range_filter import PointCloudRangeFilter
 from .skel_filter import SkeletonKeypointFilter, SkeletonCoordNormalization
 from .point_value_control import AddRangeDimension, NormalizePointAttr
 from .point_number_control import PointDuplicator, PointSortAndClip, PointPadding
-from .coord_trans import Kinect2TICoordinateTransform
+from .coord_trans import Kinect2TICoordinateTransform, SkeletonCoordinateTransform, PointCloudCoordinateTransform
 from .sequence_clip import SequenceClip
 from .transform import RandomTransform, SequenceReverse, RandomFrameDrop
 

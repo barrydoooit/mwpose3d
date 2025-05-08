@@ -10,8 +10,8 @@ from mwpose3d.models.base import BaseSkeletonEstimModel
 from mwpose3d.registry import MODELS
 try:
     from mwpose3d.models.utils.sdtw_cuda_loss import SoftDTW
-except Exception:
-    warnings.warn("SoftDTW is not available. Training with SoftDTW will trigger error")
+except Exception as e:
+    warnings.warn(f"SoftDTW is not available due to: {e}. Training with SoftDTW will trigger error")
 
 
 
@@ -111,10 +111,17 @@ class MmMeshPredictor(BaseSkeletonEstimModel):
         ]
         data_sample_list = [SkeletonDataSample(gt=skel_frame_tensor) for skel_frame_tensor in skel_frame_tensors]
         
-        h0_g = torch.zeros((3, batch_size, self.global_module.grnn.in_channel), dtype=torch.float32, device=get_device())
-        c0_g = torch.zeros((3, batch_size, self.global_module.grnn.in_channel), dtype=torch.float32, device=get_device())
-        h0_a = torch.zeros((3, batch_size, self.anchor_module.arnn.input_size), dtype=torch.float32, device=get_device())
-        c0_a = torch.zeros((3, batch_size, self.anchor_module.arnn.input_size), dtype=torch.float32, device=get_device())
+        if self.global_module.grnn.learnable_init_state:
+            h0_g = torch.zeros((self.global_module.grnn.num_layers, batch_size, self.global_module.grnn.hidden_size), dtype=torch.float32, device=get_device())
+            c0_g = torch.zeros((self.global_module.grnn.num_layers, batch_size, self.global_module.grnn.hidden_size), dtype=torch.float32, device=get_device())
+        else:
+            h0_g, c0_g = None, None
+        
+        if self.anchor_module.arnn.learnable_init_state:
+            h0_a = torch.zeros((self.anchor_module.arnn.num_layers, batch_size, self.anchor_module.arnn.hidden_size), dtype=torch.float32, device=get_device())
+            c0_a = torch.zeros((self.anchor_module.arnn.num_layers, batch_size, self.anchor_module.arnn.hidden_size), dtype=torch.float32, device=get_device())
+        else:
+            h0_a, c0_a = None, None
         
         batch_inputs = dict(
             final_pcd_tensor=final_pcd_tensor,

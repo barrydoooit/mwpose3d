@@ -44,7 +44,7 @@ class mmDiffPredictor(BaseSkeletonEstimModel):
                  local_flag: Literal[0, 1, 2],
                  temp_flag: Literal[0, 1],
                  limb_flag: Literal[0, 1, 2],
-                 gt_norm_joint: int = 1,
+                 gt_norm_joint: Optional[int] = None,
                 ):
         super().__init__()
         self.point_cloud_size = point_cloud_size
@@ -73,7 +73,7 @@ class mmDiffPredictor(BaseSkeletonEstimModel):
         ### Generate Diff Model ###
         self.diff_config = diff_config
         self.joint2idx, self.idx2joint, self.edges_compressed = compress_joints_and_edges(keypoints_involved)
-        self.gt_norm_joint = self.joint2idx[gt_norm_joint]
+        self.gt_norm_joint = self.joint2idx[gt_norm_joint] if gt_norm_joint is not None else None
         self.adj = adj_mx_from_edges(num_pts=self.num_joints, edges=self.edges_compressed, sparse=False).to(get_device())
         self.model_diff = GCNdiff(self.adj, 
                                   len(self.edges_compressed),
@@ -114,7 +114,13 @@ class mmDiffPredictor(BaseSkeletonEstimModel):
         elif mode == 'loss-train':
             return self.loss(inputs, data_samples, pretrain=False)
         elif mode == 'predict':
-            return self.predict(inputs, data_samples)
+            res = self.predict(inputs, data_samples)
+            # for data_sample in data_samples:
+            #     if data_sample.pred is not None:
+            #         data_sample.pred = self.denorm_joints(data_sample.pred)
+            #     if data_sample.gt is not None:
+            #         data_sample.gt = self.denorm_joints(data_sample.gt)
+            return res
         else:
             return self._forward(inputs, data_samples)
     
@@ -208,6 +214,16 @@ class mmDiffPredictor(BaseSkeletonEstimModel):
         limb_loss = (limb_len_pred - limb_len_gt).abs().sum(dim=-1).mean(dim=0)
         loss_diff = loss_diff + limb_loss * 10
         return loss_diff
+    
+    def denorm_joints(self, skel_frame: torch.Tensor) -> torch.Tensor:
+        if self.gt_norm_joint is None:
+            return skel_frame
+        # assert skel_frame.dim() == 1 and skel_frame.shape[0] == self.num_joints * 3
+        skel_frame = skel_frame.reshape(-1, 3)
+        reference = skel_frame[self.gt_norm_joint].clone()
+        skel_frame = skel_frame + reference
+        skel_frame[self.gt_norm_joint] = reference
+        return skel_frame.flatten()
     
     @torch.no_grad()
     def predict(self, batch_inputs, data_samples):

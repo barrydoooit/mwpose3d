@@ -1,6 +1,7 @@
 from typing import TYPE_CHECKING, Dict, List, Sequence, Union
 import torch
 from torch.utils.data import DataLoader
+from tqdm import tqdm
 
 from mwpose3d.datasets.skel_data_sample import SkeletonDataSample
 from mwpose3d.evaluation.metrics.base import BaseMetric
@@ -49,7 +50,9 @@ class ValLoop(BaseLoop):
     def _run_epoch(self) -> None:
         self.runner.model.eval()
         with torch.no_grad():
-            for idx, data_batch in enumerate(self.dataloader):
+            for idx, data_batch in tqdm(enumerate(self.dataloader), 
+                          total=len(self.dataloader),
+                          desc='Validating'):
                 self._run_iter(idx, data_batch)
 
         

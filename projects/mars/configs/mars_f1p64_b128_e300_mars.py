@@ -8,36 +8,55 @@ data_prefix = dict(
     pcd='mmwave',
     skel='skeleton'
 )
-data_root = './data/mars/wooutlier'
+data_root = './data/mars/woutlier'
 train_info = 'info_train.pkl'
 val_info = 'info_val.pkl'
 test_info = 'info_test.pkl'
 
-keypoint_involved=list(range(0, 20))
+keypoint_involved=[i for i in range(0, 21) if i not in [7, 11]]
 
-num_frames =3
+num_frames =1
 backup_frames = 0
 total_frames = num_frames + backup_frames
 point_cloud_size=64
+pcd_dim = 5
 model = dict(
     type='MarsPredictor',
     point_cloud_size=point_cloud_size,
+    in_channels=pcd_dim,
+    input_size=(8, 8),
     keypoints_involved=keypoint_involved,
-    frame_len=num_frames,
 )
 
 train_pipeline = [
     dict(
         type='LoadMultiFrameFromH5',
-        load_pcd_dim=5,
+        load_pcd_dim=pcd_dim,
         num_frames=num_frames,
         backup_frames=backup_frames,
     ),
     dict(
+        type='SequenceClip',
+        mode='last',
+        sequence_length=num_frames
+    ),
+    dict(
+        type='SkeletonKeypointFilter',
+        keypoint_involved=keypoint_involved,
+    ),
+    dict(
+        type='SkeletonCoordinateTransform',
+        tran_xyz=(0, -1.92, 0)
+    ),
+    dict(
+        type='PointCloudCoordinateTransform',
+        tran_xyz=(0, -1.92, 0),
+    ),
+    dict(
         type='RandomTransform',
         transform_prob=0.5,
-        sigma_xyz=(0.15, 0.15, 0.05),
-        max_d_xyz=(0.3, 0.3, 0.1)
+        sigma_xyz=(0.05, 0.05, 0.05),
+        max_d_xyz=(0.2, 0.2, 0.1)
     ),
     dict(
         type='PointDuplicator',
@@ -46,20 +65,16 @@ train_pipeline = [
     dict(
         type='PointSortAndClip',
         target_num_points=point_cloud_size,
-        sort_dim=1, # 1 for Distance
-        sort_order='asc'
-    ),
-    dict(
-        type='SkeletonKeypointFilter',
-        keypoint_involved=keypoint_involved,
-        with_pcd_ts=False
+        sort_dim=(0,1,2,),
+        sort_order='asc',
+        sort_effective=True
     ),
     dict(
         type='NormalizePointAttr',
         attr_indices=(3, 4,),
-        means=(0.00067, 43.26571),
-        stds=(0.49076, 62.30057)
-    )
+        means=(-0.00096, 43.60179),
+        stds=(0.49076, 63.31943)
+    ),
 ]
 
 train_dataloader = dict(
@@ -78,10 +93,14 @@ train_dataloader = dict(
 )
 
 optimizer_cfg = dict(
-    type='AdamW',
-    lr = 0.0005,
-    weight_decay=0.01
+    type='Adam',
+    lr = 0.001,
+    betas=(0.5, 0.999)
 )
+# optim_wrapper = dict(
+#     type='OptimWrapper',
+#     optimizer=dict(type='AdamW', lr=0.0005, weight_decay=0.01),
+# )
 
 train_cfg = dict(
     type='EpochBasedTrainLoop',
@@ -92,25 +111,44 @@ train_cfg = dict(
 val_pipeline = [
     dict(
         type='LoadMultiFrameFromH5',
-        load_pcd_dim=5,
+        load_pcd_dim=pcd_dim,
         num_frames=num_frames,
         backup_frames=backup_frames,
     ),
     dict(
-        type='PointDuplicator',
-        target_num_points=point_cloud_size
+        type='SequenceClip',
+        mode='last',
+        sequence_length=num_frames
     ),
     dict(
         type='SkeletonKeypointFilter',
         keypoint_involved=keypoint_involved,
-        with_pcd_ts=False
+    ),
+    dict(
+        type='SkeletonCoordinateTransform',
+        tran_xyz=(0, -1.92, 0)
+    ),
+    dict(
+        type='PointCloudCoordinateTransform',
+        tran_xyz=(0, -1.92, 0),
+    ),
+    dict(
+        type='PointDuplicator',
+        target_num_points=point_cloud_size,
+    ),
+    dict(
+        type='PointSortAndClip',
+        target_num_points=point_cloud_size,
+        sort_dim=(0,1,2,),
+        sort_order='asc',
+        sort_effective=True
     ),
     dict(
         type='NormalizePointAttr',
         attr_indices=(3, 4,),
-        means=(0.00067, 43.26571),
-        stds=(0.49076, 62.30057)
-    )
+        means=(-0.00096, 43.60179),
+        stds=(0.49076, 63.31943)
+    ),
 ]
 val_dataloader = dict(
     batch_size=1,
@@ -150,14 +188,7 @@ test_dataloader = dict(
     )
 )
 
-vis_metric = dict(metric, visualizer_cfg=dict(
-        keypoint_involved=keypoint_involved,
-        keypoint_for_stats=[0, 5, 9],
-        error_type='abs_error'
-    )
-)
-
 test_cfg = dict(
     type='TestLoop',
-    metric_cfg=vis_metric
+    metric_cfg=metric
 )

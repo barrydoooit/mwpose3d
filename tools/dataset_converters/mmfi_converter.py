@@ -191,11 +191,11 @@ class MMFiDatasetConverter:
         for bf in bin_files:
             num = int(bf.stem.replace('frame',''))
             raw = bf.read_bytes()
-            pts = np.frombuffer(raw, dtype=np.float64).copy().reshape(-1,5)
+            pts = np.frombuffer(raw, dtype=np.float32).copy().reshape(-1,5)
             pts_list.append(pts)
             idx.append(idx[-1] + pts.shape[0])
             frame_idx.append(num)
-        pcd_data = np.concatenate(pts_list,axis=0) if pts_list else np.zeros((0,5),dtype=np.float64)
+        pcd_data = np.concatenate(pts_list,axis=0) if pts_list else np.zeros((0,5),dtype=np.float32)
         pcd_idx  = np.array(idx,dtype=np.int64)
         # Swap snr and vel columns. NOTE: MMFi stated that the order is x, y, z, vel, snr, but the data seems to be reversed in vel and snr.
         if pcd_data.size > 0:

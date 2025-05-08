@@ -1,6 +1,7 @@
 from typing import TYPE_CHECKING, Dict, Sequence, Union
 import torch
 from torch.utils.data import DataLoader
+from tqdm import tqdm
 from .base_loop import BaseLoop
 from mwpose3d.registry import LOOPS
 
@@ -51,8 +52,16 @@ class EpochBasedTrainLoop(BaseLoop):
     def run(self) -> torch.nn.Module:
         self.runner.call_hook('before_train')
         
+        self.epoch_pbar = tqdm(
+            total=self._max_epochs,
+            desc='Epochs',
+            leave=True
+        )
+        
         while self._epoch < self._max_epochs and not self.stop_training:
             self._run_epoch()
+            self.epoch_pbar.update(1)
+            
             if (self.runner.val_loop is not None
                     and self._epoch >= self.val_begin
                     and (self._epoch % self.val_interval == 0
@@ -60,14 +69,13 @@ class EpochBasedTrainLoop(BaseLoop):
                 self.runner.val_loop.run()
                 self.runner.save_checkpoint(f'epoch_{self._epoch}.pth')
         
+        self.epoch_pbar.close()
         self.runner.call_hook('after_train')
         return self.runner.model
     
     def _run_epoch(self) -> None:
         self.runner.call_hook('before_train_epoch')
         self.runner.model.train()
-        if self._epoch % 50 == 0:
-            print(f'Epoch [{self._epoch}/{self._max_epochs}]')
         for idx, data_batch in enumerate(self.dataloader):
             self._run_iter(idx, data_batch)
             
@@ -79,11 +87,11 @@ class EpochBasedTrainLoop(BaseLoop):
         assert hasattr(self.runner.model, 'pack_input')
         batch_inputs, data_samples = self.runner.model.pack_input(data_batch)
         loss = self.runner.model(batch_inputs, data_samples, mode='loss')
-        if self._iter % 1000 == 0:
-            print(f'Iter [{self._iter}/{self._max_iters}] Loss: {loss.item()}')
         self.runner.optimizer.zero_grad()
         loss.backward()
         self.runner.optimizer.step()
+        if self._iter % 100 == 0:
+            self.epoch_pbar.set_postfix_str(f'loss: {loss.item():.4f}')
         
         self.runner.call_hook(
             'after_train_iter',

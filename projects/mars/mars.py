@@ -13,6 +13,90 @@ from mwpose3d.registry import MODELS
 
 @MODELS.register_module()
 class MarsPredictor(BaseSkeletonEstimModel):
+    def __init__(self,
+                 point_cloud_size: int = 64, 
+                 input_size: tuple = (8, 8),
+                 in_channels: int= 5,
+                 keypoints_involved: List[int] = list(range(0, 21))
+                 ):
+        super().__init__()
+        self.point_cloud_size = point_cloud_size
+        self.input_size = input_size
+        assert self.input_size[0] * self.input_size[1] == self.point_cloud_size
+        self.in_channels = in_channels
+        self.keypoints_involved = keypoints_involved
+        self.make_layers()
+        self.criterion = nn.MSELoss()
+
+    def make_layers(self):
+        self.feat = nn.Sequential(*[
+            nn.Conv2d(self.in_channels, 16, kernel_size=3, stride=1, padding=1),
+            nn.ReLU(inplace=True),
+            nn.Dropout(0.3),
+            nn.Conv2d(16, 32, kernel_size=3, stride=1, padding=1),
+            nn.ReLU(inplace=True),
+            nn.Dropout(0.3),
+            nn.BatchNorm2d(32, momentum=0.05),
+        ])
+        
+        self.head = nn.Sequential(*[
+            nn.Flatten(),
+            nn.Linear(32 * self.input_size[0] * self.input_size[1], 512),
+            nn.ReLU(inplace=True),
+            nn.BatchNorm1d(512, momentum=0.05),
+            nn.Dropout(0.4),
+            nn.Linear(512, len(self.keypoints_involved) * 3),
+        ])
+    
+    def loss(self, batch_inputs, data_samples):
+        tensor = self._forward(batch_inputs, data_samples)
+
+        gt = torch.stack([data_sample.gt for data_sample in data_samples], dim=0)
+        loss = self.criterion(tensor, gt)
+        return loss
+    
+    def predict(self, batch_inputs, data_samples):
+        tensor = self._forward(batch_inputs, data_samples)
+        for b, data_sample in enumerate(data_samples):
+            data_sample.pred = tensor[b]
+        return tensor
+
+    def _forward(self, batch_inputs, data_samples):
+        x = batch_inputs['final_pcd_tensor']
+        B, FR, N, C = x.shape
+        x = x.reshape(B, FR, self.input_size[0], self.input_size[1], C) # B x F x H x W x C
+        x = x.permute(0, 1, 4, 2, 3).contiguous() # B x F x C x H x W
+        x = x.view(B, FR * C, self.input_size[0], self.input_size[1])
+        x = self.feat(x)
+        x = self.head(x)
+        return x
+    
+    def pack_input(self, data_batch_dict: dict):
+        pcd_frame_list: List[Tuple[np.ndarray]] = data_batch_dict['pcd_frames'] # F x B x N x C
+        batch_size = len(pcd_frame_list[0])
+        frame_len = len(pcd_frame_list)
+        final_pcd_frame = np.zeros((frame_len, batch_size, self.point_cloud_size, self.in_channels
+                                   ), dtype=np.float32)
+        
+        for frame_seq, batched_frames in enumerate(pcd_frame_list):
+            for batch_idx, pcd_frame in enumerate(batched_frames):
+                final_pcd_frame[frame_seq, batch_idx] = pcd_frame[:self.point_cloud_size]
+                
+        final_pcd_tensor = torch.from_numpy(final_pcd_frame).float().to(get_device())
+        final_pcd_tensor = final_pcd_tensor.permute(1, 0, 2, 3).contiguous() # B x F x N x C        
+        
+        skel_frame_list: List[Tuple[np.ndarray]] = data_batch_dict['skel_frames']
+        
+        last_skel_frame = torch.from_numpy(np.stack(skel_frame_list[-1], axis=0)).float().to(get_device())
+        data_sample_list = [
+            SkeletonDataSample(gt=last_skel_frame_tensor[:(last_skel_frame_tensor.shape[0] // 3) * 3])
+            for last_skel_frame_tensor in last_skel_frame
+        ]
+        data_batch_dict["final_pcd_tensor"] = final_pcd_tensor
+        return data_batch_dict, data_sample_list
+
+@MODELS.register_module()
+class MarsPredictorTemporal(BaseSkeletonEstimModel):
     def __init__(self, 
                  point_cloud_size: int = 64, 
                  frame_len: int = 1,
@@ -59,7 +143,8 @@ class MarsPredictor(BaseSkeletonEstimModel):
         return tensor
 
     def _forward(self, batch_inputs, data_samples):
-        x = batch_inputs.permute(0, 3, 1, 2).contiguous()
+        x = batch_inputs['final_pcd_tensor']
+        x = x.permute(0, 3, 1, 2).contiguous()
         x = F.relu(self.conv1_bn(self.conv1(x)))
         x = self.dropout_conv1(x)
         x = F.relu(self.conv2_bn(self.conv2(x)))
@@ -95,6 +180,6 @@ class MarsPredictor(BaseSkeletonEstimModel):
             for last_skel_frame_tensor in last_skel_frame
         ]
         data_batch_dict["final_pcd_tensor"] = final_pcd_tensor
-        return final_pcd_tensor, data_sample_list
+        return data_batch_dict, data_sample_list
         
             
