@@ -86,6 +86,23 @@ def mmfi_data_prep(root_path: str,
         modality=modality)
     converter.process_all()
 
+def mri_data_prep(root_path: str,
+                  out_dir: str,
+                  split: Literal[1, 2] = 2,
+                  protocol: Literal[1, 2] = 2,
+                  ratio: float = 0.8,
+                  seed: int = 42,
+                  ):
+    from tools.dataset_converters.mri_converter import MRIDatasetConverter
+    converter = MRIDatasetConverter(
+        input_root=Path(root_path) / 'dataset_release' / 'aligned_data',
+        output_root=Path(out_dir),
+        split=split,
+        protocol=protocol,
+        ratio=ratio,
+        seed=seed)
+    converter.process_all()
+
 def ask_for_option(prompt: str, options: List[str]) -> str:
     option = input(prompt).strip().lower()
     while option not in options:
@@ -141,6 +158,47 @@ def main():
             out_dir=args.out_dir,
             modality=modality,
             unify_coordinate=unify_coordinate)
+    elif args.dataset == 'mri':
+        use_defaults = ask_for_option(
+            prompt="Use default settings (split=S2, protocol=P2, ratio=0.8, seed=42) (y/n)? ",
+            options=['y', 'n']
+        )
+        if use_defaults == 'y':
+            split = 2
+            protocol = 2
+            ratio = 0.8
+            seed = 42
+        else:
+            split = int(ask_for_option(
+                prompt=(
+                    "Choose data-split setting:\n"
+                    "  1 (S1 Random Split) - random 80%/20% split of all samples\n"
+                    "  2 (S2 Split by Subjects) - train on 80% of subjects, test on the rest\n"
+                    "Enter 1 or 2: "
+                ),
+                options=['1', '2']
+            ))
+            protocol = int(ask_for_option(
+                prompt=(
+                    "Choose evaluation protocol:\n"
+                    "  1 (P1) - all 12 movements (stretching, relaxing in free form, and walking)\n"
+                    "  2 (P2) - only the first 10 rehabilitation movements\n"
+                    "Enter 1 or 2: "
+                ),
+                options=['1', '2']
+            ))
+            ratio = float(input("Enter the train/val ratio (default: 0.8): ") or 0.8
+            )
+            seed = int(input("Enter the random seed (default: 42): ") or 42)
+
+        mri_data_prep(
+            root_path=args.root_path,
+            out_dir=args.out_dir,
+            split=split,
+            protocol=protocol,
+            ratio=ratio,
+            seed=seed
+        )
 
 if __name__ == '__main__':
     main()
