@@ -1,24 +1,29 @@
 _base_ = [
-    '../../../mwpose3d/configs/__base__/default_runtime.py',
+    '../../../configs/__base__/default_runtime.py',
 ]
 custom_imports = dict(
     imports=['mwpose3d', 'projects.mmdiff'], allow_failed_imports=False)
 
-data_root = './data/experimental/neat/vital'
-train_info = 'info_train.pkl'
-val_info = 'info_test.pkl'
-test_info = 'info_train.pkl'
+data_prefix = dict(
+    pcd='mmwave',
+    skel='skeleton'
+)
+data_root = './data/mmfi'
+train_info = 'info_subj_train.pkl'
+val_info = 'info_subj_val.pkl'
+test_info = 'info_subj_val.pkl'
 
-keypoints_involved=[0,1,4,5,6,8,9,10]
+keypoints_involved=list(range(0, 17))
 num_joints = len(keypoints_involved)
-point_cloud_size = 96
+
+point_cloud_size = 64
 past_frames = 6
 seq_frames = 5
 num_frames = past_frames + seq_frames
-backup_frames = 10
+backup_frames = 1
 total_frames = num_frames + backup_frames
 radar_input_c = 5
-seq_tag = True
+seq_tag = False
 if seq_tag and seq_frames > 1:
     radar_input_c_mid = radar_input_c + 1
 else:
@@ -75,67 +80,43 @@ model = dict(
     local_flag=2,
     temp_flag=1,
     limb_flag=2,
-    gt_norm_joint=1
 )
 
 train_pipeline = [
     dict(
         type='LoadMultiFrameFromH5',
-        load_pcd_dim=radar_input_c,
-        num_frames=seq_frames, # NOTE: This is for phase 1. Phase 2 will use num_frames
+        load_pcd_dim=5,
+        num_frames=num_frames,
         backup_frames=backup_frames,
-    ),
-    dict(
-        type='Kinect2TICoordinateTransform',
-        radar_tilt=5,
-        kinect_tilt=5,
-        pcd_tran=(0, -2, 0),
-        skel_tran=(-0.37, 0, -2)
-    ),
-    dict(
-        type='RandomFlip',
-        flip_prob=0.5,
-        duplicate_prob=0.
-    ),
-    dict(
-        type='PointCloudRangeFilter',
-        point_cloud_range=[-1.0, -1.0, -1.5, 1, 1.0, 2.0],
-        empty_frame_op='shift',
-        backup_frames=backup_frames
+        empty_frame_op='prev',
     ),
     dict(
         type='RandomFrameDrop',
-        drop_prob=0.1,
-        max_drop=2,
-    ),
-    dict(
-        type='RandomScale',
-        scale_prob=0.3,
-        scale_range_x=(0.9, 1.1),
-        scale_range_y=(0.95, 1.05),
-        scale_range_z=(0.8, 1.1)
-    ),
-    dict(
-        type='RandomRot3D',
-        azimuth_range=(-5, 5),
-        elevation_range=(-5, 5),
-        roll_range=(-3, 3) 
-    ),
-    dict(
-        type='RandomTransform',
-        transform_prob=0.5,
-        sigma_xyz=(0.15, 0.15, 0.1),
-        max_d_xyz=(0.5, 0.5, 0.5)
+        drop_prob=0.05,
+        max_drop=1,
     ),
     dict(
         type='SequenceClip',
         mode='last',
-        sequence_length=seq_frames # NOTE: This is for phase 1. Phase 2 will use num_frames
+        sequence_length=num_frames
     ),
     dict(
-        type='SequenceReverse',
-        reverse_prob=0.5,
-        velocity_idx=3
+        type='SkeletonKeypointFilter',
+        keypoint_involved=keypoints_involved,
+    ),
+    dict(
+        type='SkeletonCoordinateTransform',
+        tran_xyz=(0, -3.15, 0)
+    ),
+    dict(
+        type='PointCloudCoordinateTransform',
+        tran_xyz=(0, -3.15, 0),
+    ),
+    dict(
+        type='RandomTransform',
+        transform_prob=0.5,
+        sigma_xyz=(0.05, 0.05, 0.05),
+        max_d_xyz=(0.2, 0.2, 0.1)
     ),
     dict(
         type='PointDuplicator',
@@ -144,20 +125,15 @@ train_pipeline = [
     dict(
         type='PointSortAndClip',
         target_num_points=point_cloud_size,
-        sort_dim=1, # 1 for Distance
-        sort_order='asc'
-    ),
-    dict(
-        type='SkeletonKeypointFilter',
-        keypoint_involved=keypoints_involved,
-        
+        sort_dim=4,
+        sort_order='desc'
     ),
     dict(
         type='NormalizePointAttr',
-        attr_indices=(4,),
-        means=(47.75,),
-        stds=(81.46,)
-    )
+        attr_indices=(3, 4,),
+        means=(-0.00047, 16.56169),
+        stds=(0.79512, 3.88067)
+    ),
 ]
 
 train_dataloader = dict(
@@ -166,10 +142,11 @@ train_dataloader = dict(
     shuffle=True,
     dataset=dict(
         type='MotionDataset',
-        data_root=f"{data_root}/h5",
+        data_root=f"{data_root}",
         info_path=f"{data_root}/{train_info}",
+        data_prefix=data_prefix,
         pipeline=train_pipeline,
-        sequence_length=seq_frames + backup_frames,
+        sequence_length=num_frames + backup_frames,
         allow_pad_sequence=False
     )
 )
@@ -177,22 +154,10 @@ train_dataloader = dict(
 val_pipeline = [
     dict(
         type='LoadMultiFrameFromH5',
-        load_pcd_dim=radar_input_c,
+        load_pcd_dim=5,
         num_frames=num_frames,
         backup_frames=backup_frames,
-    ),
-    dict(
-        type='Kinect2TICoordinateTransform',
-        radar_tilt=5,
-        kinect_tilt=5,
-        pcd_tran=(0, -2, 0),
-        skel_tran=(-0.37, 0, -2)
-    ),
-    dict(
-        type='PointCloudRangeFilter',
-        point_cloud_range=[-1.0, -1.0, -1.5, 1, 1.0, 2.0],
-        empty_frame_op='shift',
-        backup_frames=backup_frames
+        empty_frame_op='prev',
     ),
     dict(
         type='SequenceClip',
@@ -200,27 +165,33 @@ val_pipeline = [
         sequence_length=num_frames
     ),
     dict(
+        type='SkeletonKeypointFilter',
+        keypoint_involved=keypoints_involved,
+    ),
+    dict(
+        type='SkeletonCoordinateTransform',
+        tran_xyz=(0, -3.15, 0)
+    ),
+    dict(
+        type='PointCloudCoordinateTransform',
+        tran_xyz=(0, -3.15, 0),
+    ),
+    dict(
         type='PointDuplicator',
-        target_num_points=point_cloud_size,
-        noise_std=0.
+        target_num_points=point_cloud_size
     ),
     dict(
         type='PointSortAndClip',
         target_num_points=point_cloud_size,
-        sort_dim=1, # 1 for Distance
-        sort_order='asc'
-    ),
-    dict(
-        type='SkeletonKeypointFilter',
-        keypoint_involved=keypoints_involved,
-        
+        sort_dim=4,
+        sort_order='desc'
     ),
     dict(
         type='NormalizePointAttr',
-        attr_indices=(4,),
-        means=(47.75,),
-        stds=(81.46,)
-    )
+        attr_indices=(3, 4,),
+        means=(-0.00047, 16.56169),
+        stds=(0.79512, 3.88067)
+    ),
 ]
 
 val_dataloader = dict(
@@ -229,10 +200,11 @@ val_dataloader = dict(
     shuffle=False,
     dataset=dict(
         type='MotionDataset',
-        data_root=f"{data_root}/h5",
+        data_root=f"{data_root}",
         info_path=f"{data_root}/{val_info}",
+        data_prefix=data_prefix,
         pipeline=val_pipeline,
-        sequence_length=total_frames,
+        sequence_length=num_frames + backup_frames,
         allow_pad_sequence=False
     )
 )
@@ -242,16 +214,15 @@ lr_phase2 = 0.00002
 optimizer_cfg = dict(
     type='AdamW',
     lr=lr_phase1,
-    weight_decay=0.001
+    weight_decay=1e-8
     )
 
 
 train_cfg = dict(
     type='MMDiffTwoStageEpochBasedTrainLoop',
-    pretrain_max_epochs=400,
-    train_max_epochs=0,
-    val_interval=20,
-    load_pretrain_from="work_dirs/mmdiff/phase_1-epoch_380.pth",
+    pretrain_max_epochs=0,
+    train_max_epochs=100,
+    val_interval=25,
     phase_cfg = dict(
         phase1=dict(
             amp=False,
@@ -271,7 +242,8 @@ train_cfg = dict(
             backup_frames=backup_frames,
             batch_size=128,
         )
-    )
+    ),
+    load_pretrain_from="work_dirs/ptransv1_f5p64_b16_e10_mmfi/phase_1-epoch_5.pth"
 )
 
 metric=dict(
@@ -291,10 +263,11 @@ test_dataloader = dict(
     shuffle=False,
     dataset=dict(
         type='MotionDataset',
-        data_root=f"{data_root}/h5",
+        data_root=f"{data_root}",
         info_path=f"{data_root}/{test_info}",
+        data_prefix=data_prefix,
         pipeline=test_pipeline,
-        sequence_length=total_frames,
+        sequence_length=num_frames + backup_frames,
         allow_pad_sequence=False
     )
 )

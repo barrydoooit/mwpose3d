@@ -2,38 +2,91 @@ _base_ = [
     '../../../configs/__base__/default_runtime.py',
 ]
 custom_imports = dict(
-    imports=['mwpose3d', 'projects.mars'], allow_failed_imports=False)
+    imports=['mwpose3d', 'projects.mmmesh'], allow_failed_imports=False)
 
 data_prefix = dict(
     pcd='mmwave',
     skel='skeleton'
 )
-data_root = './data/mri'
+data_root = './data/mars/woutlier'
 train_info = 'info_train.pkl'
 val_info = 'info_val.pkl'
 test_info = 'info_test.pkl'
 
-keypoint_involved=[i for i in range(0, 17) if i not in [1,2,3,4]]
+keypoint_involved=[i for i in range(0, 21) if i not in [7, 11]]
 
-num_frames =1
-backup_frames = 0
+num_frames = 32
+backup_frames = 5
 total_frames = num_frames + backup_frames
-point_cloud_size=64
-pcd_dim = 5
+point_cloud_size = 64
 model = dict(
-    type='MarsPredictor',
+    type="MmMeshPredictor",
     point_cloud_size=point_cloud_size,
-    in_channels=pcd_dim,
-    input_size=(8, 8),
-    keypoints_involved=keypoint_involved,
+    criterion='sdtw',
+    base_pointnet_cfg=dict(
+        type="BasePointNet",
+        channels=[6, 8, 16, 24],
+        kernel_size=1
+    ),
+    global_module_cfg=dict(
+        type="GlobalModule",
+        global_pointnet_cfg=dict(
+            channels=[24+4, 32, 48, 64],
+            kernel_size=1
+        ),
+        global_rnn_cfg=dict(
+            in_channel=64,
+            hidden_size=64,
+            num_layers=3,
+            batch_first=True,
+            dropout=0.1,
+            fc_channels=[64, 16, 2],
+            learnable_init_state=True,
+        )
+    ),
+    anchor_module_cfg=dict(
+        type="AnchorModule",
+        anchor_cfg=dict(
+            grouping_nsample=8,
+            xyz_range=[-0.3, -0.3, -0.9, 0.3, 0.3, 1.5],
+            xyz_interval=[0.3, 0.3, 0.3]
+        ),
+        anchor_pointnet_cfg=dict(
+            channels=[24+4+3, 32, 48, 64],
+            kernel_size=1
+        ),
+        anchor_voxelnet_cfg=dict(
+            channels=[64, 96, 128, 64],
+            # kernel_size=((3,3,3), (5,3,3),(3,3,3),),
+            kernel_size=((3,3,3), (5,1,1), (3,1,1)),
+        ),
+        anchor_rnn_cfg=dict(
+            input_size=64,
+            hidden_size=64,
+            num_layers=3,
+            batch_first=True,
+            dropout=0.1,
+            bidirectional=False,
+            learnable_init_state=True,
+        )
+    ),
+    fusion_module_cfg=dict(
+        type="SimpleKpFusionHead",
+        channels=[128, 128, len(keypoint_involved)*3],
+    )
 )
 
 train_pipeline = [
     dict(
         type='LoadMultiFrameFromH5',
-        load_pcd_dim=pcd_dim,
+        load_pcd_dim=5,
         num_frames=num_frames,
         backup_frames=backup_frames,
+    ),
+    dict(
+        type='RandomFrameDrop',
+        drop_prob=0.05,
+        max_drop=5,
     ),
     dict(
         type='SequenceClip',
@@ -46,11 +99,11 @@ train_pipeline = [
     ),
     dict(
         type='SkeletonCoordinateTransform',
-        tran_xyz=(0.1, -0.52, 0)
+        tran_xyz=(0, -1.92, 0)
     ),
     dict(
         type='PointCloudCoordinateTransform',
-        tran_xyz=(0.1, -0.52, 0),
+        tran_xyz=(0, -1.92, 0),
     ),
     dict(
         type='RandomTransform',
@@ -65,15 +118,18 @@ train_pipeline = [
     dict(
         type='PointSortAndClip',
         target_num_points=point_cloud_size,
-        sort_dim=(0,1,2,),
-        sort_order='asc',
-        sort_effective=True
+        sort_dim=4,
+        sort_order='desc'
     ),
     dict(
         type='NormalizePointAttr',
         attr_indices=(3, 4,),
-        means=(0.0, 28.98583),
-        stds=(0.45029, 35.79703)
+        means=(-0.00096, 43.60179),
+        stds=(0.49076, 63.31943)
+    ),
+    dict(
+        type='AddRangeDimension',
+        insert_idx=3,
     ),
 ]
 
@@ -81,6 +137,7 @@ train_dataloader = dict(
     batch_size=128,
     num_workers=16,
     shuffle=True,
+    drop_last=True,
     dataset=dict(
         type='MotionDataset',
         data_root=f"{data_root}",
@@ -93,14 +150,10 @@ train_dataloader = dict(
 )
 
 optimizer_cfg = dict(
-    type='Adam',
-    lr = 0.001,
-    betas=(0.5, 0.999)
+    type='AdamW',
+    lr = 0.0005,
+    weight_decay=0.01
 )
-# optim_wrapper = dict(
-#     type='OptimWrapper',
-#     optimizer=dict(type='AdamW', lr=0.0005, weight_decay=0.01),
-# )
 
 train_cfg = dict(
     type='EpochBasedTrainLoop',
@@ -108,10 +161,11 @@ train_cfg = dict(
     val_interval=50
 )
 
+
 val_pipeline = [
     dict(
         type='LoadMultiFrameFromH5',
-        load_pcd_dim=pcd_dim,
+        load_pcd_dim=5,
         num_frames=num_frames,
         backup_frames=backup_frames,
     ),
@@ -126,11 +180,11 @@ val_pipeline = [
     ),
     dict(
         type='SkeletonCoordinateTransform',
-        tran_xyz=(0.1, -0.52, 0)
+        tran_xyz=(0, -1.92, 0)
     ),
     dict(
         type='PointCloudCoordinateTransform',
-        tran_xyz=(0.1, -0.52, 0),
+        tran_xyz=(0, -1.92, 0),
     ),
     dict(
         type='PointDuplicator',
@@ -139,17 +193,21 @@ val_pipeline = [
     dict(
         type='PointSortAndClip',
         target_num_points=point_cloud_size,
-        sort_dim=(0,1,2,),
-        sort_order='asc',
-        sort_effective=True
+        sort_dim=4,
+        sort_order='desc'
     ),
     dict(
         type='NormalizePointAttr',
         attr_indices=(3, 4,),
-        means=(0.0, 28.98583),
-        stds=(0.45029, 35.79703)
+        means=(-0.00096, 43.60179),
+        stds=(0.49076, 63.31943)
+    ),
+    dict(
+        type='AddRangeDimension',
+        insert_idx=3,
     ),
 ]
+
 val_dataloader = dict(
     batch_size=1,
     num_workers=4,

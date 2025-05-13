@@ -4,21 +4,24 @@ _base_ = [
 custom_imports = dict(
     imports=['mwpose3d', 'projects.mmmesh'], allow_failed_imports=False)
 
-data_root = './data/experimental/neat/vital'
+data_prefix = dict(
+    pcd='mmwave',
+    skel='skeleton'
+)
+data_root = './data/mri'
 train_info = 'info_train.pkl'
-val_info = 'info_test.pkl'
+val_info = 'info_val.pkl'
 test_info = 'info_test.pkl'
 
-keypoint_involved=[0,1,4,5,6,8,9,10]
-# keypoint_involved=[x for x in range(20) if x not in [7, 11, 15, 19]]
-point_cloud_size = 96
+keypoint_involved=[i for i in range(0, 17) if i not in [1,2,3,4]]
+
+num_frames = 32
+backup_frames = 5
+total_frames = num_frames + backup_frames
+point_cloud_size = 64
 model = dict(
     type="MmMeshPredictor",
     point_cloud_size=point_cloud_size,
-    keypoints_involved=keypoint_involved,
-    sort_dim=1,
-    sort_order='asc',
-    intensity_norm=(43.75604688636036, 5.0),
     criterion='sdtw',
     base_pointnet_cfg=dict(
         type="BasePointNet",
@@ -37,15 +40,14 @@ model = dict(
             num_layers=3,
             batch_first=True,
             dropout=0.1,
-            fc_channels=[64, 16, 2]
+            fc_channels=[64, 16, 2],
+            learnable_init_state=True,
         )
     ),
     anchor_module_cfg=dict(
         type="AnchorModule",
         anchor_cfg=dict(
             grouping_nsample=8,
-            # xyz_range=[-0.9, -0.4, -0.9, 0.9, 0.2, 1.5],
-            # xyz_interval=[0.3, 0.1, 0.3]
             xyz_range=[-0.3, -0.3, -0.9, 0.3, 0.3, 1.5],
             xyz_interval=[0.3, 0.3, 0.3]
         ),
@@ -64,7 +66,8 @@ model = dict(
             num_layers=3,
             batch_first=True,
             dropout=0.1,
-            bidirectional=False
+            bidirectional=False,
+            learnable_init_state=True,
         )
     ),
     fusion_module_cfg=dict(
@@ -73,9 +76,6 @@ model = dict(
     )
 )
 
-num_frames = 64
-backup_frames = 10
-total_frames = num_frames + backup_frames
 train_pipeline = [
     dict(
         type='LoadMultiFrameFromH5',
@@ -84,35 +84,9 @@ train_pipeline = [
         backup_frames=backup_frames,
     ),
     dict(
-        type='Kinect2TICoordinateTransform',
-        radar_tilt=5,
-        kinect_tilt=5,
-        pcd_tran=(0, -2, 0),
-        skel_tran=(-0.37, 0, -2)
-    ),
-    dict(
-        type='RandomFlip',
-        flip_prob=0.5,
-        duplicate_prob=0.1
-    ),
-    dict(
-        type='PointCloudRangeFilter',
-        point_cloud_range=[-1.0, -1.0, -1.5, 1, 1.0, 2.0],
-        empty_frame_op='shift',
-        backup_frames=backup_frames
-    ),
-    dict(
-        type='RandomScale',
-        scale_prob=0.1,
-        scale_range_x=(0.95, 1.05),
-        scale_range_y=(0.95, 1.05),
-        scale_range_z=(0.9, 1.1)
-    ),
-    dict(
-        type='RandomTransform',
-        transform_prob=0.5,
-        sigma_xyz=(0.15, 0.15, 0.05),
-        max_d_xyz=(0.3, 0.3, 0.1)
+        type='RandomFrameDrop',
+        drop_prob=0.05,
+        max_drop=5,
     ),
     dict(
         type='SequenceClip',
@@ -120,29 +94,55 @@ train_pipeline = [
         sequence_length=num_frames
     ),
     dict(
+        type='SkeletonKeypointFilter',
+        keypoint_involved=keypoint_involved,
+    ),
+    dict(
+        type='SkeletonCoordinateTransform',
+        tran_xyz=(0, -2.38, 0)
+    ),
+    dict(
+        type='PointCloudCoordinateTransform',
+        tran_xyz=(0, -2.38, 0),
+    ),
+    dict(
+        type='RandomTransform',
+        transform_prob=0.5,
+        sigma_xyz=(0.05, 0.05, 0.05),
+        max_d_xyz=(0.2, 0.2, 0.1)
+    ),
+    dict(
         type='PointDuplicator',
-        target_num_points=point_cloud_size
+        target_num_points=point_cloud_size,
+    ),
+    dict(
+        type='PointSortAndClip',
+        target_num_points=point_cloud_size,
+        sort_dim=4,
+        sort_order='desc'
+    ),
+    dict(
+        type='NormalizePointAttr',
+        attr_indices=(3, 4,),
+        means=(0.0, 28.98583),
+        stds=(0.45029, 35.79703)
     ),
     dict(
         type='AddRangeDimension',
         insert_idx=3,
     ),
-    dict(
-        type='SkeletonKeypointFilter',
-        keypoint_involved=keypoint_involved,
-        
-    ),
 ]
 
 train_dataloader = dict(
-    batch_size=32,
+    batch_size=128,
     num_workers=16,
     shuffle=True,
     drop_last=True,
     dataset=dict(
         type='MotionDataset',
-        data_root=f"{data_root}/h5",
+        data_root=f"{data_root}",
         info_path=f"{data_root}/{train_info}",
+        data_prefix=data_prefix,
         pipeline=train_pipeline,
         sequence_length=total_frames,
         allow_pad_sequence=False
@@ -157,8 +157,8 @@ optimizer_cfg = dict(
 
 train_cfg = dict(
     type='EpochBasedTrainLoop',
-    max_epochs=400,
-    val_interval=50
+    max_epochs=120,
+    val_interval=20
 )
 
 
@@ -170,35 +170,41 @@ val_pipeline = [
         backup_frames=backup_frames,
     ),
     dict(
-        type='Kinect2TICoordinateTransform',
-        radar_tilt=5,
-        kinect_tilt=5,
-        pcd_tran=(0, -2, 0),
-        skel_tran=(-0.37, 0, -2)
-    ),
-    dict(
-        type='PointCloudRangeFilter',
-        point_cloud_range=[-1.0, -1.0, -1.5, 1, 1.0, 2.0],
-        empty_frame_op='shift',
-        backup_frames=backup_frames
-    ),
-    dict(
         type='SequenceClip',
         mode='last',
         sequence_length=num_frames
     ),
     dict(
+        type='SkeletonKeypointFilter',
+        keypoint_involved=keypoint_involved,
+    ),
+    dict(
+        type='SkeletonCoordinateTransform',
+        tran_xyz=(0, -2.38, 0)
+    ),
+    dict(
+        type='PointCloudCoordinateTransform',
+        tran_xyz=(0, -2.38, 0),
+    ),
+    dict(
         type='PointDuplicator',
-        target_num_points=point_cloud_size
+        target_num_points=point_cloud_size,
+    ),
+    dict(
+        type='PointSortAndClip',
+        target_num_points=point_cloud_size,
+        sort_dim=4,
+        sort_order='desc'
+    ),
+    dict(
+        type='NormalizePointAttr',
+        attr_indices=(3, 4,),
+        means=(0.0, 28.98583),
+        stds=(0.45029, 35.79703)
     ),
     dict(
         type='AddRangeDimension',
         insert_idx=3,
-    ),
-    dict(
-        type='SkeletonKeypointFilter',
-        keypoint_involved=keypoint_involved,
-        
     ),
 ]
 
@@ -208,8 +214,9 @@ val_dataloader = dict(
     shuffle=False,
     dataset=dict(
         type='MotionDataset',
-        data_root=f"{data_root}/h5",
+        data_root=f"{data_root}",
         info_path=f"{data_root}/{val_info}",
+        data_prefix=data_prefix,
         pipeline=val_pipeline,
         sequence_length=total_frames,
         allow_pad_sequence=False
@@ -230,48 +237,16 @@ test_dataloader = dict(
     shuffle=False,
     dataset=dict(
         type='MotionDataset',
-        data_root=f"{data_root}/h5",
+        data_root=f"{data_root}",
         info_path=f"{data_root}/{test_info}",
+        data_prefix=data_prefix,
         pipeline=test_pipeline,
         sequence_length=total_frames,
         allow_pad_sequence=False
     )
 )
 
-vis_metric = dict(metric, visualizer_cfg=dict(
-        keypoint_involved=keypoint_involved,
-        keypoint_for_stats=[0, 5, 9],
-        error_type='abs_error'
-    )
-)
-
-ana_window_size = 1
-ana_metric = dict(
-    type='PivotRotationAnalyzer',
-    bones=((5,6), (9,10)),
-    window_size_frames=ana_window_size,
-    keypoint_involved=keypoint_involved,
-    pos_pivot='first',
-    output_dir='exp_data/test_logs',
-    log_name=f'mmmesh_vital_spv2_pos_angle_norm_w{ana_window_size}.json'
-)
-
-res_metric = dict(
-    type='ControlResolutionAnalyzer',
-    keypoint_involved=keypoint_involved,
-    controlled_keypoints=[5, 6, 9, 10],
-    seg_length_n=1,
-    seg_correct_threshold=0.8,
-    motion_range_clip_ratio_xyz=[1.0, 0.8, 0.8],
-    acc_guarantee_k=[0.7, 0.8, 0.9]
-)
-
-vol_metric = dict(
-    type='VelocityEntropyAnalyzer',
-    keypoint_involved=keypoint_involved,
-    controlled_keypoints=[5, 9]
-)
 test_cfg = dict(
     type='TestLoop',
-    metric_cfg=vis_metric
+    metric_cfg=metric
 )

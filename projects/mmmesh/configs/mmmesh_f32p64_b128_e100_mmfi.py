@@ -135,7 +135,7 @@ train_pipeline = [
 ]
 
 train_dataloader = dict(
-    batch_size=64,
+    batch_size=128,
     num_workers=16,
     shuffle=True,
     drop_last=True,

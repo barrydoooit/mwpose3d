@@ -90,7 +90,7 @@ class MRIDatasetConverter:
             if fid in grouped.groups:
                 arr = grouped.get_group(fid)[['x','y','z','vel','snr']].to_numpy(np.float32)
             else:
-                arr = np.empty((0,5), dtype=np.float32)
+                raise ValueError(f"Frame {fid} not found in radar data")
             pts_list.append(arr)
             idx.append(idx[-1] + arr.shape[0])
         pcd_data = np.concatenate(pts_list, axis=0) if pts_list else np.empty((0,5), dtype=np.float32)

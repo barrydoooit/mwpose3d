@@ -49,8 +49,8 @@ def main():
 
     # Check that the required dataloaders exist in the config
     required_dataloader_keys = dict(
-        # train='train_dataloader',
-        val='val_dataloader',
+        train='train_dataloader',
+        # val='val_dataloader',
         # test='test_dataloader'
     )
     existing_dataloader_keys = required_dataloader_keys.copy()
@@ -67,7 +67,8 @@ def main():
 def inspect(runner, dataloader: Config, vis: bool = False):
     dataloader_new = deepcopy(dataloader.to_dict())
     for transform in dataloader['dataset']['pipeline']:
-        if transform['type'] in ['PointDuplicator', 'PointPadding', 'PointSortAndClip', 'RandomTransform', 'NormalizePointAttr', 'SkeletonCoordNormalization']:
+        if transform['type'] in ['PointDuplicator', 'PointPadding', 'PointSortAndClip', 'RandomTransform', 'NormalizePointAttr', 'SkeletonCoordNormalization',
+                                 'SkeletonCoordinateTransform', 'PointCloudCoordinateTransform']:
             dataloader_new['dataset']['pipeline'].remove(transform)
     dataloader_new.update(dict(batch_size=1, num_workers=0, shuffle=False))
     dataloader = runner.build_dataloader(dataloader_new)

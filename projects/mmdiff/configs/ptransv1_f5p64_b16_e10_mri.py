@@ -23,7 +23,7 @@ num_frames = past_frames + seq_frames
 backup_frames = 1
 total_frames = num_frames + backup_frames
 radar_input_c = 5
-seq_tag = True
+seq_tag = False
 if seq_tag and seq_frames > 1:
     radar_input_c_mid = radar_input_c + 1
 else:
@@ -95,11 +95,11 @@ train_pipeline = [
     ),
     dict(
         type='SkeletonCoordinateTransform',
-        tran_xyz=(0.1, -0.52, 0)
+        tran_xyz=(0, -2.38, 0)
     ),
     dict(
         type='PointCloudCoordinateTransform',
-        tran_xyz=(0.1, -0.52, 0),
+        tran_xyz=(0, -2.38, 0),
     ),
     dict(
         type='RandomFrameDrop',
@@ -163,11 +163,11 @@ val_pipeline = [
     ),
     dict(
         type='SkeletonCoordinateTransform',
-        tran_xyz=(0.1, -0.52, 0)
+        tran_xyz=(0, -2.38, 0)
     ),
     dict(
         type='PointCloudCoordinateTransform',
-        tran_xyz=(0.1, -0.52, 0),
+        tran_xyz=(0, -2.38, 0),
     ),
     dict(
         type='PointDuplicator',
