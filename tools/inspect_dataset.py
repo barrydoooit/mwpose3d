@@ -74,27 +74,60 @@ def inspect(runner, dataloader: Config, vis: bool = False):
     dataloader = runner.build_dataloader(dataloader_new)
     
     if not vis:
-        indice_to_check = (3, 4,)
-        names = ('VOL', 'SNR',)
+        # --- ORIGINAL VOL / SNR setup ---
+        indice_to_check = (3, 4)
+        names = ('VOL', 'SNR')
         pcd_values = [[], []]
-        skel_values = []
-        total = len(dataloader) if hasattr(dataloader, '__len__') else None
-        for idx, data_batch in tqdm(enumerate(dataloader), desc='Processing data', total=total):
-            pcd_frame_list = data_batch['pcd_frames']
-            for i, (ind, name) in enumerate(zip(indice_to_check, names)):
-                pcd_values[i].append(pcd_frame_list[-1][0][:, ind])
-            
-            skel_frame_list = data_batch['skel_frames']
-            skel_batch = skel_frame_list[-1][0]
-            skel_values.append(skel_batch)
-            
-        for i, name in enumerate(names):
-            pcd_values[i] = np.concatenate(pcd_values[i], axis=0)
-            print(f'{name} shape: {pcd_values[i].shape}')
-            print(f'{name} mean: {pcd_values[i].mean()}')
-            print(f'{name} std: {pcd_values[i].std()}')
-        print('--------------------------------------------------')
 
+        # --- NEW: XYZ setup ---
+        coord_indices = (0, 1, 2)
+        coord_names = ('x', 'y', 'z')
+        coord_values = [[], [], []]
+
+        skel_values = []
+
+        total = len(dataloader) if hasattr(dataloader, '__len__') else None
+        for idx, data_batch in tqdm(enumerate(dataloader),
+                                    desc='Processing data', total=total):
+            # last point-cloud frame in this batch
+            pcd_frame = data_batch['pcd_frames'][-1][0]  # shape (N_points, channels)
+
+            # accumulate VOL & SNR
+            for i, ind in enumerate(indice_to_check):
+                pcd_values[i].append(pcd_frame[:, ind])
+
+            # accumulate XYZ coords
+            for i, ind in enumerate(coord_indices):
+                coord_values[i].append(pcd_frame[:, ind])
+
+            # accumulate skeletons as before
+            skel_frame = data_batch['skel_frames'][-1][0]
+            skel_values.append(skel_frame)
+
+        # --- ORIGINAL stats for VOL & SNR ---
+        for i, name in enumerate(names):
+            arr = np.concatenate(pcd_values[i], axis=0)
+            print(f'{name} shape: {arr.shape}')
+            print(f'{name} mean : {arr.mean():.4f}')
+            print(f'{name} std  : {arr.std():.4f}')
+        print('─' * 50)
+        # --- NEW: percentiles for XYZ ---
+        perc = [0, 5, 10, 15, 20, 80, 85, 90, 95, 100]
+        labels = ['min', '5%', '10%', '15%', '20%', '80%', '85%', '90%', '95%', 'max']
+
+        for i, name in enumerate(coord_names):
+            arr = np.concatenate(coord_values[i], axis=0)
+            pvals = np.percentile(arr, perc)
+
+            # print header
+            header = '  '.join(f'{lab:>5}' for lab in labels)
+            values = '  '.join(f'{val:>5.4f}' for val in pvals)
+
+            print(f"Axis '{name}':")
+            print(header)
+            print(values)
+            print('─' * 50)
+        
         skel_all = np.stack(skel_values, axis=0)
         skel_means = skel_all.mean(axis=0)
         skel_stds = skel_all.std(axis=0)
@@ -103,7 +136,6 @@ def inspect(runner, dataloader: Config, vis: bool = False):
         print(f'Skeleton mean: x={skel_means_axis[0]:.2f}, y={skel_means_axis[1]:.2f}, z={skel_means_axis[2]:.2f}')
         # print('Skeleton mean:', [round(x, 2) for x in skel_means])
         # print('Skeleton std:', [round(x, 2) for x in skel_stds])
-        
     
     if vis:
         from PySide2.QtWidgets import QApplication
