@@ -76,6 +76,10 @@ class LoadMultiFrameFromH5(BaseTransform):
         
         total = self.backup_frames + self.num_frames
         start_idx = local_idx - total + 1
+        if start_idx == 0:
+            input['starting_flag'] = True
+        else:
+            input['starting_flag'] = False
         
         with h5py.File(pcd_file, 'r') as pf:
             grp = pf[self.POINTCLOUD_MODALITY_KEY]
@@ -93,8 +97,6 @@ class LoadMultiFrameFromH5(BaseTransform):
                     pcd_frame = self.handle_empty_pcd(last_valid)
                 else:
                     start = index[cur]
-                    if start == 0:
-                        input['starting_flag'] = True
                     end = index[cur + 1] if cur + 1 < len(index) else None
                     pcd_data = grp[self.DATA][start:end][:, :self.load_pcd_dim]
                     if pcd_data.size == 0:

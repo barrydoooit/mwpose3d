@@ -12,10 +12,12 @@ class PointCloudRangeFilter(BaseTransform):
                  point_cloud_range: List[float],
                  empty_frame_op: Literal['duplicate', 'shift', 'error'] = 'duplicate',
                  backup_frames: int = 0,
+                 min_num_frames: int = 1,
                  online_mode: bool = False
                  ):
         super().__init__(online_mode)
         self.empty_frame_op = empty_frame_op
+        self.min_num_frames = min_num_frames
         if self.online_mode:
             self.empty_frame_op = 'error'
         self.backup_frames = backup_frames
@@ -60,8 +62,8 @@ class PointCloudRangeFilter(BaseTransform):
                 if idx in empty_frame_indices:
                     continue
                 shifted_frames.append(frame)
-            if len(filtered_frames) - len(shifted_frames) > self.backup_frames:
-                raise ValueError("Not enough backup frames to shift.")
+            if len(shifted_frames) < self.min_num_frames:
+                raise ValueError(f"There are only {len(shifted_frames)} frames after filtering, but at least {self.min_num_frames} frames are required.")
             if len(input['skel_frames']) > 1:
                 shifted_skel_frames = []
                 for idx in range(len(input['skel_frames'])):

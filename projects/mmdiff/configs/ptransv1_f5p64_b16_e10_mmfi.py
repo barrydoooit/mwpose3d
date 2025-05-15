@@ -5,7 +5,7 @@ custom_imports = dict(
     imports=['mwpose3d', 'projects.mmdiff'], allow_failed_imports=False)
 
 data_prefix = dict(
-    pcd='mmwave',
+    pcd='mmwave_filtered',
     skel='skeleton'
 )
 data_root = './data/mmfi'
@@ -102,7 +102,7 @@ train_pipeline = [
     ),
     dict(
         type='SkeletonKeypointFilter',
-        keypoint_involved=keypoints_involved,
+        keypoints_involved=keypoints_involved,
     ),
     dict(
         type='SkeletonCoordinateTransform',
@@ -166,7 +166,7 @@ val_pipeline = [
     ),
     dict(
         type='SkeletonKeypointFilter',
-        keypoint_involved=keypoints_involved,
+        keypoints_involved=keypoints_involved,
     ),
     dict(
         type='SkeletonCoordinateTransform',
@@ -247,7 +247,7 @@ train_cfg = dict(
 
 metric=dict(
     type='SimpleGTPredAnalyzer',
-    keypoint_involved=keypoints_involved,
+    keypoints_involved=keypoints_involved,
 )
 val_cfg = dict(
     type='ValLoop',
@@ -274,7 +274,7 @@ test_dataloader = dict(
 test_cfg = dict(
     type='TestLoop',
     metric_cfg= dict(metric, visualizer_cfg=dict(
-        keypoint_involved=keypoints_involved,
+        keypoints_involved=keypoints_involved,
         keypoint_for_stats=[0, 5, 9],
         error_type='abs_error'
     ))

@@ -11,7 +11,7 @@ from mwpose3d.registry import METRICS
 @METRICS.register_module()
 class ControlResolutionAnalyzer(BaseMetric):
     def __init__(self,
-                 keypoint_involved: list,
+                 keypoints_involved: list,
                  controlled_keypoints: list,
                  seg_length_n: int,
                  seg_correct_threshold: float,
@@ -19,7 +19,7 @@ class ControlResolutionAnalyzer(BaseMetric):
                  motion_range_clip_ratio_xyz: List[float] = [0.9, 0.9, 0.9],
                  voxel_unit: float = 0.01,
                  ):
-        self.keypoint_involved = keypoint_involved
+        self.keypoints_involved = keypoints_involved
         self.controlled_keypoints = controlled_keypoints
         self.seg_length_n = seg_length_n
         self.seg_correct_threshold = seg_correct_threshold
@@ -34,7 +34,7 @@ class ControlResolutionAnalyzer(BaseMetric):
         assert isinstance(gt, torch.Tensor) and isinstance(pred, torch.Tensor), "Currently only support torch.Tensor as gt type, make conversion in the data_sample first"
         assert gt.shape == pred.shape, "gt and pred should have the same shape"
         frame_report = {}
-        for idx, joint in enumerate(self.keypoint_involved):
+        for idx, joint in enumerate(self.keypoints_involved):
             gt_joint = gt[idx * 3: (idx + 1) * 3]
             pred_joint = pred[idx * 3: (idx + 1) * 3]
             frame_report[joint] = {

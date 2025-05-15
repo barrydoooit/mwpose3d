@@ -11,9 +11,9 @@ from mwpose3d.registry import METRICS
 @METRICS.register_module()
 class SimpleGTPredAnalyzer(BaseMetric):
     def __init__(self,
-                 keypoint_involved: list,
+                 keypoints_involved: list,
                  visualizer_cfg: Optional[dict] = None):
-        self.keypoint_involved = keypoint_involved
+        self.keypoints_involved = keypoints_involved
         self.visuzalize = visualizer_cfg is not None
         self.report = []
         self.gt_data = []
@@ -26,8 +26,8 @@ class SimpleGTPredAnalyzer(BaseMetric):
             
     def _make_visualizer(self, visualizer_cfg):
         self.visualizer = SimpleGTPredVisualizer(
-            keypoint_involved=visualizer_cfg.get("keypoint_involved", self.keypoint_involved),
-            keypoint_for_stats=visualizer_cfg.get("keypoint_for_stats", self.keypoint_involved),
+            keypoints_involved=visualizer_cfg.get("keypoints_involved", self.keypoints_involved),
+            keypoint_for_stats=visualizer_cfg.get("keypoint_for_stats", self.keypoints_involved),
             error_type=visualizer_cfg.get("error_type", "abs_error")
         )
         
@@ -37,7 +37,7 @@ class SimpleGTPredAnalyzer(BaseMetric):
         assert isinstance(gt, torch.Tensor) and isinstance(pred, torch.Tensor), "Currently only support torch.Tensor as gt type, make conversion in the data_sample first"
         assert gt.shape == pred.shape, "gt and pred should have the same shape"
         frame_report = {}
-        for idx, joint in enumerate(self.keypoint_involved):
+        for idx, joint in enumerate(self.keypoints_involved):
             gt_joint = gt[idx * 3: (idx + 1) * 3]
             pred_joint = pred[idx * 3: (idx + 1) * 3]
             frame_report[joint] = {

@@ -13,7 +13,7 @@ train_info = 'info_train.pkl'
 val_info = 'info_val.pkl'
 test_info = 'info_test.pkl'
 
-keypoint_involved=[i for i in range(0, 21) if i not in [7, 11]]
+keypoints_involved=[i for i in range(0, 21) if i not in [7, 11]]
 
 num_frames =1
 backup_frames = 0
@@ -25,7 +25,7 @@ model = dict(
     point_cloud_size=point_cloud_size,
     in_channels=pcd_dim,
     input_size=(8, 8),
-    keypoints_involved=keypoint_involved,
+    keypoints_involved=keypoints_involved,
 )
 
 train_pipeline = [
@@ -42,7 +42,7 @@ train_pipeline = [
     ),
     dict(
         type='SkeletonKeypointFilter',
-        keypoint_involved=keypoint_involved,
+        keypoints_involved=keypoints_involved,
     ),
     dict(
         type='SkeletonCoordinateTransform',
@@ -122,7 +122,7 @@ val_pipeline = [
     ),
     dict(
         type='SkeletonKeypointFilter',
-        keypoint_involved=keypoint_involved,
+        keypoints_involved=keypoints_involved,
     ),
     dict(
         type='SkeletonCoordinateTransform',
@@ -166,7 +166,7 @@ val_dataloader = dict(
 )
 metric=dict(
     type='SimpleGTPredAnalyzer',
-    keypoint_involved=keypoint_involved,
+    keypoints_involved=keypoints_involved,
 )
 val_cfg = dict(
     type='ValLoop',

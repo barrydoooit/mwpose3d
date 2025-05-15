@@ -153,7 +153,7 @@ class RadHARCNNBiLSTM(BaseSkeletonEstimModel):
             # process only the most recent frame
             last_pts = points_seq[-1]
             feats, coords, _ = self.voxelize(last_pts)
-            spatial = self.middle_encoder(feats, coords, coords[-1, 0] + 1)
+            spatial = self.middle_encoder(feats, coords, B)
             B = len(last_pts)
             x = self.backbone(spatial)[-1].view(B, -1)
             frame_feats.append(x)
@@ -163,7 +163,7 @@ class RadHARCNNBiLSTM(BaseSkeletonEstimModel):
             B = len(points_seq[0])
             for t in range(S):
                 feats, coords, _ = self.voxelize(points_seq[t])
-                spatial = self.middle_encoder(feats, coords, coords[-1, 0] + 1)
+                spatial = self.middle_encoder(feats, coords, B)
                 x = self.backbone(spatial)[-1].view(B, -1)
                 frame_feats.append(x)
 

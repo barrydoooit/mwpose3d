@@ -2,24 +2,24 @@ _base_ = [
     '../../../configs/__base__/default_runtime.py',
 ]
 custom_imports = dict(
-    imports=['mwpose3d', 'projects.radhar'], allow_failed_imports=False)
+    imports=['mwpose3d', 'projects.mmmesh'], allow_failed_imports=False)
 
 data_prefix = dict(
     pcd='mmwave',
     skel='skeleton'
 )
-data_root = './data/mars/woutlier'
+data_root = './data/mri'
 train_info = 'info_train.pkl'
 val_info = 'info_val.pkl'
 test_info = 'info_test.pkl'
 
-keypoint_involved=[i for i in range(0, 21) if i not in [7, 11]]
+keypoints_involved=[i for i in range(0, 17) if i not in [1,2,3,4]]
 
 num_frames =32
-backup_frames = 1
+backup_frames = 6
 total_frames = num_frames + backup_frames
 pcd_dim = 5
-point_cloud_range = [-0.75, 0.4, -0.5, 0.75, 2.0, 1.25]
+point_cloud_range = [-0.9, 0.6, -0.8, 0.9, 2.8, 1.0]
 voxel_size = [0.05, 0.05, 0.05]
 sparse_shape = [int((point_cloud_range[3] - point_cloud_range[0]) / voxel_size[0]),
                 int((point_cloud_range[4] - point_cloud_range[1]) / voxel_size[1]),
@@ -59,16 +59,21 @@ model = dict(
         learnable_init_state=True,
     ),
     head_channels=(128, 256, 128),
-    keypoints_involved=keypoint_involved,
+    keypoints_involved=keypoints_involved,
     criterion='sdtw',
 )
 
 train_pipeline = [
     dict(
         type='LoadMultiFrameFromH5',
-        load_pcd_dim=pcd_dim,
+        load_pcd_dim=5,
         num_frames=num_frames,
         backup_frames=backup_frames,
+    ),
+    dict(
+        type='RandomFrameDrop',
+        drop_prob=0.05,
+        max_drop=5,
     ),
     dict(
         type='SequenceClip',
@@ -77,19 +82,13 @@ train_pipeline = [
     ),
     dict(
         type='SkeletonKeypointFilter',
-        keypoint_involved=keypoint_involved,
-    ),
-    dict(
-        type='RandomTransform',
-        transform_prob=0.5,
-        sigma_xyz=(0.05, 0.05, 0.05),
-        max_d_xyz=(0.2, 0.2, 0.1)
+        keypoints_involved=keypoints_involved,
     ),
     dict(
         type='NormalizePointAttr',
         attr_indices=(3, 4,),
-        means=(-0.00096, 43.60179),
-        stds=(0.49076, 63.31943)
+        means=(0.0, 28.98583),
+        stds=(0.45029, 35.79703)
     ),
 ]
 
@@ -110,25 +109,22 @@ train_dataloader = dict(
 )
 
 optimizer_cfg = dict(
-    type='Adam',
-    lr = 0.001,
-    betas=(0.5, 0.999)
+    type='AdamW',
+    lr = 0.0005,
+    weight_decay=0.01
 )
-# optim_wrapper = dict(
-#     type='OptimWrapper',
-#     optimizer=dict(type='AdamW', lr=0.0005, weight_decay=0.01),
-# )
 
 train_cfg = dict(
     type='EpochBasedTrainLoop',
-    max_epochs=300,
-    val_interval=50
+    max_epochs=100,
+    val_interval=10
 )
+
 
 val_pipeline = [
     dict(
         type='LoadMultiFrameFromH5',
-        load_pcd_dim=pcd_dim,
+        load_pcd_dim=5,
         num_frames=num_frames,
         backup_frames=backup_frames,
     ),
@@ -139,15 +135,16 @@ val_pipeline = [
     ),
     dict(
         type='SkeletonKeypointFilter',
-        keypoint_involved=keypoint_involved,
+        keypoints_involved=keypoints_involved,
     ),
     dict(
         type='NormalizePointAttr',
         attr_indices=(3, 4,),
-        means=(-0.00096, 43.60179),
-        stds=(0.49076, 63.31943)
+        means=(0.0, 28.98583),
+        stds=(0.45029, 35.79703)
     ),
 ]
+
 val_dataloader = dict(
     batch_size=1,
     num_workers=4,
@@ -164,7 +161,7 @@ val_dataloader = dict(
 )
 metric=dict(
     type='SimpleGTPredAnalyzer',
-    keypoint_involved=keypoint_involved,
+    keypoints_involved=keypoints_involved,
 )
 val_cfg = dict(
     type='ValLoop',

@@ -63,5 +63,5 @@ class InferenceEngine:
             model=config['model'],
             pipeline=config['test_pipeline'],
             load_from=config['load_from'],
-            keypoints_involved=config['keypoint_involved']
+            keypoints_involved=config['keypoints_involved']
         )

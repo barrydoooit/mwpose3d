@@ -5,7 +5,7 @@ custom_imports = dict(
     imports=['mwpose3d', 'projects.mmmesh'], allow_failed_imports=False)
 
 data_prefix = dict(
-    pcd='mmwave',
+    pcd='mmwave_filtered',
     skel='skeleton'
 )
 data_root = './data/mmfi'
@@ -13,7 +13,7 @@ train_info = 'info_subj_train.pkl'
 val_info = 'info_subj_val.pkl'
 test_info = 'info_subj_val.pkl'
 
-keypoint_involved=list(range(0, 17))
+keypoints_involved=list(range(0, 17))
 
 num_frames = 32
 backup_frames = 5
@@ -72,7 +72,7 @@ model = dict(
     ),
     fusion_module_cfg=dict(
         type="SimpleKpFusionHead",
-        channels=[128, 128, len(keypoint_involved)*3],
+        channels=[128, 128, len(keypoints_involved)*3],
     )
 )
 
@@ -96,7 +96,7 @@ train_pipeline = [
     ),
     dict(
         type='SkeletonKeypointFilter',
-        keypoint_involved=keypoint_involved,
+        keypoints_involved=keypoints_involved,
     ),
     dict(
         type='SkeletonCoordinateTransform',
@@ -178,7 +178,7 @@ val_pipeline = [
     ),
     dict(
         type='SkeletonKeypointFilter',
-        keypoint_involved=keypoint_involved,
+        keypoints_involved=keypoints_involved,
     ),
     dict(
         type='SkeletonCoordinateTransform',
@@ -226,7 +226,7 @@ val_dataloader = dict(
 )
 metric=dict(
     type='SimpleGTPredAnalyzer',
-    keypoint_involved=keypoint_involved,
+    keypoints_involved=keypoints_involved,
 )
 val_cfg = dict(
     type='ValLoop',

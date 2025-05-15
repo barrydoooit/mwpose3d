@@ -13,7 +13,7 @@ train_info = 'info_train.pkl'
 val_info = 'info_val.pkl'
 test_info = 'info_test.pkl'
 
-keypoint_involved=[i for i in range(0, 17) if i not in [1,2,3,4]]
+keypoints_involved=[i for i in range(0, 17) if i not in [1,2,3,4]]
 
 num_frames = 32
 backup_frames = 5
@@ -72,7 +72,7 @@ model = dict(
     ),
     fusion_module_cfg=dict(
         type="SimpleKpFusionHead",
-        channels=[128, 128, len(keypoint_involved)*3],
+        channels=[128, 128, len(keypoints_involved)*3],
     )
 )
 
@@ -95,7 +95,7 @@ train_pipeline = [
     ),
     dict(
         type='SkeletonKeypointFilter',
-        keypoint_involved=keypoint_involved,
+        keypoints_involved=keypoints_involved,
     ),
     dict(
         type='SkeletonCoordinateTransform',
@@ -176,7 +176,7 @@ val_pipeline = [
     ),
     dict(
         type='SkeletonKeypointFilter',
-        keypoint_involved=keypoint_involved,
+        keypoints_involved=keypoints_involved,
     ),
     dict(
         type='SkeletonCoordinateTransform',
@@ -224,7 +224,7 @@ val_dataloader = dict(
 )
 metric=dict(
     type='SimpleGTPredAnalyzer',
-    keypoint_involved=keypoint_involved,
+    keypoints_involved=keypoints_involved,
 )
 val_cfg = dict(
     type='ValLoop',

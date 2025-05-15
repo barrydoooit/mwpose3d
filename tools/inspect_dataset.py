@@ -112,8 +112,8 @@ def inspect(runner, dataloader: Config, vis: bool = False):
             print(f'{name} std  : {arr.std():.4f}')
         print('─' * 50)
         # --- NEW: percentiles for XYZ ---
-        perc = [0, 5, 10, 15, 20, 80, 85, 90, 95, 100]
-        labels = ['min', '5%', '10%', '15%', '20%', '80%', '85%', '90%', '95%', 'max']
+        perc = [0, 1, 2, 5, 10, 90, 95, 98, 99, 100]
+        labels = ['min', '1%', '2%', '5%', '10%', '90%', '95%', '98%', '99%', 'max']
 
         for i, name in enumerate(coord_names):
             arr = np.concatenate(coord_values[i], axis=0)

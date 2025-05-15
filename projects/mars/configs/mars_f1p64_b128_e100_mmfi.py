@@ -5,7 +5,7 @@ custom_imports = dict(
     imports=['mwpose3d', 'projects.mars'], allow_failed_imports=False)
 
 data_prefix = dict(
-    pcd='mmwave',
+    pcd='mmwave_filtered',
     skel='skeleton'
 )
 data_root = './data/mmfi'
@@ -13,7 +13,7 @@ train_info = 'info_subj_train.pkl'
 val_info = 'info_subj_val.pkl'
 test_info = 'info_subj_val.pkl'
 
-keypoint_involved=list(range(0, 17))
+keypoints_involved=list(range(0, 17))
 
 num_frames =1
 backup_frames = 1
@@ -25,7 +25,7 @@ model = dict(
     point_cloud_size=point_cloud_size,
     in_channels=pcd_dim,
     input_size=(8, 8),
-    keypoints_involved=keypoint_involved,
+    keypoints_involved=keypoints_involved,
 )
 
 train_pipeline = [
@@ -43,7 +43,7 @@ train_pipeline = [
     ),
     dict(
         type='SkeletonKeypointFilter',
-        keypoint_involved=keypoint_involved,
+        keypoints_involved=keypoints_involved,
     ),
     dict(
         type='SkeletonCoordinateTransform',
@@ -120,7 +120,7 @@ val_pipeline = [
     ),
     dict(
         type='SkeletonKeypointFilter',
-        keypoint_involved=keypoint_involved,
+        keypoints_involved=keypoints_involved,
     ),
     dict(
         type='SkeletonCoordinateTransform',
@@ -170,7 +170,7 @@ val_dataloader = dict(
 )
 metric=dict(
     type='SimpleGTPredAnalyzer',
-    keypoint_involved=keypoint_involved,
+    keypoints_involved=keypoints_involved,
 )
 val_cfg = dict(
     type='ValLoop',

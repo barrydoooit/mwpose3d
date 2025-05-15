@@ -8,11 +8,11 @@ import matplotlib.pyplot as plt  # Needed for colormap
 
 class SimpleGTPredVisualizer:
     def __init__(self, 
-                 keypoint_involved: list, 
+                 keypoints_involved: list, 
                  keypoint_for_stats: list,
                  error_type: str):
         # Convert keypoints to enum types (assuming KeypointType is callable)
-        self.keypoint_involved = [KeypointType(kp) for kp in keypoint_involved]
+        self.keypoints_involved = [KeypointType(kp) for kp in keypoints_involved]
         self.keypoint_for_stats = [KeypointType(kp) for kp in keypoint_for_stats]
         self.error_type = error_type
 
@@ -54,10 +54,10 @@ class SimpleGTPredVisualizer:
 
         # Initialize persistent plot objects for skeletons
         self.connectivity_pairs = []
-        for kp in self.keypoint_involved:
+        for kp in self.keypoints_involved:
             if kp in Connectivity:
                 for connected in Connectivity[kp]:
-                    if connected in self.keypoint_involved:
+                    if connected in self.keypoints_involved:
                         self.connectivity_pairs.append((kp, connected))
                         
         # For Ground Truth axis
@@ -136,7 +136,7 @@ class SimpleGTPredVisualizer:
         [x0, z0, y0, x1, z1, y1, ...] and we map it to (x, y, z) with y coming from index+2.
         """
         coords = []
-        for idx, kp_enum in enumerate(self.keypoint_involved):
+        for idx, kp_enum in enumerate(self.keypoints_involved):
             x = tensor[idx*3].item() if isinstance(tensor, torch.Tensor) else tensor[idx*3]
             y = tensor[idx*3+1].item() if isinstance(tensor, torch.Tensor) else tensor[idx*3+1]
             z = tensor[idx*3+2].item() if isinstance(tensor, torch.Tensor) else tensor[idx*3+2]
@@ -147,8 +147,8 @@ class SimpleGTPredVisualizer:
         scatter._offsets3d = (xs, ys, zs)
         # Update connectivity lines
         for (pair, line) in lines:
-            idx1 = self.keypoint_involved.index(pair[0])
-            idx2 = self.keypoint_involved.index(pair[1])
+            idx1 = self.keypoints_involved.index(pair[0])
+            idx2 = self.keypoints_involved.index(pair[1])
             source = coords[idx1]
             target = coords[idx2]
             line.set_data([source[0], target[0]], [source[1], target[1]])
@@ -221,8 +221,8 @@ class SimpleGTPredVisualizer:
             for stat_kp in self.keypoint_for_stats:
                 error = frame_report.get(stat_kp, {}).get(self.error_type, None)
                 if error is None:
-                    if stat_kp in self.keypoint_involved:
-                        idx = self.keypoint_involved.index(stat_kp)
+                    if stat_kp in self.keypoints_involved:
+                        idx = self.keypoints_involved.index(stat_kp)
                         gt_joint = gt_tensor[idx*3: idx*3+3]
                         pred_joint = pred_tensor[idx*3: idx*3+3]
                         if self.error_type == "abs_error":
@@ -236,8 +236,8 @@ class SimpleGTPredVisualizer:
                 self.stats_errors[stat_kp].append(error)
         else:
             for stat_kp in self.keypoint_for_stats:
-                if stat_kp in self.keypoint_involved:
-                    idx = self.keypoint_involved.index(stat_kp)
+                if stat_kp in self.keypoints_involved:
+                    idx = self.keypoints_involved.index(stat_kp)
                     gt_joint = gt_tensor[idx*3: idx*3+3]
                     pred_joint = pred_tensor[idx*3: idx*3+3]
                     if self.error_type == "abs_error":
