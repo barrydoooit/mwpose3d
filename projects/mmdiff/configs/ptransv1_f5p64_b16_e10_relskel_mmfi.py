@@ -5,15 +5,15 @@ custom_imports = dict(
     imports=['mwpose3d', 'projects.mmdiff'], allow_failed_imports=False)
 
 data_prefix = dict(
-    pcd='mmwave',
+    pcd='mmwave_filtered',
     skel='skeleton'
 )
-data_root = './data/mri'
-train_info = 'info_train.pkl'
-val_info = 'info_val.pkl'
-test_info = 'info_test.pkl'
+data_root = './data/mmfi'
+train_info = 'info_subj_train.pkl'
+val_info = 'info_subj_val.pkl'
+test_info = 'info_subj_val.pkl'
 
-keypoints_involved=[i for i in range(0, 17) if i not in [1,2,3,4]]
+keypoints_involved=list(range(0, 17))
 num_joints = len(keypoints_involved)
 
 point_cloud_size = 64
@@ -85,9 +85,20 @@ model = dict(
 train_pipeline = [
     dict(
         type='LoadMultiFrameFromH5',
-        load_pcd_dim=radar_input_c,
-        num_frames=seq_frames, # NOTE: This is for phase 1. Phase 2 will use num_frames
+        load_pcd_dim=5,
+        num_frames=seq_frames,
         backup_frames=backup_frames,
+        empty_frame_op='prev',
+    ),
+    dict(
+        type='RandomFrameDrop',
+        drop_prob=0.05,
+        max_drop=1,
+    ),
+    dict(
+        type='SequenceClip',
+        mode='last',
+        sequence_length=seq_frames
     ),
     dict(
         type='SkeletonKeypointFilter',
@@ -95,16 +106,11 @@ train_pipeline = [
     ),
     dict(
         type='SkeletonCoordinateTransform',
-        tran_xyz=(0, -2.38, 0)
+        tran_xyz=(0, -3.15, 0)
     ),
     dict(
         type='PointCloudCoordinateTransform',
-        tran_xyz=(0, -2.38, 0),
-    ),
-    dict(
-        type='RandomFrameDrop',
-        drop_prob=0.05,
-        max_drop=1,
+        tran_xyz=(0, -3.15, 0),
     ),
     dict(
         type='RandomTransform',
@@ -114,12 +120,7 @@ train_pipeline = [
     ),
     dict(
         type='PointDuplicator',
-        target_num_points=point_cloud_size,
-    ),
-    dict(
-        type='SequenceClip',
-        mode='last',
-        sequence_length=seq_frames # NOTE: This is for phase 1. Phase 2 will use num_frames
+        target_num_points=point_cloud_size
     ),
     dict(
         type='PointSortAndClip',
@@ -128,10 +129,15 @@ train_pipeline = [
         sort_order='desc'
     ),
     dict(
+        type='ToRelativeSkeleton',
+        keypoints_involved=keypoints_involved,
+        anchor_joint=0,
+    ),
+    dict(
         type='NormalizePointAttr',
         attr_indices=(3, 4,),
-        means=(0.0, 28.98583),
-        stds=(0.45029, 35.79703)
+        means=(-0.00047, 16.56169),
+        stds=(0.79512, 3.88067)
     ),
 ]
 
@@ -153,9 +159,15 @@ train_dataloader = dict(
 val_pipeline = [
     dict(
         type='LoadMultiFrameFromH5',
-        load_pcd_dim=radar_input_c,
-        num_frames=seq_frames, # NOTE: This is for phase 1. Phase 2 will use num_frames
+        load_pcd_dim=5,
+        num_frames=seq_frames,
         backup_frames=backup_frames,
+        empty_frame_op='prev',
+    ),
+    dict(
+        type='SequenceClip',
+        mode='last',
+        sequence_length=seq_frames
     ),
     dict(
         type='SkeletonKeypointFilter',
@@ -163,20 +175,15 @@ val_pipeline = [
     ),
     dict(
         type='SkeletonCoordinateTransform',
-        tran_xyz=(0, -2.38, 0)
+        tran_xyz=(0, -3.15, 0)
     ),
     dict(
         type='PointCloudCoordinateTransform',
-        tran_xyz=(0, -2.38, 0),
+        tran_xyz=(0, -3.15, 0),
     ),
     dict(
         type='PointDuplicator',
-        target_num_points=point_cloud_size,
-    ),
-    dict(
-        type='SequenceClip',
-        mode='last',
-        sequence_length=seq_frames # NOTE: This is for phase 1. Phase 2 will use num_frames
+        target_num_points=point_cloud_size
     ),
     dict(
         type='PointSortAndClip',
@@ -185,10 +192,15 @@ val_pipeline = [
         sort_order='desc'
     ),
     dict(
+        type='ToRelativeSkeleton',
+        keypoints_involved=keypoints_involved,
+        anchor_joint=0,
+    ),
+    dict(
         type='NormalizePointAttr',
         attr_indices=(3, 4,),
-        means=(0.0, 28.98583),
-        stds=(0.45029, 35.79703)
+        means=(-0.00047, 16.56169),
+        stds=(0.79512, 3.88067)
     ),
 ]
 

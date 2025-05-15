@@ -70,6 +70,11 @@ train_pipeline = [
         sort_effective=True
     ),
     dict(
+        type='ToRelativeSkeleton',
+        keypoints_involved=keypoints_involved,
+        anchor_joint=0,
+    ),
+    dict(
         type='NormalizePointAttr',
         attr_indices=(3, 4,),
         means=(-0.00096, 43.60179),
@@ -142,6 +147,11 @@ val_pipeline = [
         sort_dim=(0,1,2,),
         sort_order='asc',
         sort_effective=True
+    ),
+    dict(
+        type='ToRelativeSkeleton',
+        keypoints_involved=keypoints_involved,
+        anchor_joint=0,
     ),
     dict(
         type='NormalizePointAttr',

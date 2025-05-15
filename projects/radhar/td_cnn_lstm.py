@@ -153,8 +153,8 @@ class RadHARCNNBiLSTM(BaseSkeletonEstimModel):
             # process only the most recent frame
             last_pts = points_seq[-1]
             feats, coords, _ = self.voxelize(last_pts)
-            spatial = self.middle_encoder(feats, coords, B)
             B = len(last_pts)
+            spatial = self.middle_encoder(feats, coords, B)
             x = self.backbone(spatial)[-1].view(B, -1)
             frame_feats.append(x)
             S = 1
@@ -207,8 +207,7 @@ class RadHARCNNBiLSTM(BaseSkeletonEstimModel):
         data_sample_list = [SkeletonDataSample(gt=skel_frame_tensor) for skel_frame_tensor in skel_frame_tensors]
 
         data_batch_dict["points"] = points
-
-        if 'previous_output' in data_batch_dict and not data_batch_dict.get('starting_flag', False):
+        if 'previous_output' in data_batch_dict and not data_batch_dict.get('starting_flag', [False])[0]:
             prev = data_batch_dict.pop('previous_output')
             hn, cn = prev.get('hn'), prev.get('cn')
             if hn is not None and cn is not None:

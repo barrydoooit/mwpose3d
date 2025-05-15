@@ -5,18 +5,18 @@ custom_imports = dict(
     imports=['mwpose3d', 'projects.mars'], allow_failed_imports=False)
 
 data_prefix = dict(
-    pcd='mmwave',
+    pcd='mmwave_filtered',
     skel='skeleton'
 )
-data_root = './data/mars/woutlier'
-train_info = 'info_train.pkl'
-val_info = 'info_val.pkl'
-test_info = 'info_test.pkl'
+data_root = './data/mmfi'
+train_info = 'info_subj_train.pkl'
+val_info = 'info_subj_val.pkl'
+test_info = 'info_subj_val.pkl'
 
-keypoints_involved=[i for i in range(0, 21) if i not in [7, 11]]
+keypoints_involved=list(range(0, 17))
 
 num_frames =1
-backup_frames = 0
+backup_frames = 1
 total_frames = num_frames + backup_frames
 point_cloud_size=64
 pcd_dim = 5
@@ -34,6 +34,7 @@ train_pipeline = [
         load_pcd_dim=pcd_dim,
         num_frames=num_frames,
         backup_frames=backup_frames,
+        empty_frame_op='prev'
     ),
     dict(
         type='SequenceClip',
@@ -46,11 +47,11 @@ train_pipeline = [
     ),
     dict(
         type='SkeletonCoordinateTransform',
-        tran_xyz=(0, -1.92, 0)
+        tran_xyz=(0, -3.15, 0)
     ),
     dict(
         type='PointCloudCoordinateTransform',
-        tran_xyz=(0, -1.92, 0),
+        tran_xyz=(0, -3.15, 0),
     ),
     dict(
         type='RandomTransform',
@@ -70,11 +71,16 @@ train_pipeline = [
         sort_effective=True
     ),
     dict(
+        type='ToRelativeSkeleton',
+        keypoints_involved=keypoints_involved,
+        anchor_joint=0,
+    ),
+    dict(
         type='NormalizePointAttr',
         attr_indices=(3, 4,),
-        means=(-0.00096, 43.60179),
-        stds=(0.49076, 63.31943)
-    ),
+        means=(-0.00047, 16.56169),
+        stds=(0.79512, 3.88067)
+    )
 ]
 
 train_dataloader = dict(
@@ -93,19 +99,15 @@ train_dataloader = dict(
 )
 
 optimizer_cfg = dict(
-    type='Adam',
-    lr = 0.001,
-    betas=(0.5, 0.999)
+    type='AdamW',
+    lr = 0.0005,
+    weight_decay=0.01
 )
-# optim_wrapper = dict(
-#     type='OptimWrapper',
-#     optimizer=dict(type='AdamW', lr=0.0005, weight_decay=0.01),
-# )
 
 train_cfg = dict(
     type='EpochBasedTrainLoop',
-    max_epochs=300,
-    val_interval=50
+    max_epochs=100,
+    val_interval=10
 )
 
 val_pipeline = [
@@ -114,6 +116,7 @@ val_pipeline = [
         load_pcd_dim=pcd_dim,
         num_frames=num_frames,
         backup_frames=backup_frames,
+        empty_frame_op='prev'
     ),
     dict(
         type='SequenceClip',
@@ -126,11 +129,17 @@ val_pipeline = [
     ),
     dict(
         type='SkeletonCoordinateTransform',
-        tran_xyz=(0, -1.92, 0)
+        tran_xyz=(0, -3.15, 0)
     ),
     dict(
         type='PointCloudCoordinateTransform',
-        tran_xyz=(0, -1.92, 0),
+        tran_xyz=(0, -3.15, 0),
+    ),
+    dict(
+        type='RandomTransform',
+        transform_prob=0.8,
+        sigma_xyz=(0.02, 0.02, 0.02),
+        max_d_xyz=(0.1, 0.1, 0.1)
     ),
     dict(
         type='PointDuplicator',
@@ -144,11 +153,16 @@ val_pipeline = [
         sort_effective=True
     ),
     dict(
+        type='ToRelativeSkeleton',
+        keypoints_involved=keypoints_involved,
+        anchor_joint=0,
+    ),
+    dict(
         type='NormalizePointAttr',
         attr_indices=(3, 4,),
-        means=(-0.00096, 43.60179),
-        stds=(0.49076, 63.31943)
-    ),
+        means=(-0.00047, 16.56169),
+        stds=(0.79512, 3.88067)
+    )
 ]
 val_dataloader = dict(
     batch_size=1,

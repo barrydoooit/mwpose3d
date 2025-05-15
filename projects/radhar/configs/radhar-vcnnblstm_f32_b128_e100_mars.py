@@ -89,7 +89,7 @@ train_pipeline = [
     ),
     dict(
         type='RandomTransform',
-        transform_prob=0.5,
+        transform_prob=0.8,
         sigma_xyz=(0.02, 0.02, 0.02),
         max_d_xyz=(0.1, 0.1, 0.1)
     ),

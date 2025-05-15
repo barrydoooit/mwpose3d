@@ -8,12 +8,12 @@ data_prefix = dict(
     pcd='mmwave',
     skel='skeleton'
 )
-data_root = './data/mri'
+data_root = './data/mars/woutlier'
 train_info = 'info_train.pkl'
 val_info = 'info_val.pkl'
 test_info = 'info_test.pkl'
 
-keypoints_involved=[i for i in range(0, 17) if i not in [1,2,3,4]]
+keypoints_involved=[i for i in range(0, 21) if i not in [7, 11]]
 num_joints = len(keypoints_involved)
 
 point_cloud_size = 64
@@ -95,11 +95,11 @@ train_pipeline = [
     ),
     dict(
         type='SkeletonCoordinateTransform',
-        tran_xyz=(0, -2.38, 0)
+        tran_xyz=(0, -1.92, 0)
     ),
     dict(
         type='PointCloudCoordinateTransform',
-        tran_xyz=(0, -2.38, 0),
+        tran_xyz=(0, -1.92, 0),
     ),
     dict(
         type='RandomFrameDrop',
@@ -128,10 +128,15 @@ train_pipeline = [
         sort_order='desc'
     ),
     dict(
+        type='ToRelativeSkeleton',
+        keypoints_involved=keypoints_involved,
+        anchor_joint=0,
+    ),
+    dict(
         type='NormalizePointAttr',
         attr_indices=(3, 4,),
-        means=(0.0, 28.98583),
-        stds=(0.45029, 35.79703)
+        means=(-0.00096, 43.60179),
+        stds=(0.49076, 63.31943)
     ),
 ]
 
@@ -163,11 +168,11 @@ val_pipeline = [
     ),
     dict(
         type='SkeletonCoordinateTransform',
-        tran_xyz=(0, -2.38, 0)
+        tran_xyz=(0, -1.92, 0)
     ),
     dict(
         type='PointCloudCoordinateTransform',
-        tran_xyz=(0, -2.38, 0),
+        tran_xyz=(0, -1.92, 0),
     ),
     dict(
         type='PointDuplicator',
@@ -185,10 +190,15 @@ val_pipeline = [
         sort_order='desc'
     ),
     dict(
+        type='ToRelativeSkeleton',
+        keypoints_involved=keypoints_involved,
+        anchor_joint=0,
+    ),
+    dict(
         type='NormalizePointAttr',
         attr_indices=(3, 4,),
-        means=(0.0, 28.98583),
-        stds=(0.45029, 35.79703)
+        means=(-0.00096, 43.60179),
+        stds=(0.49076, 63.31943)
     ),
 ]
 
