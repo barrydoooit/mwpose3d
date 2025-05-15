@@ -24,12 +24,12 @@ class PointCloudRangeFilter(BaseTransform):
     def get_filtered_frames(self, pcd_frames: Tuple[np.ndarray]):
         filtered_frames = []
         for pcd_frame in pcd_frames:
-            mask = (pcd_frame[:, 0] >= self.point_cloud_range[0]) & \
-                   (pcd_frame[:, 0] <= self.point_cloud_range[3]) & \
-                   (pcd_frame[:, 1] >= self.point_cloud_range[1]) & \
-                   (pcd_frame[:, 1] <= self.point_cloud_range[4]) & \
-                   (pcd_frame[:, 2] >= self.point_cloud_range[2]) & \
-                   (pcd_frame[:, 2] <= self.point_cloud_range[5])
+            mask = (pcd_frame[:, 0] > self.point_cloud_range[0]) & \
+                   (pcd_frame[:, 0] < self.point_cloud_range[3]) & \
+                   (pcd_frame[:, 1] > self.point_cloud_range[1]) & \
+                   (pcd_frame[:, 1] < self.point_cloud_range[4]) & \
+                   (pcd_frame[:, 2] > self.point_cloud_range[2]) & \
+                   (pcd_frame[:, 2] < self.point_cloud_range[5])
             filtered_frames.append(pcd_frame[mask])
         return filtered_frames
     

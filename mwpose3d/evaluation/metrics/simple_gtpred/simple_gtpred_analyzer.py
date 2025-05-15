@@ -34,7 +34,6 @@ class SimpleGTPredAnalyzer(BaseMetric):
     def process_sample(self, data_sample, data_batch):
         gt = data_sample.gt
         pred = data_sample.pred
-        pcd = data_batch.get("final_pcd_tensor")[:, -2:, ...]
         assert isinstance(gt, torch.Tensor) and isinstance(pred, torch.Tensor), "Currently only support torch.Tensor as gt type, make conversion in the data_sample first"
         assert gt.shape == pred.shape, "gt and pred should have the same shape"
         frame_report = {}
@@ -50,9 +49,10 @@ class SimpleGTPredAnalyzer(BaseMetric):
         self.report.append(frame_report)
         self.gt_data.append(gt)
         self.pred_data.append(pred)
-        self.pcd_data.append(pcd)
         
         if self.visuzalize:
+            pcd = data_batch.get("final_pcd_tensor")[:, -2:, ...]
+            self.pcd_data.append(pcd)
             self.visualizer.update(gt, pred, pcd, frame_report)
     
     def evaluate(self, show=True):

@@ -28,6 +28,8 @@ class ValLoop(BaseLoop):
         self.report = []
         self.gt_data = []  # Collect all ground truth data
         self.pred_data = []  # Collect all prediction data
+
+        self.last_output = dict()
         
         self.evaluator: BaseMetric = METRICS.build(metric_cfg)
         
@@ -60,10 +62,10 @@ class ValLoop(BaseLoop):
         self.runner.call_hook(
             'before_val_iter', batch_idx=idx, data_batch=data_batch)
         assert hasattr(self.runner.model, 'pack_input')
-        batch_inputs, data_samples = self.runner.model.pack_input(data_batch)
+        batch_inputs, data_samples = self.runner.model.pack_input(dict(data_batch, previous_output=self.last_output))
         assert len(data_samples) == 1, 'TestLoop only supports batch_size=1'
         outputs = self.runner.model(batch_inputs, data_samples, mode='predict')
-
+        self.last_output = outputs
         self.evaluator.process_sample(data_samples[0], data_batch=data_batch)
         self.runner.call_hook(
             'after_val_iter',

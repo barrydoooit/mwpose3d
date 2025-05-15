@@ -118,26 +118,26 @@ class SparseEncoder(nn.Module):
             indice_key='spconv_down2',
             conv_type='SparseConv3d')
 
-        D, H, W = self.sparse_shape
-        K = (3, 3, 3)
-        for i in range(self.stage_num):
-            if i == 0:
-                continue
-            pad = tuple(self.encoder_paddings[i])[0]
-            if isinstance(pad, int):
-                pd = ph = pw = pad
-            else:
-                pd, ph, pw = pad
+        # D, H, W = self.sparse_shape
+        # K = (3, 3, 3)
+        # for i in range(self.stage_num):
+        #     if i == 0:
+        #         continue
+        #     pad = tuple(self.encoder_paddings[i])[0]
+        #     if isinstance(pad, int):
+        #         pd = ph = pw = pad
+        #     else:
+        #         pd, ph, pw = pad
             
-            D = (D + 2 * pd - K[0]) // 2 + 1
-            H = (H + 2 * ph - K[1]) // 2 + 1
-            W = (W + 2 * pw - K[2]) // 2 + 1
+        #     D = (D + 2 * pd - K[0]) // 2 + 1
+        #     H = (H + 2 * ph - K[1]) // 2 + 1
+        #     W = (W + 2 * pw - K[2]) // 2 + 1
         
-        D = (D - output_kernel_size[0] + 2 * output_padding[0]) // output_stride[0] + 1
-        H = (H - output_kernel_size[1] + 2 * output_padding[1]) // output_stride[1] + 1
-        W = (W - output_kernel_size[2] + 2 * output_padding[2]) // output_stride[2] + 1
+        # D = (D - output_kernel_size[0] + 2 * output_padding[0]) // output_stride[0] + 1
+        # H = (H - output_kernel_size[1] + 2 * output_padding[1]) // output_stride[1] + 1
+        # W = (W - output_kernel_size[2] + 2 * output_padding[2]) // output_stride[2] + 1
 
-        self.out_shape = (self.base_channels * D, H, W)
+        # self.out_shape = (self.base_channels * D, H, W)
 
 
 

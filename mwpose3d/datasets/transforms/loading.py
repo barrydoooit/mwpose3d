@@ -93,6 +93,8 @@ class LoadMultiFrameFromH5(BaseTransform):
                     pcd_frame = self.handle_empty_pcd(last_valid)
                 else:
                     start = index[cur]
+                    if start == 0:
+                        input['starting_flag'] = True
                     end = index[cur + 1] if cur + 1 < len(index) else None
                     pcd_data = grp[self.DATA][start:end][:, :self.load_pcd_dim]
                     if pcd_data.size == 0:
@@ -120,7 +122,7 @@ class LoadMultiFrameFromH5(BaseTransform):
 
     def handle_empty_pcd(self, prev_frame):
         if self.empty_frame_op == 'zero':
-            return np.zeros((1, self.load_pcd_dim), dtype=np.float32)
+            return np.zeros((0, self.load_pcd_dim), dtype=np.float32)
         elif self.empty_frame_op == 'prev':
             if prev_frame is not None:
                 return prev_frame

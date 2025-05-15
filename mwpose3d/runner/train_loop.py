@@ -53,19 +53,22 @@ class EpochBasedTrainLoop(BaseLoop):
         self.runner.call_hook('before_train')
         
         self.epoch_pbar = tqdm(
-            total=self._max_epochs,
-            desc='Epochs',
-            leave=True
+        range(1, self._max_epochs + 1),
+        desc='Epochs',
+        leave=True,
+        total=self._max_epochs
         )
-        
-        while self._epoch < self._max_epochs and not self.stop_training:
+    
+        for epoch in self.epoch_pbar:
+            if self.stop_training:
+                break
             self._run_epoch()
             self.epoch_pbar.update(1)
             
             if (self.runner.val_loop is not None
                     and self._epoch >= self.val_begin
                     and (self._epoch % self.val_interval == 0
-                         or self._epoch == self._max_epochs)):
+                         or self._epoch == self._max_epochs or self._epoch == 1)):
                 self.runner.val_loop.run()
                 self.runner.save_checkpoint(f'epoch_{self._epoch}.pth')
         

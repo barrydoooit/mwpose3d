@@ -144,21 +144,33 @@ class RadHARCNNBiLSTM(BaseSkeletonEstimModel):
                 data_sample.gt = data_sample.gt[-1, :]
         return output
 
-    def _forward(self, batch_inputs, data_samples):
+    def _forward(self, batch_inputs: dict, data_samples: List[SkeletonDataSample]):
         points_seq = batch_inputs['points']
-        S = len(points_seq)
-        B = len(points_seq[0])
-        assert S == self.num_frames, f"Expect {self.num_frames} frames, but got {F}"
+        only_recent = batch_inputs.get('only_need_recent_frame', False)
 
         frame_feats = []
-        for t in range(S):
-            pts_list = points_seq[t]
-            feats, coords, _ = self.voxelize(pts_list)
-            spatial = self.middle_encoder(feats, coords, B)
-            x = self.backbone(spatial)
-            x = x[-1].view(B, -1)
+        if only_recent:
+            # process only the most recent frame
+            last_pts = points_seq[-1]
+            feats, coords, _ = self.voxelize(last_pts)
+            spatial = self.middle_encoder(feats, coords, coords[-1, 0] + 1)
+            B = len(last_pts)
+            x = self.backbone(spatial)[-1].view(B, -1)
             frame_feats.append(x)
-        
+            S = 1
+        else:
+            S = len(points_seq)
+            B = len(points_seq[0])
+            for t in range(S):
+                feats, coords, _ = self.voxelize(points_seq[t])
+                spatial = self.middle_encoder(feats, coords, coords[-1, 0] + 1)
+                x = self.backbone(spatial)[-1].view(B, -1)
+                frame_feats.append(x)
+
+        seq_feats = torch.stack(frame_feats, dim=1)  # B x S x C
+        h0 = batch_inputs.get('h0', self.h0)
+        c0 = batch_inputs.get('c0', self.c0)
+
         seq_feats = torch.stack(frame_feats, dim=1) # B x S x C
         h0, c0 = batch_inputs.get('h0', None), batch_inputs.get('c0', None)
         h0 = h0 if h0 is not None else self.h0
@@ -196,7 +208,14 @@ class RadHARCNNBiLSTM(BaseSkeletonEstimModel):
 
         data_batch_dict["points"] = points
 
-        if self.learnable_init_state:
+        if 'previous_output' in data_batch_dict and not data_batch_dict.get('starting_flag', False):
+            prev = data_batch_dict.pop('previous_output')
+            hn, cn = prev.get('hn'), prev.get('cn')
+            if hn is not None and cn is not None:
+                data_batch_dict['h0'] = hn
+                data_batch_dict['c0'] = cn
+                data_batch_dict['only_need_recent_frame'] = True
+        elif self.learnable_init_state:
             data_batch_dict['h0'] = torch.zeros((self.lstm_cfg['num_layers'] * (2 if self.lstm_cfg.get('bidirectional', False) else 1), B, self.lstm_cfg['hidden_size']), dtype=torch.float32, device=get_device())
             data_batch_dict['c0'] = torch.zeros((self.lstm_cfg['num_layers'] * (2 if self.lstm_cfg.get('bidirectional', False) else 1), B, self.lstm_cfg['hidden_size']), dtype=torch.float32, device=get_device())
         return data_batch_dict, data_sample_list
