@@ -1,3 +1,4 @@
+from pathlib import Path
 from typing import TYPE_CHECKING, Dict, List, Sequence, Union
 import torch
 from torch.utils.data import DataLoader
@@ -21,7 +22,8 @@ class TestLoop(BaseLoop):
         self,
         runner: 'Runner',
         dataloader: Union[DataLoader, Dict],
-        metric_cfg: dict
+        metric_cfg: dict,
+        checkpoints: Sequence[str] = None,
     ):
         super().__init__(runner, dataloader)
         self._iter = 0
@@ -32,6 +34,7 @@ class TestLoop(BaseLoop):
         self.last_output = dict()
         
         self.evaluator: BaseMetric = METRICS.build(metric_cfg)
+        self.checkpoints = checkpoints
         
     @property
     def iter(self):
@@ -40,10 +43,22 @@ class TestLoop(BaseLoop):
 
     def run(self) -> torch.nn.Module:
         self.runner.call_hook('before_test')
-        self.runner.call_hook('before_test_epoch')
-        self._run_epoch()
-        summary = self.evaluator.evaluate()
-        self.runner.call_hook('after_test_epoch', metrics=summary)
+        if self.checkpoints is None:
+            self.runner.call_hook('before_test_epoch')
+            self._run_epoch()
+            summary = self.evaluator.evaluate()
+            self.runner.call_hook('after_test_epoch', metrics=summary)
+
+        else:
+            load_from_root = Path(self.runner._load_from).parent
+            for checkpoint in self.checkpoints:
+                checkpoint_path = load_from_root / f"epoch_{checkpoint}.pth"
+                self.runner.load_checkpoint(str(checkpoint_path))
+                self.runner.call_hook('before_test_epoch')
+                self._run_epoch()
+                summary = self.evaluator.evaluate()
+                self.runner.call_hook('after_test_epoch', metrics=summary)
+
         self.runner.call_hook('after_test')
         return self.runner.model
         

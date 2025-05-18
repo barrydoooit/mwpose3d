@@ -15,13 +15,14 @@ test_info = 'info_subj_val.pkl'
 
 keypoints_involved=list(range(0, 17))
 
-num_frames = 32
-backup_frames = 5
+num_frames = 64
+backup_frames = 16
 total_frames = num_frames + backup_frames
 point_cloud_size = 64
 model = dict(
     type="MmMeshPredictor",
     point_cloud_size=point_cloud_size,
+    frame_len=num_frames,
     criterion='sdtw',
     base_pointnet_cfg=dict(
         type="BasePointNet",
@@ -73,6 +74,12 @@ model = dict(
     fusion_module_cfg=dict(
         type="SimpleKpFusionHead",
         channels=[128, 128, len(keypoints_involved)*3],
+    ),
+    train_cfg=dict(
+        warmup_frames=48,
+    ),
+    test_cfg=dict(
+        serial=True,
     )
 )
 
@@ -121,11 +128,6 @@ train_pipeline = [
         target_num_points=point_cloud_size,
         sort_dim=4,
         sort_order='desc'
-    ),
-    dict(
-        type='ToRelativeSkeleton',
-        keypoints_involved=keypoints_involved,
-        anchor_joint=0,
     ),
     dict(
         type='NormalizePointAttr',
@@ -204,11 +206,6 @@ val_pipeline = [
         sort_order='desc'
     ),
     dict(
-        type='ToRelativeSkeleton',
-        keypoints_involved=keypoints_involved,
-        anchor_joint=0,
-    ),
-    dict(
         type='NormalizePointAttr',
         attr_indices=(3, 4,),
         means=(-0.00047, 16.56169),
@@ -260,5 +257,6 @@ test_dataloader = dict(
 
 test_cfg = dict(
     type='TestLoop',
-    metric_cfg=metric
+    metric_cfg=metric,
+    checkpoints=[90, 100],
 )

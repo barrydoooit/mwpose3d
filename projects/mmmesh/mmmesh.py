@@ -1,3 +1,4 @@
+import sys
 import warnings
 from typing import List, Literal, Tuple
 import numpy as np
@@ -25,7 +26,9 @@ class MmMeshPredictor(BaseSkeletonEstimModel):
                  point_cloud_size: int = 32, 
                  frame_len: int = 1,
                  in_channels: int= 6,
-                 criterion: str = "MSELoss"
+                 criterion: str = "MSELoss",
+                 train_cfg: dict = dict(warmup_frames=0),
+                 test_cfg: dict = dict(serial=False)
                  ):
         super().__init__()
         self.point_cloud_size = point_cloud_size
@@ -37,6 +40,9 @@ class MmMeshPredictor(BaseSkeletonEstimModel):
         self.fusion_module = MODELS.build(fusion_module_cfg)
         self.criterion = criterion
 
+        self.train_cfg = train_cfg
+        self.test_cfg = test_cfg
+
     def _make_fusion_module(self):
         fusion_layers = []
         channels = self.fusion_module_cfg.get("channels")
@@ -47,16 +53,16 @@ class MmMeshPredictor(BaseSkeletonEstimModel):
         
     def loss(self, batch_inputs, data_samples):
         tensor, _, _, _, _ = tuple(self._forward(batch_inputs, data_samples).values())
-        gt = torch.stack([data_sample.gt for data_sample in data_samples], dim=0)
+        B, T, J = tensor.size()
+        gt = torch.stack([data_sample.gt[-T:, :] for data_sample in data_samples], dim=0)
         if self.criterion == "MSELoss":
             criterion = nn.MSELoss()#nn.L1Loss()
             loss = criterion(tensor, gt)
         elif self.criterion == "sdtw":
             sdtw = SoftDTW(use_cuda=True, gamma=0.1)
-            batch_size, length_size, _, _ = batch_inputs['final_pcd_tensor'].size()
             mse_loss = nn.MSELoss()(tensor, gt)
-            tensor = tensor.reshape(batch_size, length_size, -1)
-            gt = gt.reshape(batch_size, length_size, -1)
+            tensor = tensor.reshape(B, T, -1)
+            gt = gt.reshape(B, T, -1)
             loss = 0.01 * sdtw(tensor, gt).mean() + mse_loss
         return loss
     
@@ -72,17 +78,42 @@ class MmMeshPredictor(BaseSkeletonEstimModel):
 
     def _forward(self, batch_inputs, data_samples):
         final_pcd_tensor = batch_inputs['final_pcd_tensor']
+        only_need_recent_frame = batch_inputs.get('only_need_recent_frame', False)
+        if only_need_recent_frame:
+            final_pcd_tensor = final_pcd_tensor[:, -1:, ...]
         h0_g, c0_g = batch_inputs['h0_g'], batch_inputs['c0_g']
         h0_a, c0_a = batch_inputs['h0_a'], batch_inputs['c0_a']
-        batch_size, length_size, point_count, in_channels = final_pcd_tensor.size()
+
+        B, T, N, C = final_pcd_tensor.size()
+        flat = final_pcd_tensor.view(B * T, N, C)
+        feat_flat = self.base_pointnet(flat)
+        feats = feat_flat.view(B, T, -1) # B x T x C
+        warmup_frames = 0 if only_need_recent_frame else self.train_cfg.get('warmup_frames', 0)
+        if warmup_frames > 0:
+            warm_feats: torch.Tensor = feats[:, :warmup_frames, ...].detach()
+            main_feats = feats[:, warmup_frames:, ...]
+        else:
+            warm_feats = None
+            main_feats = feats
         
-        x = final_pcd_tensor.view(batch_size * length_size, point_count, in_channels)
-        x = self.base_pointnet(x)
-        g_vec, g_loc, global_weights, hn_g, cn_g = self.global_module(x, h0_g, c0_g, batch_size, length_size)
-        a_vec, anchor_weights, hn_a, cn_a = self.anchor_module(x, g_loc, h0_a, c0_a, batch_size, length_size, 28)
-        x = self.fusion_module(g_vec, a_vec, batch_size, length_size)
+        warm_feats = warm_feats.reshape(B * warmup_frames, N, -1) if warm_feats is not None else None
+        main_feats = main_feats.reshape(B * (T - warmup_frames), N, -1)
+
+        if warmup_frames > 0:
+            with torch.no_grad():
+                _, g_loc, _, hn_w_g, cn_w_g = self.global_module(warm_feats, h0_g, c0_g, B, warmup_frames)
+                _, _, hn_w_a, cn_w_a = self.anchor_module(warm_feats, g_loc, h0_a, c0_a, B, warmup_frames, 28)
+        else:
+            hn_w_g, cn_w_g = h0_g, c0_g
+            hn_w_a, cn_w_a = h0_a, c0_a
+
+        g_vec, g_loc, g_weights, hn_g, cn_g = self.global_module(main_feats, hn_w_g, cn_w_g, B, T - warmup_frames)
+        a_vec, a_weights, hn_a, cn_a = self.anchor_module(main_feats, g_loc, hn_w_a, cn_w_a, B, T - warmup_frames, 28)
+
+        x_out = self.fusion_module(g_vec, a_vec, B, T - warmup_frames)
+
         return dict(
-            tensor=x,
+            tensor=x_out,
             hn_g=hn_g,
             cn_g=cn_g,
             hn_a=hn_a,
@@ -111,26 +142,42 @@ class MmMeshPredictor(BaseSkeletonEstimModel):
         ]
         data_sample_list = [SkeletonDataSample(gt=skel_frame_tensor) for skel_frame_tensor in skel_frame_tensors]
         
-        if self.global_module.grnn.learnable_init_state:
-            h0_g = torch.zeros((self.global_module.grnn.num_layers, batch_size, self.global_module.grnn.hidden_size), dtype=torch.float32, device=get_device())
-            c0_g = torch.zeros((self.global_module.grnn.num_layers, batch_size, self.global_module.grnn.hidden_size), dtype=torch.float32, device=get_device())
+        if 'previous_output' in data_batch_dict and \
+            (not data_batch_dict.get('starting_flag', [False])[0]) and \
+            self.test_cfg.get('serial', False):
+            prev = data_batch_dict.pop('previous_output')
+            h0_g = prev.get('hn_g')
+            c0_g = prev.get('cn_g')
+            h0_a = prev.get('hn_a')
+            c0_a = prev.get('cn_a')
+            assert h0_g is not None and c0_g is not None and \
+                h0_a is not None and c0_a is not None, "Previous output should contain all hidden states"
+            batch_inputs = dict(
+                final_pcd_tensor=final_pcd_tensor,
+                h0_g=h0_g, c0_g=c0_g,
+                h0_a=h0_a, c0_a=c0_a,
+                only_need_recent_frame=True
+            )
         else:
-            h0_g, c0_g = None, None
-        
-        if self.anchor_module.arnn.learnable_init_state:
-            h0_a = torch.zeros((self.anchor_module.arnn.num_layers, batch_size, self.anchor_module.arnn.hidden_size), dtype=torch.float32, device=get_device())
-            c0_a = torch.zeros((self.anchor_module.arnn.num_layers, batch_size, self.anchor_module.arnn.hidden_size), dtype=torch.float32, device=get_device())
-        else:
-            h0_a, c0_a = None, None
-        
-        batch_inputs = dict(
-            final_pcd_tensor=final_pcd_tensor,
-            h0_g=h0_g,
-            c0_g=c0_g,
-            h0_a=h0_a,
-            c0_a=c0_a
-        )
-        data_batch_dict["final_pcd_tensor"] = final_pcd_tensor
+            if not self.global_module.grnn.learnable_init_state:
+                h0_g = torch.zeros((self.global_module.grnn.num_layers, batch_size, self.global_module.grnn.hidden_size), dtype=torch.float32, device=get_device())
+                c0_g = torch.zeros((self.global_module.grnn.num_layers, batch_size, self.global_module.grnn.hidden_size), dtype=torch.float32, device=get_device())
+            else:
+                h0_g, c0_g = None, None
+            
+            if not self.anchor_module.arnn.learnable_init_state:
+                h0_a = torch.zeros((self.anchor_module.arnn.num_layers, batch_size, self.anchor_module.arnn.hidden_size), dtype=torch.float32, device=get_device())
+                c0_a = torch.zeros((self.anchor_module.arnn.num_layers, batch_size, self.anchor_module.arnn.hidden_size), dtype=torch.float32, device=get_device())
+            else:
+                h0_a, c0_a = None, None
+            
+            batch_inputs = dict(
+                final_pcd_tensor=final_pcd_tensor,
+                h0_g=h0_g,
+                c0_g=c0_g,
+                h0_a=h0_a,
+                c0_a=c0_a
+            )
         return batch_inputs, data_sample_list
         
     def pack_input_online(self, data_batch_dict: dict):

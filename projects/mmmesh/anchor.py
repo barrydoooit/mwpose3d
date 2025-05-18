@@ -179,4 +179,4 @@ class AnchorModule(nn.Module):
         voxel_vec = self.avoxel(voxel_points)
         voxel_vec = voxel_vec.view(batch_size, length_size, self.avoxel.channels[-1])
         a_vec, hn, cn = self.arnn(voxel_vec, h0, c0)
-        return a_vec, hn, cn, attn_weights
+        return a_vec, attn_weights, hn, cn

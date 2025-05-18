@@ -15,13 +15,14 @@ test_info = 'info_test.pkl'
 
 keypoints_involved=[i for i in range(0, 17) if i not in [1,2,3,4]]
 
-num_frames = 32
-backup_frames = 5
+num_frames = 64
+backup_frames = 16
 total_frames = num_frames + backup_frames
 point_cloud_size = 64
 model = dict(
     type="MmMeshPredictor",
     point_cloud_size=point_cloud_size,
+    frame_len=num_frames,
     criterion='sdtw',
     base_pointnet_cfg=dict(
         type="BasePointNet",
@@ -73,6 +74,12 @@ model = dict(
     fusion_module_cfg=dict(
         type="SimpleKpFusionHead",
         channels=[128, 128, len(keypoints_involved)*3],
+    ),
+    train_cfg=dict(
+        warmup_frames=48,
+    ),
+    test_cfg=dict(
+        serial=True,
     )
 )
 
@@ -158,7 +165,7 @@ optimizer_cfg = dict(
 train_cfg = dict(
     type='EpochBasedTrainLoop',
     max_epochs=120,
-    val_interval=20
+    val_interval=10
 )
 
 
@@ -248,5 +255,6 @@ test_dataloader = dict(
 
 test_cfg = dict(
     type='TestLoop',
-    metric_cfg=metric
+    metric_cfg=metric,
+    checkpoints=[10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 110, 120],
 )
