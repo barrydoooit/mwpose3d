@@ -37,6 +37,8 @@ class RadHARCNNBiLSTM(BaseSkeletonEstimModel):
                  voxelize_reduce: bool = True,
                  keypoints_involved: List[int] = list(range(0, 21)),
                  criterion: Literal['MSELoss', 'CrossEntropyLoss', 'sdtw'] = 'sdtw',
+                 train_cfg: dict = dict(warmup_frames=0),
+                 test_cfg: dict = dict(serial=False)
                  ):
         super().__init__()
         self.middle_encoder: 'SparseEncoder' = MODELS.build(moddle_encoder)
@@ -86,7 +88,10 @@ class RadHARCNNBiLSTM(BaseSkeletonEstimModel):
         elif criterion == 'sdtw':
             self.criterion = [SoftDTW(use_cuda=True, gamma=0.1), nn.MSELoss()]
             self.sdtw = True
-    
+
+        self.train_cfg = train_cfg
+        self.test_cfg = test_cfg
+
     def voxelize(self, points_list):
         """
         points_list: List[Tensor] of length B, each (N_i, C_in)
@@ -127,10 +132,10 @@ class RadHARCNNBiLSTM(BaseSkeletonEstimModel):
             criterion = self.criterion
             loss = criterion(tensor, gt)
         else:
-            B, S = tensor.shape[:2]
+            B, T = tensor.shape[:2]
             mse_loss = self.criterion[1](tensor, gt)
-            tensor = tensor.reshape(B, S, -1)
-            gt = gt.reshape(B, S, -1)
+            tensor = tensor.reshape(B, T, -1)
+            gt = gt.reshape(B, T, -1)
             loss = 0.01 * self.criterion[0](tensor, gt).mean() + mse_loss
         return loss
     
@@ -148,38 +153,34 @@ class RadHARCNNBiLSTM(BaseSkeletonEstimModel):
         points_seq = batch_inputs['points']
         only_recent = batch_inputs.get('only_need_recent_frame', False)
 
-        frame_feats = []
         if only_recent:
             # process only the most recent frame
             last_pts = points_seq[-1]
             feats, coords, _ = self.voxelize(last_pts)
+            T = 1
             B = len(last_pts)
             spatial = self.middle_encoder(feats, coords, B)
-            x = self.backbone(spatial)[-1].view(B, -1)
-            frame_feats.append(x)
-            S = 1
+            seq_feats = self.backbone(spatial)[-1].view(B, -1).unsqueeze(1)
+            
         else:
-            S = len(points_seq)
+            T = len(points_seq)
             B = len(points_seq[0])
-            for t in range(S):
-                feats, coords, _ = self.voxelize(points_seq[t])
-                spatial = self.middle_encoder(feats, coords, B)
-                x = self.backbone(spatial)[-1].view(B, -1)
-                frame_feats.append(x)
+            point_seq_flattened = [p for pb in points_seq for p in pb]
+            feats, coords, _ = self.voxelize(point_seq_flattened)
+            spatial = self.middle_encoder(feats, coords, B*T)
+            seq_feats = self.backbone(spatial)[-1].view(B, T, -1)
 
-        seq_feats = torch.stack(frame_feats, dim=1)  # B x S x C
         h0 = batch_inputs.get('h0', self.h0)
         c0 = batch_inputs.get('c0', self.c0)
 
-        seq_feats = torch.stack(frame_feats, dim=1) # B x S x C
         h0, c0 = batch_inputs.get('h0', None), batch_inputs.get('c0', None)
         h0 = h0 if h0 is not None else self.h0
         c0 = c0 if c0 is not None else self.c0
 
         lstm_out, (hn, cn) = self.lstm(seq_feats, (h0, c0))
-        flat = lstm_out.reshape(B * S, -1)
+        flat = lstm_out.reshape(B * T, -1)
         logits = self.joints_head(flat)
-        logits = logits.view(B, S, self.num_joints * 3)
+        logits = logits.view(B, T, self.num_joints * 3)
         return dict(
             tensor=logits,
             hn=hn,
@@ -188,10 +189,10 @@ class RadHARCNNBiLSTM(BaseSkeletonEstimModel):
 
     def pack_input(self, data_batch_dict: dict):
         pcd_frame_list: List[Tuple[np.ndarray]] = data_batch_dict['pcd_frames'] # F x B x N x C
-        S = len(pcd_frame_list)
+        T = len(pcd_frame_list)
         B = len(pcd_frame_list[0])
         points = []
-        for s in range(S):
+        for s in range(T):
             sample_frames = []
             for b in range(B):
                 pcd_frame = pcd_frame_list[s][b]
@@ -207,7 +208,9 @@ class RadHARCNNBiLSTM(BaseSkeletonEstimModel):
         data_sample_list = [SkeletonDataSample(gt=skel_frame_tensor) for skel_frame_tensor in skel_frame_tensors]
 
         data_batch_dict["points"] = points
-        if 'previous_output' in data_batch_dict and not data_batch_dict.get('starting_flag', [False])[0]:
+        if 'previous_output' in data_batch_dict and \
+            (not data_batch_dict.get('starting_flag', [False])[0]) and \
+            self.test_cfg.get('serial', False):
             prev = data_batch_dict.pop('previous_output')
             hn, cn = prev.get('hn'), prev.get('cn')
             if hn is not None and cn is not None:

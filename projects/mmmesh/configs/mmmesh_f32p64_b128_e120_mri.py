@@ -15,8 +15,8 @@ test_info = 'info_test.pkl'
 
 keypoints_involved=[i for i in range(0, 17) if i not in [1,2,3,4]]
 
-num_frames = 64
-backup_frames = 16
+num_frames = 32
+backup_frames = 5
 total_frames = num_frames + backup_frames
 point_cloud_size = 64
 model = dict(
@@ -76,10 +76,10 @@ model = dict(
         channels=[128, 128, len(keypoints_involved)*3],
     ),
     train_cfg=dict(
-        warmup_frames=48,
+        warmup_frames=0,
     ),
     test_cfg=dict(
-        serial=True,
+        serial=False,
     )
 )
 

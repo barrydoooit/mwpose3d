@@ -5,18 +5,18 @@ custom_imports = dict(
     imports=['mwpose3d', 'projects.mmmesh'], allow_failed_imports=False)
 
 data_prefix = dict(
-    pcd='mmwave',
+    pcd='mmwave_filtered',
     skel='skeleton'
 )
-data_root = './data/mars/woutlier'
-train_info = 'info_train.pkl'
-val_info = 'info_val.pkl'
-test_info = 'info_test.pkl'
+data_root = './data/mmfi'
+train_info = 'info_subj_train.pkl'
+val_info = 'info_subj_val.pkl'
+test_info = 'info_subj_val.pkl'
 
-keypoints_involved=[i for i in range(0, 21) if i not in [7, 11]]
+keypoints_involved=list(range(0, 17))
 
-num_frames = 64
-backup_frames = 16
+num_frames = 32
+backup_frames = 5
 total_frames = num_frames + backup_frames
 point_cloud_size = 64
 model = dict(
@@ -76,10 +76,10 @@ model = dict(
         channels=[128, 128, len(keypoints_involved)*3],
     ),
     train_cfg=dict(
-        warmup_frames=48,
+        warmup_frames=0,
     ),
     test_cfg=dict(
-        serial=True,
+        serial=False,
     )
 )
 
@@ -89,6 +89,7 @@ train_pipeline = [
         load_pcd_dim=5,
         num_frames=num_frames,
         backup_frames=backup_frames,
+        empty_frame_op='prev',
     ),
     dict(
         type='RandomFrameDrop',
@@ -106,11 +107,11 @@ train_pipeline = [
     ),
     dict(
         type='SkeletonCoordinateTransform',
-        tran_xyz=(0, -1.92, 0)
+        tran_xyz=(0, -3.15, 0)
     ),
     dict(
         type='PointCloudCoordinateTransform',
-        tran_xyz=(0, -1.92, 0),
+        tran_xyz=(0, -3.15, 0),
     ),
     dict(
         type='RandomTransform',
@@ -120,7 +121,7 @@ train_pipeline = [
     ),
     dict(
         type='PointDuplicator',
-        target_num_points=point_cloud_size,
+        target_num_points=point_cloud_size
     ),
     dict(
         type='PointSortAndClip',
@@ -129,15 +130,10 @@ train_pipeline = [
         sort_order='desc'
     ),
     dict(
-        type='ToRelativeSkeleton',
-        keypoints_involved=keypoints_involved,
-        anchor_joint=0,
-    ),
-    dict(
         type='NormalizePointAttr',
         attr_indices=(3, 4,),
-        means=(-0.00096, 43.60179),
-        stds=(0.49076, 63.31943)
+        means=(-0.00047, 16.56169),
+        stds=(0.79512, 3.88067)
     ),
     dict(
         type='AddRangeDimension',
@@ -169,8 +165,8 @@ optimizer_cfg = dict(
 
 train_cfg = dict(
     type='EpochBasedTrainLoop',
-    max_epochs=300,
-    val_interval=50
+    max_epochs=100,
+    val_interval=10
 )
 
 
@@ -180,6 +176,7 @@ val_pipeline = [
         load_pcd_dim=5,
         num_frames=num_frames,
         backup_frames=backup_frames,
+        empty_frame_op='prev',
     ),
     dict(
         type='SequenceClip',
@@ -192,15 +189,15 @@ val_pipeline = [
     ),
     dict(
         type='SkeletonCoordinateTransform',
-        tran_xyz=(0, -1.92, 0)
+        tran_xyz=(0, -3.15, 0)
     ),
     dict(
         type='PointCloudCoordinateTransform',
-        tran_xyz=(0, -1.92, 0),
+        tran_xyz=(0, -3.15, 0),
     ),
     dict(
         type='PointDuplicator',
-        target_num_points=point_cloud_size,
+        target_num_points=point_cloud_size
     ),
     dict(
         type='PointSortAndClip',
@@ -209,15 +206,10 @@ val_pipeline = [
         sort_order='desc'
     ),
     dict(
-        type='ToRelativeSkeleton',
-        keypoints_involved=keypoints_involved,
-        anchor_joint=0,
-    ),
-    dict(
         type='NormalizePointAttr',
         attr_indices=(3, 4,),
-        means=(-0.00096, 43.60179),
-        stds=(0.49076, 63.31943)
+        means=(-0.00047, 16.56169),
+        stds=(0.79512, 3.88067)
     ),
     dict(
         type='AddRangeDimension',
@@ -266,5 +258,5 @@ test_dataloader = dict(
 test_cfg = dict(
     type='TestLoop',
     metric_cfg=metric,
-    checkpoints=[50, 100, 150, 200, 250, 300]
+    checkpoints=[50, 90],
 )
