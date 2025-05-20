@@ -15,7 +15,7 @@ test_info = 'info_subj_val.pkl'
 
 keypoints_involved=list(range(0, 17))
 
-num_frames = 32
+num_frames = 16
 backup_frames = 5
 total_frames = num_frames + backup_frames
 pcd_dim = 5
@@ -103,7 +103,7 @@ train_pipeline = [
 ]
 
 train_dataloader = dict(
-    batch_size=128,
+    batch_size=64,
     num_workers=16,
     shuffle=True,
   #  drop_last=True,
@@ -120,7 +120,7 @@ train_dataloader = dict(
 
 optimizer_cfg = dict(
     type='AdamW',
-    lr = 0.0005,
+    lr = 0.00025,
     weight_decay=0.01
 )
 

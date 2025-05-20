@@ -37,8 +37,8 @@ class RadHARCNNBiLSTM(BaseSkeletonEstimModel):
                  voxelize_reduce: bool = True,
                  keypoints_involved: List[int] = list(range(0, 21)),
                  criterion: Literal['MSELoss', 'CrossEntropyLoss', 'sdtw'] = 'sdtw',
-                 train_cfg: dict = dict(warmup_frames=0),
-                 test_cfg: dict = dict(serial=False)
+                 train_cfg: dict = dict(warmup_frames=0, splits=1),
+                 test_cfg: dict = dict(serial=False, splits=1),
                  ):
         super().__init__()
         self.middle_encoder: 'SparseEncoder' = MODELS.build(moddle_encoder)
@@ -92,6 +92,7 @@ class RadHARCNNBiLSTM(BaseSkeletonEstimModel):
         self.train_cfg = train_cfg
         self.test_cfg = test_cfg
 
+    @torch.no_grad()
     def voxelize(self, points_list):
         """
         points_list: List[Tensor] of length B, each (N_i, C_in)
@@ -165,10 +166,25 @@ class RadHARCNNBiLSTM(BaseSkeletonEstimModel):
         else:
             T = len(points_seq)
             B = len(points_seq[0])
-            point_seq_flattened = [p for pb in points_seq for p in pb]
-            feats, coords, _ = self.voxelize(point_seq_flattened)
-            spatial = self.middle_encoder(feats, coords, B*T)
-            seq_feats = self.backbone(spatial)[-1].view(B, T, -1)
+            split = self.train_cfg.get('splits', 1) if self.training else self.test_cfg.get('splits', 1)
+            base_size, r = divmod(T, split)
+            sizes = [base_size + (1 if i < r else 0) for i in range(split)]
+            seq_feats_list = []
+            idx = 0
+
+            for sz in sizes:
+                flat_pc = [
+                    points_seq[t][b]
+                    for b in range(B)
+                    for t in range(idx, idx + sz)
+                ]
+
+                feats, coords, _ = self.voxelize(flat_pc)
+                spatial = self.middle_encoder(feats, coords, B * sz)
+                seq_feats = self.backbone(spatial)[-1].view(B, sz, -1)
+                seq_feats_list.append(seq_feats)
+                idx += sz
+            seq_feats = torch.cat(seq_feats_list, dim=1)
 
         h0 = batch_inputs.get('h0', self.h0)
         c0 = batch_inputs.get('c0', self.c0)

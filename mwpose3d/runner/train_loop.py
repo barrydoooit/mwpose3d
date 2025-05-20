@@ -63,7 +63,7 @@ class EpochBasedTrainLoop(BaseLoop):
             if self.stop_training:
                 break
             self._run_epoch()
-            self.epoch_pbar.update(1)
+            #self.epoch_pbar.update(1)
             
             if (self.runner.val_loop is not None
                     and self._epoch >= self.val_begin
@@ -93,7 +93,7 @@ class EpochBasedTrainLoop(BaseLoop):
         self.runner.optimizer.zero_grad()
         loss.backward()
         self.runner.optimizer.step()
-        if self._iter % 100 == 0:
+        if self._iter % 30 == 0:
             self.epoch_pbar.set_postfix_str(f'loss: {loss.item():.4f}')
         
         self.runner.call_hook(
