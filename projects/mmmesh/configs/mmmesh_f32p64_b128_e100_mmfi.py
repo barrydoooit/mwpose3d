@@ -258,5 +258,5 @@ test_dataloader = dict(
 test_cfg = dict(
     type='TestLoop',
     metric_cfg=metric,
-    checkpoints=[50, 90],
+    checkpoints=list(range(10, 101, 10)),
 )

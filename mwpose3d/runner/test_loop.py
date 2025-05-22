@@ -47,7 +47,7 @@ class TestLoop(BaseLoop):
             self.runner.call_hook('before_test_epoch')
             self._run_epoch()
             summary = self.evaluator.evaluate()
-            self.runner.call_hook('after_test_epoch', metrics=summary)
+            self.runner.call_hook('after_test_epoch')
 
         else:
             load_from_root = Path(self.runner._load_from).parent
@@ -57,7 +57,7 @@ class TestLoop(BaseLoop):
                 self.runner.call_hook('before_test_epoch')
                 self._run_epoch()
                 summary = self.evaluator.evaluate()
-                self.runner.call_hook('after_test_epoch', metrics=summary)
+                self.runner.call_hook('after_test_epoch')
 
         self.runner.call_hook('after_test')
         return self.runner.model

@@ -20,6 +20,7 @@ class SimpleGTPredAnalyzer(BaseMetric):
         self.pred_data = []
         self.pcd_data = []
         if self.visuzalize:
+            raise NotImplementedError("Visualizer is not correctly maintained, as the pcd data structure is heterogeneous from different models.")
             self._make_visualizer(visualizer_cfg)
         else:
             self.visualizer = None

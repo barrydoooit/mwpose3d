@@ -192,3 +192,12 @@ test_cfg = dict(
     type='TestLoop',
     metric_cfg=metric
 )
+
+custom_hooks = [
+    dict(
+        type='LatencyProfilingHook',
+        out_file="exp_data/latency/3090/mars_f1p64_b128_e300_mars.json",
+        subject_modules=[],
+        include_full_forward=True,
+    )
+]

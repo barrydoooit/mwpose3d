@@ -271,13 +271,16 @@ test_dataloader = dict(
 
 test_cfg = dict(
     type='TestLoop',
-    metric_cfg= dict(metric, visualizer_cfg=dict(
-        keypoints_involved=keypoints_involved,
-        keypoint_for_stats=[0, 5, 9],
-        error_type='abs_error'
-    ))
+    metric_cfg=metric,
 )
+
 test_mode = 'coarse'
 custom_hooks = [
     dict(type='MMDiffPipelineHook'),
+    dict(
+        type='LatencyProfilingHook',
+        out_file="exp_data/latency/3090/ptransv1_f5p64_b16_e10_mars.json",
+        subject_modules=[],
+        include_full_forward=True,
+    )
 ]
