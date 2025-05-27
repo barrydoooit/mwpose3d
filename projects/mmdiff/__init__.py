@@ -1,2 +1,2 @@
-from .models import P4TransformerFeatureExtractor, PointTransformerRegFeatureExtractor, mmDiffPredictor
+from .models import  PointTransformerRegFeatureExtractor, mmDiffPredictor
 from .pipelines import MMDiffTwoStageEpochBasedTrainLoop

@@ -34,7 +34,7 @@ class TestLoop(BaseLoop):
         self.last_output = dict()
         
         self.evaluator: BaseMetric = METRICS.build(metric_cfg)
-        self.checkpoints = checkpoints
+        self.checkpoints = None #checkpoints
         
     @property
     def iter(self):

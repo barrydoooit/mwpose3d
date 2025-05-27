@@ -283,11 +283,7 @@ test_dataloader = dict(
 
 test_cfg = dict(
     type='TestLoop',
-    metric_cfg= dict(metric, visualizer_cfg=dict(
-        keypoints_involved=keypoints_involved,
-        keypoint_for_stats=[0, 5, 9],
-        error_type='abs_error'
-    ))
+    metric_cfg=metric
 )
 test_mode = 'coarse'
 custom_hooks = [

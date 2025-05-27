@@ -1,3 +1,5 @@
+import json
+from pathlib import Path
 from typing import Optional
 import torch
 try:
@@ -8,10 +10,25 @@ from ..base import BaseMetric
 from mwpose3d.registry import METRICS
 
 
+
+def round_floats(obj, decimals=2):
+    """Recursively round float values in a complex data structure."""
+    if isinstance(obj, float):
+        return round(obj, decimals)
+    elif isinstance(obj, dict):
+        return {k: round_floats(v, decimals) for k, v in obj.items()}
+    elif isinstance(obj, list):
+        return [round_floats(elem, decimals) for elem in obj]
+    elif isinstance(obj, tuple):
+        return tuple(round_floats(elem, decimals) for elem in obj)
+    else:
+        return obj
+    
 @METRICS.register_module()
 class SimpleGTPredAnalyzer(BaseMetric):
     def __init__(self,
                  keypoints_involved: list,
+                 out_file: Optional[str] = None,
                  visualizer_cfg: Optional[dict] = None):
         self.keypoints_involved = keypoints_involved
         self.visuzalize = visualizer_cfg is not None
@@ -19,6 +36,12 @@ class SimpleGTPredAnalyzer(BaseMetric):
         self.gt_data = []
         self.pred_data = []
         self.pcd_data = []
+
+        if out_file is not None:
+            self.out_file = Path(out_file)
+            if not self.out_file.parent.exists():
+                self.out_file.parent.mkdir(parents=True, exist_ok=True)
+
         if self.visuzalize:
             raise NotImplementedError("Visualizer is not correctly maintained, as the pcd data structure is heterogeneous from different models.")
             self._make_visualizer(visualizer_cfg)
@@ -81,6 +104,10 @@ class SimpleGTPredAnalyzer(BaseMetric):
             print(f"{joint}: MAE = {metrics['mae']:.4f}, RMSE = {metrics['rmse']:.4f}, MSE = {metrics['mse']:.4f}")   
         if self.visuzalize:
             self.visualizer.finalize(self.gt_data, self.pred_data, self.report, pc_data=self.pcd_data)
+        
+        if self.out_file is not None:
+            with open(self.out_file, 'w') as f:
+                json.dump(round_floats(self.report, 3), f)
         return summary
     
     def reset(self):
