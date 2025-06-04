@@ -112,7 +112,7 @@ def ask_for_option(prompt: str, options: List[str]) -> str:
 
 def main():
     parser = argparse.ArgumentParser(description='Data converter arg parser')
-    parser.add_argument('dataset', help='name of the ataset')
+    parser.add_argument('dataset', help='name of the dataset')
     parser.add_argument(
         '--root-path',
         type=str,
@@ -164,10 +164,7 @@ def main():
             options=['y', 'n']
         )
         if use_defaults == 'y':
-            split = 2
-            protocol = 2
-            ratio = 0.8
-            seed = 42
+            split, protocol, ratio, seed = 2, 2, 0.8, 42
         else:
             split = int(ask_for_option(
                 prompt=(

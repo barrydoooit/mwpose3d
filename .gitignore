@@ -10,3 +10,5 @@
 **dist
 **.egg-info
 **.log
+environment.yml
+requirements.txt

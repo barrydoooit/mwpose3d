@@ -61,18 +61,19 @@ class LoadMultiFrameFromH5(BaseTransform):
                  num_frames: int,
                  backup_frames: int = 0,
                  empty_frame_op: Literal['zero', 'prev', 'error'] = 'error',
+                 with_skeleton: bool = True
                  ):
         super().__init__()
         self.backup_frames = backup_frames
         self.load_pcd_dim = load_pcd_dim
         self.num_frames = num_frames
         self.empty_frame_op = empty_frame_op
+        self.with_skeleton = with_skeleton
     
     def transform(self, input):
         local_idx: int = input[self.LOCAL_IDX]
         data_files: dict = input[self.DATA_FILE]
         pcd_file = data_files[self.POINTCLOUD_MODALITY_KEY]
-        skel_file = data_files[self.SKELETON_MODALITY_KEY]
         
         total = self.backup_frames + self.num_frames
         start_idx = local_idx - total + 1
@@ -80,6 +81,7 @@ class LoadMultiFrameFromH5(BaseTransform):
             input['starting_flag'] = True
         else:
             input['starting_flag'] = False
+        input[self.TARGET_NUM_FRAMES] = self.num_frames
         
         with h5py.File(pcd_file, 'r') as pf:
             grp = pf[self.POINTCLOUD_MODALITY_KEY]
@@ -107,6 +109,11 @@ class LoadMultiFrameFromH5(BaseTransform):
                 pcd_frames.insert(0, pcd_frame)
             input[self.PCD_FRAMES] = tuple(pcd_frames)
         
+
+        if not self.with_skeleton:
+            return input
+    
+        skel_file = data_files[self.SKELETON_MODALITY_KEY]
         with h5py.File(pcd_file, 'r') as pf, h5py.File(skel_file, 'r') as sf:
             frame_idx_map = pf[self.POINTCLOUD_MODALITY_KEY].get(self.FRAME_IDX, None)
             skel_seq = sf[self.SKELETON_MODALITY_KEY]
