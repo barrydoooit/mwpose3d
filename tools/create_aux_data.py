@@ -14,6 +14,7 @@ def main():
     parser.add_argument('--trec', action='store_true', default=False, help='generate tracking records')
     parser.add_argument('--tcfg', type=str, help='tracker config file path')
     parser.add_argument('--pcd-prefix', type=str, default='mmwave', help='prefix for point cloud data folder')
+    parser.add_argument('--vis', action='store_true', default=False, help='visualize the dataset')
     parser.add_argument('--splits', nargs='+', default=['train', 'val', 'test'], help='dataset splits to process')
     parser.add_argument('--debug', action='store_true', help='enable debug mode')
 
@@ -28,7 +29,8 @@ def main():
             dataset=args.dataset,
             tracker_cfg_f=args.tcfg,
             data_prefix=dict(pcd=args.pcd_prefix),
-            splits=args.splits
+            splits=args.splits,
+            vis_mode=args.vis
         )
 
         trec_grt.generate()
