@@ -28,6 +28,9 @@ class LatencyProfilingHook(Hook):
         self.summary = {} # summary of the latency for each module
     
     def prepare(self, model: nn.Module):
+        if not torch.cuda.is_available():
+            return
+
         self.records.clear()
         self._current.clear()
 
@@ -54,13 +57,12 @@ class LatencyProfilingHook(Hook):
                         module: nn.Module, 
                         input: Any,
                         name: str):
-        if torch.cuda.is_available():
-            start_event = torch.cuda.Event(enable_timing=True)
-            end_event = torch.cuda.Event(enable_timing=True)
-            start_event.record()
-        else:
-            start_event = None
-            end_event = None
+        if not torch.cuda.is_available():
+            return
+
+        start_event = torch.cuda.Event(enable_timing=True)
+        end_event = torch.cuda.Event(enable_timing=True)
+        start_event.record()
         cpu_start = time.perf_counter()
 
         self._current[name] = (cpu_start, start_event, end_event)
@@ -70,6 +72,9 @@ class LatencyProfilingHook(Hook):
                       input: Any, 
                       output: Any,
                       name: str):
+        if not torch.cuda.is_available():
+            return
+
         cpu_start, start_event, end_event = self._current.pop(name)
         if cpu_start is None:
             return
@@ -86,6 +91,9 @@ class LatencyProfilingHook(Hook):
         rec['gpu'].append(gpu_elapsed  if gpu_elapsed is not None else None)
     
     def analyze(self):
+        if not torch.cuda.is_available():
+            return
+
         self.summary.clear()
         for name, rec in self.records.items():
             count = len(rec['cpu'])
@@ -110,6 +118,9 @@ class LatencyProfilingHook(Hook):
             }
     
     def dump(self):
+        if not torch.cuda.is_available():
+            return
+
         if self.out_file:
             self.out_file.parent.mkdir(parents=True, exist_ok=True)
             with open(self.out_file, 'w') as f:
@@ -147,12 +158,18 @@ class LatencyProfilingHook(Hook):
                 print(' | '.join(map(str, r)))
     
     def before_test_epoch(self, runner: "Runner"):
+        if not torch.cuda.is_available():
+            return
+
         model = runner.model
         if hasattr(model, 'module'):
             model = self.model.module
         self.prepare(model)
     
     def after_test_epoch(self, runner: "Runner"):
+        if not torch.cuda.is_available():
+            return
+
         self.analyze()
         self.dump()
 

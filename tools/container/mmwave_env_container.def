@@ -1,0 +1,22 @@
+# Header
+Bootstrap: docker
+From: continuumio/miniconda3:25.3.1-1
+
+# Layer 0 - will never change
+%setup 
+mkdir ./mmwave
+
+# Layer 1 - will never change
+%post 
+apt-get update && apt-get install -y ninja-build g++ ffmpeg libsm6 libxext6
+
+# Layer 2 - Only changes when conda needs to rebuild anyway
+%files 
+./environment.yml ./mmwave/environment.yml
+
+# Layer 3 - Should only change when l2 changes - depends on l1 and l2
+%post 
+conda env create -f ./mmwave/environment.yml -p ./mmwave/env
+
+
+
