@@ -90,7 +90,7 @@ class Runner:
     @staticmethod
     def build_dataloader(dataloader_cfg: dict):
         dataset_cfg = dataloader_cfg.pop('dataset')
-        assert dataset_cfg.get('type') == 'MotionDataset'
+        assert dataset_cfg.get('type') == 'MotionDataset', "Currently the framework especially the loading pipline only supports 'MotionDataset'."
         dataset = DATASETS.build(dataset_cfg)
         
         dataloader = DataLoader(

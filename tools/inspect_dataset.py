@@ -91,10 +91,12 @@ def inspect(runner, dataloader: Config, vis: bool = False):
                                     desc='Processing data', total=total):
             # last point-cloud frame in this batch
             pcd_frame = data_batch['pcd_frames'][-1][0]  # shape (N_points, channels)
-
-            # accumulate VOL & SNR
-            for i, ind in enumerate(indice_to_check):
-                pcd_values[i].append(pcd_frame[:, ind])
+            try:
+                # accumulate VOL & SNR
+                for i, ind in enumerate(indice_to_check):
+                    pcd_values[i].append(pcd_frame[:, ind])
+            except IndexError as e:
+                pass
 
             # accumulate XYZ coords
             for i, ind in enumerate(coord_indices):
@@ -105,12 +107,15 @@ def inspect(runner, dataloader: Config, vis: bool = False):
             skel_values.append(skel_frame)
 
         # --- ORIGINAL stats for VOL & SNR ---
-        for i, name in enumerate(names):
-            arr = np.concatenate(pcd_values[i], axis=0)
-            print(f'{name} shape: {arr.shape}')
-            print(f'{name} mean : {arr.mean():.4f}')
-            print(f'{name} std  : {arr.std():.4f}')
-        print('─' * 50)
+        try:
+            for i, name in enumerate(names):
+                arr = np.concatenate(pcd_values[i], axis=0)
+                print(f'{name} shape: {arr.shape}')
+                print(f'{name} mean : {arr.mean():.4f}')
+                print(f'{name} std  : {arr.std():.4f}')
+            print('─' * 50)
+        except Exception as e:
+            logging.warning(f"VOL/SNR not available")
         # --- NEW: percentiles for XYZ ---
         perc = [0, 1, 2, 5, 10, 90, 95, 98, 99, 100]
         labels = ['min', '1%', '2%', '5%', '10%', '90%', '95%', '98%', '99%', 'max']
@@ -118,7 +123,7 @@ def inspect(runner, dataloader: Config, vis: bool = False):
         for i, name in enumerate(coord_names):
             arr = np.concatenate(coord_values[i], axis=0)
             pvals = np.percentile(arr, perc)
-
+            print(f'Axis {name} mean : {arr.mean():.4f}')
             # print header
             header = '  '.join(f'{lab:>5}' for lab in labels)
             values = '  '.join(f'{val:>5.4f}' for val in pvals)

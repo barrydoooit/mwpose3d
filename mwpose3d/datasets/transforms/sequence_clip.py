@@ -39,7 +39,35 @@ class SequenceClip(BaseTransform):
         
         input['pcd_frames'] = pcd_frames
         input['skel_frames'] = skel_frames
+        return input
+    
+@TRANSFORMS.register_module()
+class StackPointCloudFrames(BaseTransform):
+    def __init__(self, stack_size: int, inject_index: bool = False):
+        super().__init__()
+        self.stack_size = stack_size
+        self.inject_index = inject_index
+    
+    def transform(self, input: dict):
+        pcd_frames: List[np.ndarray] = input['pcd_frames']
+        original_length = len(pcd_frames)
+        stacked_pcd_frames: List[np.ndarray] = []
+        for i in range(self.stack_size - 1, len(pcd_frames)):
+            window = pcd_frames[i - self.stack_size + 1:i + 1] 
+            pts = np.concatenate(window, axis=0)  # shape = (sum N_j, 3)
+
+            if self.inject_index:
+                lengths = [f.shape[0] for f in window]
+                times = np.linspace(0.0, 1.0, num=self.stack_size)
+                idx_col = np.repeat(times, lengths).reshape(-1, 1)  # shape = (sum N_j, 1)
+                pts = np.concatenate((pts, idx_col), axis=1)        # shape = (sum N_j, 4)
+
+            stacked_pcd_frames.append(pts)
+        
+        input['pcd_frames'] = stacked_pcd_frames
+
+        for key, value in input.items():
+            if (isinstance(value, list) or isinstance(value, tuple)) and len(value) == original_length:
+                input[key] = value[self.stack_size - 1:]
         
         return input
-        
-        

@@ -1,2 +1,1 @@
 from .pcd_offline import PointCloudOfflineVisualizer, PointCloudOfflineVisualizerSK
-from .pcd_online import PointCloudOnlineVisualizer

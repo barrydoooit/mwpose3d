@@ -103,6 +103,20 @@ def mri_data_prep(root_path: str,
         seed=seed)
     converter.process_all()
 
+def milipoint_data_prep(root_path: str,
+                        out_dir: str,
+                        partitions: dict[str, float] = {'train': 0.8, 'val': 0.1, 'test': 0.1},
+                        seed: int = 20,
+                        num_keypoints: int = 18):
+    from tools.dataset_converters.milipoint_converter import MilipointDatasetConverter
+    converter = MilipointDatasetConverter(
+        input_root=Path(root_path),
+        output_root=Path(out_dir),
+        partitions=partitions,
+        seed=seed,
+        num_keypoints=num_keypoints)
+    converter.process_all()
+
 def ask_for_option(prompt: str, options: List[str]) -> str:
     option = input(prompt).strip().lower()
     while option not in options:
@@ -112,7 +126,7 @@ def ask_for_option(prompt: str, options: List[str]) -> str:
 
 def main():
     parser = argparse.ArgumentParser(description='Data converter arg parser')
-    parser.add_argument('dataset', help='name of the ataset')
+    parser.add_argument('dataset', help='name of the dataset')
     parser.add_argument(
         '--root-path',
         type=str,
@@ -164,10 +178,7 @@ def main():
             options=['y', 'n']
         )
         if use_defaults == 'y':
-            split = 2
-            protocol = 2
-            ratio = 0.8
-            seed = 42
+            split, protocol, ratio, seed = 2, 2, 0.8, 42
         else:
             split = int(ask_for_option(
                 prompt=(
@@ -199,6 +210,29 @@ def main():
             ratio=ratio,
             seed=seed
         )
+    elif args.dataset == 'milipoint':
+        partitions = input("Enter the split ratios as 'train:val:test' (empty for default: 0.8:0.1:0.1): ")
+        if not partitions:
+            partitions = {'train': 0.8, 'val': 0.1, 'test': 0.1}
+        else:
+            train, val, test = map(float, partitions.split(':'))
+            partitions = {'train': train, 'val': val, 'test': test}
+        seed = int(input("Enter the random seed (default: 20): ") or 20)
+        num_keypoints = int(input("Enter the number of keypoints (9 or 18, default: 18): ") or 18)
+        milipoint_data_prep(
+            root_path=args.root_path,
+            out_dir=args.out_dir,
+            partitions=partitions,
+            seed=seed,
+            num_keypoints=num_keypoints
+        )
+    elif args.dataset == 'paw':
+        from tools.dataset_converters.paw_converter import AsteriosPawDatasetConverter
+        converter = AsteriosPawDatasetConverter(
+            input_root=args.root_path,
+            output_root=args.out_dir,
+            seed=42)
+        converter.process_all()
 
 if __name__ == '__main__':
     main()
