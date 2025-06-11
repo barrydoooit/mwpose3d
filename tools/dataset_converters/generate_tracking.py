@@ -12,7 +12,7 @@ from mwcore.registry import TRACKERS
 
 from torch.utils.data import DataLoader
 
-from mwpose3d.visualization.pcd_offline import PointCloudOfflineVisualizer
+from mwpose3d.visualization.pcd_offline import PointCloudOfflineVisualizer, PointCloudOfflineVisualizerSK
 
 if TYPE_CHECKING:
     from mwcore.tracking.api.base import BaseTracker
@@ -28,7 +28,7 @@ class TrackingRecordGenerator:
                  vis_mode: bool = False):
         self.tracker_cfg_f = tracker_cfg_f
         self.dataset = dataset
-        self.data_prefix = data_prefix
+        self.data_prefix = dict(data_prefix, skel='skeleton')
         self.splits = splits
         self.vis_mode = vis_mode
     
@@ -64,9 +64,14 @@ class TrackingRecordGenerator:
                             load_pcd_dim=pcd_dim,
                             num_frames=1,
                             backup_frames=0,
-                            empty_frame_op='error',
-                            with_skeleton=False
+                            empty_frame_op='prev',
+                            # with_skeleton=False
                         ),
+                        # dict(
+                        #     type='mwpose3d.StackPointCloudFrames',
+                        #     stack_size=5,
+                        #     inject_index=False,
+                        # ),
                     ],
                 )
             )
@@ -81,7 +86,7 @@ class TrackingRecordGenerator:
                 data_root=data_root,
                 info_path=info_path,
                 data_prefix=self.data_prefix,
-                pcd_dim=5,
+                pcd_dim=3,
             )
             if self.vis_mode:
                 self.visualize_tracking_records_single(dataloader)
@@ -128,7 +133,13 @@ class TrackingRecordGenerator:
                 track_dir.mkdir(parents=True, exist_ok=True)
                 current_track_file = track_dir / pcd_file_name
                 current_tracker_type = tracker.__class__.__name__
-                    
+            
+            if pcd_frame.shape[1] < 5:
+                pcd_frame = np.pad(
+                    pcd_frame[:, :3],
+                    ((0, 0), (0, 2)),
+                    mode='constant')
+
             tracked_locations = tracker.consume(point_array=pcd_frame)
             if tracked_locations is None or len(tracked_locations) == 0:
                 locs3flat = np.zeros((0,), dtype=np.float32)
@@ -156,11 +167,20 @@ class TrackingRecordGenerator:
             for data in dataloader:
                 pcd_frame: np.ndarray = data['pcd_frames'][-1][0]
                 yield pcd_frame
+
+        def skel_generator():
+            for idx, data_batch in enumerate(dataloader):
+                yield data_batch['skel_frames'][-1][0]
         
         def trk_generator():
             tracker = None
             for data in dataloader:
                 pcd_frame: np.ndarray = data['pcd_frames'][-1][0]
+                if pcd_frame.shape[1] < 5:
+                    pcd_frame = np.pad(
+                        pcd_frame[:, :3],
+                        ((0, 0), (0, 2)),
+                        mode='constant')
                 first_frame: bool = data['starting_flag'][0]
                 if first_frame:
                     tracker = self.make_tracker(self.tracker_cfg_f)
@@ -169,11 +189,12 @@ class TrackingRecordGenerator:
                 yield tracked_locations
         total = len(dataloader) if hasattr(dataloader, '__len__') else None
         app = QApplication(sys.argv)
-        visualizer = PointCloudOfflineVisualizer(
+        visualizer = PointCloudOfflineVisualizerSK(
             point_clouds=pcd_generator(),
+            skeletons=skel_generator(),
             tracking_data=trk_generator(),
             total_frames=total,
-            play_fps=10,
+            play_fps=30,
             tracking_mode='dot'
         )
         visualizer.show()

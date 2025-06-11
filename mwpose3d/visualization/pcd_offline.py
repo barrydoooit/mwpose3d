@@ -311,7 +311,7 @@ class PointCloudOfflineVisualizerSK(PointCloudOfflineVisualizer):
             parent=parent
         )
 
-        self._skel_scatter = gl.GLScatterPlotItem(size=10, color=(1, 0, 0, 1))
+        self._skel_scatter = gl.GLScatterPlotItem(size=5, color=(0, 1, 0, 1))
         self.plot3d.plot_3d.addItem(self._skel_scatter)
     
     def _load_frame(self, index: int) -> None:

@@ -20,7 +20,7 @@ class MotionDataset:
                  data_prefix: dict, # e.g. {'pcd': 'mmwave_filtered', 'skel': 'skeleton'}
                  pipeline: list,
                  sequence_length: int = 1,
-                 allow_pad_sequence: bool = True
+                 allow_pad_sequence: bool = False
                  ):
         self.info_path = Path(info_path)
         self.data_root = Path(data_root)

@@ -69,6 +69,8 @@ class LoadMultiFrameFromH5(BaseTransform):
         self.num_frames = num_frames
         self.empty_frame_op = empty_frame_op
         self.with_skeleton = with_skeleton
+
+        self._empty_frame_count = 0
     
     def transform(self, input):
         local_idx: int = input[self.LOCAL_IDX]
@@ -130,6 +132,9 @@ class LoadMultiFrameFromH5(BaseTransform):
         return input
 
     def handle_empty_pcd(self, prev_frame):
+        self._empty_frame_count += 1
+        if self._empty_frame_count % 100 == 0:
+            print(f"Total empty frames: {self._empty_frame_count}")
         if self.empty_frame_op == 'zero':
             return np.zeros((0, self.load_pcd_dim), dtype=np.float32)
         elif self.empty_frame_op == 'prev':

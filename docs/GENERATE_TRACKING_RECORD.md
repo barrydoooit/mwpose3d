@@ -2,8 +2,6 @@
 
 For each dataset, we can apply the trackers from mmcore to generate tracked/detected positions of human body, which can be utilized in gaming and pose estimation.
 
-> ⚠️ **Warning:** This feature is only half-runnable. The results are far from satisfactory due to missing tracking records for intermediate frames and not being able to save the results. We'll update this section once the issues are resolved.
-> 
 ---
 
 ### Running the Offline Tracking
