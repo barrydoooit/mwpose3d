@@ -89,11 +89,20 @@ class SimpleGTPredAnalyzer(BaseMetric):
                 joint_errors[joint]["abs"].append(values["abs_error"])
                 joint_errors[joint]["square"].append(values["square_error"])
         summary = {}
+        average_mae = 0.0
+        average_mse = 0.0
+        average_rmse = 0.0
         for joint, errors in joint_errors.items():
             mae = sum(errors["abs"]) / len(errors["abs"])
             mse = sum(errors["square"]) / len(errors["square"])
             rmse = mse ** 0.5
             summary[joint] = {"mae": mae, "rmse": rmse, "mse": mse}
+            average_mae += mae
+            average_mse += mse
+            average_rmse += rmse
+        average_mae /= len(joint_errors.items())
+        average_mse /= len(joint_errors.items())
+        average_rmse /= len(joint_errors.items())
         
         if not show:
             if self.visualize:
@@ -102,7 +111,8 @@ class SimpleGTPredAnalyzer(BaseMetric):
         
         print("Summary Report:")
         for joint, metrics in summary.items():
-            print(f"{joint}: MAE = {metrics['mae']:.4f}, RMSE = {metrics['rmse']:.4f}, MSE = {metrics['mse']:.4f}")   
+            print(f"{joint:03}: MAE = {metrics['mae']:.4f}, RMSE = {metrics['rmse']:.4f}, MSE = {metrics['mse']:.4f}")
+        print(f"avg: MAE = {average_mae:.4f}, RMSE = {average_rmse:.4f}, MSE = {average_mse:.4f}")
         if self.visuzalize:
             self.visualizer.finalize(self.gt_data, self.pred_data, self.report, pc_data=self.pcd_data)
         
