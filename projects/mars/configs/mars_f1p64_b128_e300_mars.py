@@ -152,7 +152,7 @@ val_pipeline = [
 ]
 val_dataloader = dict(
     batch_size=1,
-    num_workers=16,
+    num_workers=4,
     shuffle=False,
     dataset=dict(
         type='MotionDataset',
@@ -162,8 +162,7 @@ val_dataloader = dict(
         pipeline=val_pipeline,
         sequence_length=total_frames,
         allow_pad_sequence=False
-    ),
-    pin_memory=False
+    )
 )
 metric=dict(
     type='SimpleGTPredAnalyzer',
