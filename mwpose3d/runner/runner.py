@@ -95,10 +95,11 @@ class Runner:
         
         dataloader = DataLoader(
             dataset,
-            batch_size=dataloader_cfg['batch_size'],
-            shuffle=dataloader_cfg['shuffle'],
             collate_fn=pseudo_collate,
-            num_workers=dataloader_cfg['num_workers'],
+            **dataloader_cfg
+            # batch_size=dataloader_cfg['batch_size'],
+            # shuffle=dataloader_cfg['shuffle'],
+            # num_workers=dataloader_cfg['num_workers'],
         )
         return dataloader
     

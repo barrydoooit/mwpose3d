@@ -78,8 +78,8 @@ train_pipeline = [
 ]
 
 train_dataloader = dict(
-    batch_size=128,
-    num_workers=16,
+    batch_size=256,
+    num_workers=4,
     shuffle=True,
     dataset=dict(
         type='MotionDataset',
@@ -89,7 +89,9 @@ train_dataloader = dict(
         pipeline=train_pipeline,
         sequence_length=total_frames,
         allow_pad_sequence=False
-    )
+    ),
+    pin_memory=True,
+    prefetch_factor=10
 )
 
 optimizer_cfg = dict(
@@ -104,7 +106,7 @@ optimizer_cfg = dict(
 
 train_cfg = dict(
     type='EpochBasedTrainLoop',
-    max_epochs=300,
+    max_epochs=10,
     val_interval=50
 )
 
@@ -152,7 +154,7 @@ val_pipeline = [
 ]
 val_dataloader = dict(
     batch_size=1,
-    num_workers=16,
+    num_workers=4,
     shuffle=False,
     dataset=dict(
         type='MotionDataset',
@@ -162,8 +164,7 @@ val_dataloader = dict(
         pipeline=val_pipeline,
         sequence_length=total_frames,
         allow_pad_sequence=False
-    ),
-    pin_memory=False
+    )
 )
 metric=dict(
     type='SimpleGTPredAnalyzer',

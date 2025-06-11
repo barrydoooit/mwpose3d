@@ -36,9 +36,10 @@ class SimpleGTPredAnalyzer(BaseMetric):
         self.gt_data = []
         self.pred_data = []
         self.pcd_data = []
-        self.out_file = None
-        if out_file is not None:
-            self.out_file = Path(out_file)
+
+        self.out_file = out_file  # Prevent attribute error in evaluate
+        if self.out_file is not None:
+            self.out_file = Path(self.out_file)
             if not self.out_file.parent.exists():
                 self.out_file.parent.mkdir(parents=True, exist_ok=True)
 
