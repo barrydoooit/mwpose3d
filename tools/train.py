@@ -11,17 +11,19 @@ from mmengine.config import Config, DictAction
 
 from mwpose3d.runner.runner import Runner
 
-def parse_args():
+def parse_args(argv: list[str] = None):
     parser = argparse.ArgumentParser(description='Train a model')
     parser.add_argument('config', help='path to config file')
     parser.add_argument('--work-dir', help='the dir to save logs and models')
     parser.add_argument('--cfg-options', nargs='+', action=DictAction)
     parser.add_argument('--debug', action='store_true', help='enable debug mode')
-    
+
+    if argv:
+        return parser.parse_args(argv)
     return parser.parse_args()
 
-def main():
-    args = parse_args()
+def main(argv: list[str] = None):
+    args = parse_args(argv)
     if args.debug:
         debugpy.listen(5678)
         print('Waiting for debugger attach')
