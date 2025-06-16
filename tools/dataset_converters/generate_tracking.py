@@ -6,6 +6,8 @@ import numpy as np
 import sys
 from PySide2.QtWidgets import QApplication
 from tqdm import tqdm
+import logging
+logger = logging.getLogger(__name__)
 
 from mwpose3d.runner import Runner
 from mwcore.registry import TRACKERS
@@ -31,7 +33,10 @@ class TrackingRecordGenerator:
         self.data_prefix = dict(data_prefix, skel='skeleton')
         self.splits = splits
         self.vis_mode = vis_mode
-    
+        logger.warning("This tool is still under development. " \
+        "It is functional but has not been equipped with generallly configurable options. " \
+        "Please use it with caution and modify the expected preprocssing pipeline INLINE.")
+
     def make_tracker(self, tracker_cfg_f: str) -> "BaseTracker":
         tracker_cfg = Config.fromfile(tracker_cfg_f).get('tracker_cfg')
         tracker_cfg['radar_cfg'] = dict(
@@ -67,6 +72,14 @@ class TrackingRecordGenerator:
                             empty_frame_op='prev',
                             # with_skeleton=False
                         ),
+                        dict(
+                            type='mwpose3d.PointCloudRangeFilter',
+                            point_cloud_range=[-10, -10, -2, 10, 10, 1],
+                            empty_frame_op='error',
+                            backup_frames=0,
+                            min_num_frames=1,
+                            online_mode=False
+                        )
                         # dict(
                         #     type='mwpose3d.StackPointCloudFrames',
                         #     stack_size=5,
@@ -86,7 +99,7 @@ class TrackingRecordGenerator:
                 data_root=data_root,
                 info_path=info_path,
                 data_prefix=self.data_prefix,
-                pcd_dim=3,
+                pcd_dim=5,
             )
             if self.vis_mode:
                 self.visualize_tracking_records_single(dataloader)
@@ -115,48 +128,66 @@ class TrackingRecordGenerator:
                 vlen_dtype = h5py.vlen_dtype(np.dtype('float32'))
                 ds = grp.create_dataset(
                     "track_records",
-                    data=np.array(collected_flats, dtype=object),
+                    shape=(len(collected_flats),),
                     dtype=vlen_dtype,
                 )
+                for i, flat in enumerate(collected_flats):
+                    ds[i] = flat
                 ds.attrs['columns'] = np.array(["x", "y", "z"], dtype='S')
             collected_flats = []
 
-        for data in tqdm(dataloader, desc="Generating tracking records"):
-            pcd_frame: np.ndarray = data['pcd_frames'][-1][0]
-            first_frame: bool = data['starting_flag'][0]
-            if first_frame:
-                _flush_sequence()
-                tracker = self.make_tracker(self.tracker_cfg_f)
-                pcd_file_name = data[pcd_path_key][-1]
-                data_root = Path(f'data/{self.dataset}')
-                track_dir = data_root / 'tracking_records'
-                track_dir.mkdir(parents=True, exist_ok=True)
-                current_track_file = track_dir / pcd_file_name
-                current_tracker_type = tracker.__class__.__name__
-            
-            if pcd_frame.shape[1] < 5:
-                pcd_frame = np.pad(
-                    pcd_frame[:, :3],
-                    ((0, 0), (0, 2)),
-                    mode='constant')
+        loader_iter = iter(dataloader)
+        with tqdm(total=len(dataloader), desc="Generating tracking records") as pbar:
+            while True:
+                # ---- catch exceptions from the iterator itself ----
+                try:
+                    data = next(loader_iter)
+                except StopIteration:
+                    break
+                except Exception as e:
+                    collected_flats.append(np.zeros((0,), dtype=np.float32))
+                    pbar.update(1)
+                    continue
 
-            tracked_locations = tracker.consume(point_array=pcd_frame)
-            if tracked_locations is None or len(tracked_locations) == 0:
-                locs3flat = np.zeros((0,), dtype=np.float32)
-      
-            else:
-                arr = np.asarray(tracked_locations, dtype=np.float32)
-                if arr.size == 0:
-                    locs3flat = np.zeros((0,), dtype=np.float32)
-                elif arr.ndim == 1 and arr.size >= 3:
-                    locs3flat = arr[:3].reshape(-1).astype(np.float32)
-                elif arr.ndim == 2 and arr.shape[1] >= 3:
-                    locs3flat = arr[:, :3].reshape(-1).astype(np.float32)
+                pcd_frame: np.ndarray = data['pcd_frames'][-1][0]
+                first_frame: bool = data['starting_flag'][0]
+                if first_frame:
+                    _flush_sequence()
+                    tracker = self.make_tracker(self.tracker_cfg_f)
+                    pcd_file_name = data[pcd_path_key][-1]
+                    data_root = Path(f'data/{self.dataset}')
+                    track_dir = data_root / 'tracking_records'
+                    track_dir.mkdir(parents=True, exist_ok=True)
+                    current_track_file = track_dir / pcd_file_name
+                    current_tracker_type = tracker.__class__.__name__
+                
+                if pcd_frame.shape[1] < 5:
+                    pcd_frame = np.pad(
+                        pcd_frame[:, :3],
+                        ((0, 0), (0, 2)),
+                        mode='constant')
+
+                if hasattr(tracker, 'sort_results'):
+                    tracked_locations = tracker.consume(point_array=pcd_frame, sort_metric='snr')
                 else:
+                    tracked_locations = tracker.consume(point_array=pcd_frame)
+                if tracked_locations is None or len(tracked_locations) == 0:
                     locs3flat = np.zeros((0,), dtype=np.float32)
-            
-            collected_flats.append(locs3flat)
         
+                else:
+                    arr = np.asarray(tracked_locations, dtype=np.float32)
+                    if arr.size == 0:
+                        locs3flat = np.zeros((0,), dtype=np.float32)
+                    elif arr.ndim == 1 and arr.size >= 3:
+                        locs3flat = arr[:3].reshape(-1).astype(np.float32)
+                    elif arr.ndim == 2 and arr.shape[1] >= 3:
+                        locs3flat = arr[:, :3].reshape(-1).astype(np.float32)
+                    else:
+                        locs3flat = np.zeros((0,), dtype=np.float32)
+                
+                collected_flats.append(locs3flat)
+                pbar.update(1)
+            
         _flush_sequence()
 
             
@@ -185,7 +216,10 @@ class TrackingRecordGenerator:
                 if first_frame:
                     tracker = self.make_tracker(self.tracker_cfg_f)
                     print("New Sequence, initializing tracker.")
-                tracked_locations = tracker.consume(point_array=pcd_frame)
+                if hasattr(tracker, 'sort_results'):
+                    tracked_locations = tracker.consume(point_array=pcd_frame, sort_metric='snr')
+                else:
+                    tracked_locations = tracker.consume(point_array=pcd_frame)
                 yield tracked_locations
         total = len(dataloader) if hasattr(dataloader, '__len__') else None
         app = QApplication(sys.argv)

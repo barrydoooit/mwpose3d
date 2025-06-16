@@ -36,43 +36,58 @@ class AsteriosPawDatasetConverter:
 
     @staticmethod
     def load_radar(csv_path: str,
-                   valid_frames: Optional[List[int]] = None) -> Tuple[np.ndarray, np.ndarray, List[int], List[str]]:
+                   valid_frames: Optional[List[int]] = None,
+                   ANGLE_DEG: float = 6.5
+                   ) -> Tuple[np.ndarray, np.ndarray, List[int], List[str]]:
         radar_df = pd.read_csv(csv_path, header=None)
         if radar_df.empty:
-            return np.empty((0, 5), np.float32), np.array([0], np.int64), [], ['x', 'y', 'z', 'vel', 'snr']
-
-        # Assign column names
+            return (np.empty((0, 5), np.float32),
+                    np.array([0], np.int64),
+                    [],
+                    ['x', 'y', 'z', 'vel', 'snr'])
         radar_df.columns = ['seq', 'x', 'y', 'z', 'vel', 'snr', 'ts']
-        # Group by frame id
         grouped = radar_df.groupby('seq', sort=True)
         frame_ids = sorted(radar_df['seq'].unique())
-
         if valid_frames is not None:
             frame_ids = [fid for fid in frame_ids if fid in valid_frames]
 
         pts_list: List[np.ndarray] = []
         idx: List[int] = [0]
+        theta = np.radians(-ANGLE_DEG)
+        R = np.array([
+            [1, 0, 0],
+            [0,  np.cos(theta), -np.sin(theta)],
+            [0,  np.sin(theta),  np.cos(theta)]
+        ], dtype=np.float32)
+
         for fid in frame_ids:
             arr = grouped.get_group(fid)[['x','y','z','vel','snr']].to_numpy(np.float32)
+            arr[:, :3] = arr[:, :3] @ R.T
+            xyz = arr[:, :3]
+            bad_mask = ~np.isfinite(xyz).all(axis=1)
+            if bad_mask.any():
+                print(f"Found {bad_mask.sum()} bad rows in frame {fid}:")
+                print(xyz[bad_mask])
+                print(csv_path)
             pts_list.append(arr)
             idx.append(idx[-1] + arr.shape[0])
 
-        pcd_data = np.concatenate(pts_list, axis=0) if pts_list else np.empty((0,5),np.float32)
+        pcd_data = (np.concatenate(pts_list, axis=0)
+                    if pts_list else np.empty((0,5), np.float32))
         pcd_idx = np.array(idx, dtype=np.int64)
         pcd_cols = ['x','y','z','vel','snr']
         return pcd_data, pcd_idx, frame_ids, pcd_cols
-    
-    @staticmethod
-    def translate_skel(skel_frame: np.ndarray, Z: float = 0.8, X: float = 0.22, ANGLE_DEG: float = 6.5):
-        ang = np.radians(ANGLE_DEG)
-        coords = skel_frame.reshape(-1, 3)
-        for i, (x, y, z) in enumerate(coords):
-            x_new = x + X
-            z_new = y * np.sin(ang) + z * np.cos(ang) + Z
-            y_new = y * np.cos(ang) - z * np.sin(ang)
-            coords[i] = [x_new, y_new, z_new]
-        return coords.flatten()
 
+    @staticmethod
+    def translate_skel(skel_frame: np.ndarray,
+                       X: float = 0.22,
+                       Z: float = 0.8) -> np.ndarray:
+        joints = skel_frame.reshape(-1, 3).copy()
+        joints += np.array([X, 0.0, Z], dtype=joints.dtype)
+        joints[:, 0] *= -1
+        joints = joints[:, [0, 2, 1]]
+
+        return joints.ravel()
     @staticmethod
     def load_skel(csv_path: str,
                   valid_frames: Optional[List[int]]) -> Tuple[np.ndarray, List[str]]:
@@ -106,7 +121,7 @@ class AsteriosPawDatasetConverter:
         
         mmw_path = self.out_mmwave / fname
         with h5py.File(mmw_path, 'w') as h5f:
-            grp = h5f.create_group('mmwave')
+            grp = h5f.create_group('pcd')
             grp.create_dataset('data', data=pcd_data)
             grp.create_dataset('index', data=pcd_idx)
             grp.attrs['columns'] = np.array(pcd_cols, dtype='S')
@@ -124,11 +139,14 @@ class AsteriosPawDatasetConverter:
                        mf: Path,
                        split: str) -> None:
         df_r = pd.read_csv(mf, header=None)
+        df_r.replace([np.inf, -np.inf], np.nan, inplace=True)
+        df_r.dropna(subset=[1,2,3], inplace=True)
         df_k = pd.read_csv(kf, header=None)
 
         pairs: List[Tuple[int, int]] = []
         unique_frames = df_r.drop_duplicates(subset=0)
         for _, row in unique_frames.iterrows():
+
             radar_id = int(row[0])
             t1 = float(row[6])
             diffs = (df_k[0].astype(float) - t1).abs()

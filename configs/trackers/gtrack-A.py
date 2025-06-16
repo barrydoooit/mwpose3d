@@ -20,9 +20,9 @@ tracker_cfg = dict(
         FB_FRAMES_BATCH_STATIC=2,
         FB_FRAMES_BATCH=2,
         TR_LIFETIME_DYNAMIC=3,
-        TR_LIFETIME_STATIC=7,
+        TR_LIFETIME_STATIC=0,
         TR_GATE=4.5,
-        TR_MAX_TRACKS=4,
+        TR_MAX_TRACKS=2,
         TR_VEL_THRES = 0.12
     )
 )

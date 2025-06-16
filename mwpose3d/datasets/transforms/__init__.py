@@ -7,6 +7,7 @@ from .point_number_control import PointDuplicator, PointSortAndClip, PointPaddin
 from .coord_trans import Kinect2TICoordinateTransform, SkeletonCoordinateTransform, PointCloudCoordinateTransform
 from .sequence_clip import SequenceClip, StackPointCloudFrames
 from .transform import RandomTransform, SequenceReverse, RandomFrameDrop
+from .tracking import RelativeCoordtoTrackingCentroid
 
 __all__ = ['LoadSingleFrameFromH5', 'PointCloudRangeFilter', 'SkeletonKeypointFilter',                
            'SkeletonCoordNormalization',
@@ -14,7 +15,8 @@ __all__ = ['LoadSingleFrameFromH5', 'PointCloudRangeFilter', 'SkeletonKeypointFi
            'Kinect2TICoordinateTransform', 'SequenceClip', 'SequenceReverse', 'RandomFrameDrop',
            'RandomTransform', 'StackPointCloudFrames',
            'SkeletonCoordinateTransform', 'PointCloudCoordinateTransform',
-           'PointSortAndClip', 'NormalizePointAttr']
+           'PointSortAndClip', 'NormalizePointAttr',
+           'RelativeCoordtoTrackingCentroid']
 
 WITH_ONLINE_FUNCTIONALITY = [
     'AddRangeDimension',
