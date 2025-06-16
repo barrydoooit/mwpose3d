@@ -149,7 +149,6 @@ def inspect(runner, dataloader: Config, vis: bool = False):
         def pcd_generator():
             for idx, data_batch in enumerate(dataloader):
                 assert len(data_batch['pcd_frames'][-1]) == 1
-                print(f'pcd size: {data_batch["pcd_frames"][-1][0].shape}')
                 yield data_batch['pcd_frames'][-1][0]
         
         def skel_generator():
