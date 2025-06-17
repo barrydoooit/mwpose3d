@@ -60,3 +60,23 @@ As an example, this is the one-liner I use to run the training code on the DAIC 
 ```bash
 apptainer exec --nv --bind /tmp/lucanjannedegr/mwpose3d:/mmwave/mwpose3d /tudelft.net/staff-umbrella/phdvault/mmwave_env_container.sif bash -c "cd /mmwave/mwpose3d && conda run -p ../env python tools/train.py projects/mars/configs/mars_f1p64_b128_e300_mars.py"
 ```
+
+### How is the windows evironment created?
+The windows environent was created iteratively with trial-and-error, with the following steps:
+  - Installed CUDA 12.4 on PC
+  - Created python 12
+  - conda install -c nvidia/label/cuda-12.4 cuda 
+  - conda install debugpy
+  - python -m pip install torch\=\=2.4.1 torchvision torchaudio --index-url https://download.pytorch.org/whl/cu124
+  - python -m pip install -U openmim
+  - python -m pip install --upgrade setuptools
+  - mim install mmengine
+  - conda install platformdirs
+  - conda install h5py
+  - conda install scipy
+  - mim install mmcv=2.1.0
+  - mim install mmdet
+  - python -m pip install cumm-cu124==0.7.11
+  - python -m pip install spconv-cu124==2.3.8
+
+There is a mix of python, mim and conda. So I'm not sure how well the file will export.
