@@ -22,3 +22,8 @@ MODELS = Registry(
     'model', parent=MMENGINE_MODELS, locations=['mwpose3d.models'])
 METRICS = Registry(
     'metric', parent=MMENGINE_METRICS, locations=['mwpose3d.evaluation'])
+
+from mwcore.registry import VISUALIZER as MWCORE_VISUALIZER
+
+VISUALIZER = Registry(
+    'visualizer', parent=MWCORE_VISUALIZER, locations=['mwpose3d.visualization'])

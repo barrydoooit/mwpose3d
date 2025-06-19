@@ -1,1 +1,2 @@
 from .pcd_offline import PointCloudOfflineVisualizer, PointCloudOfflineVisualizerSK
+from .skel_online import OnlineSkeletonVisualizer

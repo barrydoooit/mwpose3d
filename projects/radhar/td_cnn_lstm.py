@@ -216,12 +216,15 @@ class RadHARCNNBiLSTM(BaseSkeletonEstimModel):
                 sample_frames.append(tensor_pts)
             points.append(sample_frames)
         
-        skel_frame_list: List[Tuple[np.ndarray]] = data_batch_dict['skel_frames']
-        skel_frame_tensors = [
-           torch.tensor(np.stack(frame_batches, axis=0), dtype=torch.float32, device=get_device()) \
-               for frame_batches in list(zip(*skel_frame_list))
-        ]
-        data_sample_list = [SkeletonDataSample(gt=skel_frame_tensor) for skel_frame_tensor in skel_frame_tensors]
+        try:
+            skel_frame_list: List[Tuple[np.ndarray]] = data_batch_dict['skel_frames']
+            skel_frame_tensors = [
+            torch.tensor(np.stack(frame_batches, axis=0), dtype=torch.float32, device=get_device()) \
+                for frame_batches in list(zip(*skel_frame_list))
+            ]
+            data_sample_list = [SkeletonDataSample(gt=skel_frame_tensor) for skel_frame_tensor in skel_frame_tensors]
+        except KeyError:
+            data_sample_list = [SkeletonDataSample(gt=None) for _ in range(B)]
 
         data_batch_dict["points"] = points
         if 'previous_output' in data_batch_dict and \

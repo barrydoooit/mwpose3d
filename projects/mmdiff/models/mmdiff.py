@@ -312,17 +312,19 @@ class mmDiffPredictor(BaseSkeletonEstimModel):
         final_pcd_tensor = torch.from_numpy(final_pcd_frame).float().to(get_device())
         final_pcd_tensor = final_pcd_tensor.permute(1, 0, 2, 3).contiguous() # B x F x N x C
         
-        
-        skel_frame_list: List[Tuple[np.ndarray]] = data_batch_dict['skel_frames']
-        skel_frame_tensors = [
-           torch.tensor(np.stack(frame_batches, axis=0), dtype=torch.float32, device=get_device()) \
-               for frame_batches in list(zip(*skel_frame_list))
-        ]
-        data_sample_list = [
-            SkeletonDataSample(gt=skel_frame_tensor[:, :(skel_frame_tensor.shape[1] // 3) * 3].reshape(skel_frame_tensor.shape[0], -1, 3))
-            for skel_frame_tensor in skel_frame_tensors
-        ]
-        
+        try:
+            skel_frame_list: List[Tuple[np.ndarray]] = data_batch_dict['skel_frames']
+            skel_frame_tensors = [
+            torch.tensor(np.stack(frame_batches, axis=0), dtype=torch.float32, device=get_device()) \
+                for frame_batches in list(zip(*skel_frame_list))
+            ]
+            data_sample_list = [
+                SkeletonDataSample(gt=skel_frame_tensor[:, :(skel_frame_tensor.shape[1] // 3) * 3].reshape(skel_frame_tensor.shape[0], -1, 3))
+                for skel_frame_tensor in skel_frame_tensors
+            ]
+        except KeyError:
+            data_sample_list = [SkeletonDataSample(gt=None) for _ in range(batch_size)]
+
         batch_inputs = dict(
             final_pcd_tensor=final_pcd_tensor,
         )

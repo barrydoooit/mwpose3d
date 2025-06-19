@@ -37,18 +37,8 @@ class MotionDataset:
         self.cum_frames, self.file_names = self._build_global_idx_to_file_table()
         self.total_frames = self.cum_frames[-1] if self.cum_frames.size > 0 else 0
         
-        self.pipeline: list['BaseTransform'] = Compose(pipeline)
+        self.pipeline: list['BaseTransform'] = Compose(pipeline) # NOTE: This will only work when default range is moved to mwpose3d from mmengine (like in the init of runner class)
         print("MotionDataset initialized with total_frames:", self.total_frames)
-        
-    def _build_pipeline(self, pipeline: list):
-        transforms = []
-        for p in pipeline:
-            if isinstance(p, dict):
-                transforms.append(TRANSFORMS.build(p))
-            elif isinstance(p, BaseTransform):
-                transforms.append(p)
-            else:
-                raise TypeError(f"Pipeline item {p} is not a valid transform.")
     
     def _build_global_idx_to_file_table(self):
         cum_list = []

@@ -1,11 +1,12 @@
 from typing import Tuple
 import numpy as np
 
-from .base import BaseTransform
+from .base import BaseTransform, OnlineEnabled
 from mwpose3d.registry import TRANSFORMS
 
 
 
+@OnlineEnabled
 @TRANSFORMS.register_module()
 class AddRangeDimension(BaseTransform):
     def __init__(self,
@@ -30,19 +31,7 @@ class AddRangeDimension(BaseTransform):
         input['pcd_frames'] = tuple(added_frames)
         return input
 
-    def transform_online(self, input: dict):
-        pcd_frames: Tuple[np.ndarray] = input['pcd_frames']
-        num_recent_frames = input.get('num_recent_frames', 1)
-        recent_frames = pcd_frames[-num_recent_frames:]
-        
-        added_recent_frames = []
-        for pcd_frame in recent_frames:
-            range = self._calc_range(pcd_frame)
-            pcd_frame = np.insert(pcd_frame, self.insert_idx, range, axis=1)
-            added_recent_frames.append(pcd_frame)
-        input['pcd_frames'] = pcd_frames[:-num_recent_frames] + tuple(added_recent_frames)
-        return input
-
+@OnlineEnabled
 @TRANSFORMS.register_module()
 class NormalizePointAttr(BaseTransform):
     def __init__(self,
@@ -63,16 +52,4 @@ class NormalizePointAttr(BaseTransform):
             pcd_frame[:, self.attr_indices] = (pcd_frame[:, self.attr_indices] - self.means) / self.stds
             normed_frames.append(pcd_frame)
         input['pcd_frames'] = tuple(normed_frames)
-        return input
-    
-    def transform_online(self, input: dict):
-        pcd_frames: Tuple[np.ndarray] = input['pcd_frames']
-        num_recent_frames = input.get('num_recent_frames', 1)
-        recent_frames = pcd_frames[-num_recent_frames:]
-        
-        normed_recent_frames = []
-        for pcd_frame in recent_frames:
-            pcd_frame[:, self.attr_indices] = (pcd_frame[:, self.attr_indices] - self.means) / self.stds
-            normed_recent_frames.append(pcd_frame)
-        input['pcd_frames'] = pcd_frames[:-num_recent_frames] + tuple(normed_recent_frames)
         return input

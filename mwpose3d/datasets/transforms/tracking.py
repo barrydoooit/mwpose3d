@@ -4,9 +4,12 @@ from typing import List, Literal, Optional, Tuple, Union
 import h5py
 import numpy as np
 
-from .base import BaseTransform
+from .base import BaseTransform, OnlineEnabled
 from mwpose3d.registry import TRANSFORMS
 
+
+
+@OnlineEnabled
 @TRANSFORMS.register_module()
 class  RelativeCoordtoTrackingCentroid(BaseTransform):
     def __init__(self,
@@ -50,17 +53,18 @@ class  RelativeCoordtoTrackingCentroid(BaseTransform):
                 track_centroid[axis] = np.round(track_centroid[axis] / resolution) * resolution
             
         pcd_frames: Tuple[np.ndarray] = input['pcd_frames']
-        skel_frames: Tuple[np.ndarray] = input['skel_frames']
-
         relative_pcd_frames = [
             np.hstack([pcd_frames[i][:, :3] - track_centroid[:3], pcd_frames[i][:, 3:]])
             for i in range(len(pcd_frames))
         ]
-        relative_skel_frames = [
-            (skel_frames[i].reshape(-1, 3)[:, :3] - track_centroid[:3]).flatten()
-            for i in range(len(skel_frames))
-        ]
         input['pcd_frames'] = tuple(relative_pcd_frames)
-        input['skel_frames'] = tuple(relative_skel_frames)
+
+        if 'skel_frames' in input:
+            skel_frames: Tuple[np.ndarray] = input['skel_frames']
+            relative_skel_frames = [
+                (skel_frames[i].reshape(-1, 3)[:, :3] - track_centroid[:3]).flatten()
+                for i in range(len(skel_frames))
+            ]
+            input['skel_frames'] = tuple(relative_skel_frames)
 
         return input

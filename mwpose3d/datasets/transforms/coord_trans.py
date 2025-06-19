@@ -1,9 +1,12 @@
 from typing import Tuple
 
 import numpy as np
-from .base import BaseTransform
+from .base import BaseTransform, OnlineEnabled
 from mwpose3d.registry import TRANSFORMS
 
+
+
+@OnlineEnabled
 @TRANSFORMS.register_module()
 class Kinect2TICoordinateTransform(BaseTransform):
     def __init__(self,
@@ -168,7 +171,8 @@ class SkeletonCoordinateTransform(BaseTransform):
             self._transform_frame(f) for f in input['skel_frames']
         )
         return input
-            
+
+@OnlineEnabled
 @TRANSFORMS.register_module()
 class PointCloudCoordinateTransform(BaseTransform):
     def __init__(self,

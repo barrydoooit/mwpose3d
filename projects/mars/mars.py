@@ -85,13 +85,16 @@ class MarsPredictor(BaseSkeletonEstimModel):
         final_pcd_tensor = torch.from_numpy(final_pcd_frame).float().to(get_device())
         final_pcd_tensor = final_pcd_tensor.permute(1, 0, 2, 3).contiguous() # B x F x N x C        
         
-        skel_frame_list: List[Tuple[np.ndarray]] = data_batch_dict['skel_frames']
-        
-        last_skel_frame = torch.from_numpy(np.stack(skel_frame_list[-1], axis=0)).float().to(get_device())
-        data_sample_list = [
-            SkeletonDataSample(gt=last_skel_frame_tensor[:(last_skel_frame_tensor.shape[0] // 3) * 3])
-            for last_skel_frame_tensor in last_skel_frame
-        ]
+        try:
+            skel_frame_list: List[Tuple[np.ndarray]] = data_batch_dict['skel_frames']
+            
+            last_skel_frame = torch.from_numpy(np.stack(skel_frame_list[-1], axis=0)).float().to(get_device())
+            data_sample_list = [
+                SkeletonDataSample(gt=last_skel_frame_tensor[:(last_skel_frame_tensor.shape[0] // 3) * 3])
+                for last_skel_frame_tensor in last_skel_frame
+            ]
+        except KeyError:
+            data_sample_list = [SkeletonDataSample(gt=None) for _ in range(batch_size)]
         data_batch_dict["final_pcd_tensor"] = final_pcd_tensor
         return data_batch_dict, data_sample_list
 
@@ -171,14 +174,17 @@ class MarsPredictorTemporal(BaseSkeletonEstimModel):
         final_pcd_tensor = torch.from_numpy(final_pcd_frame).float().to(get_device())
         final_pcd_tensor = final_pcd_tensor.permute(1, 0, 2, 3).contiguous() # B x F x N x C
         
+        try:
+            skel_frame_list: List[Tuple[np.ndarray]] = data_batch_dict['skel_frames']
+            
+            last_skel_frame = torch.from_numpy(np.stack(skel_frame_list[-1], axis=0)).float().to(get_device())
+            data_sample_list = [
+                SkeletonDataSample(gt=last_skel_frame_tensor[:(last_skel_frame_tensor.shape[0] // 3) * 3])
+                for last_skel_frame_tensor in last_skel_frame
+            ]
+        except KeyError:
+            data_sample_list = [SkeletonDataSample(gt=None) for _ in range(batch_size)]
         
-        skel_frame_list: List[Tuple[np.ndarray]] = data_batch_dict['skel_frames']
-        
-        last_skel_frame = torch.from_numpy(np.stack(skel_frame_list[-1], axis=0)).float().to(get_device())
-        data_sample_list = [
-            SkeletonDataSample(gt=last_skel_frame_tensor[:(last_skel_frame_tensor.shape[0] // 3) * 3])
-            for last_skel_frame_tensor in last_skel_frame
-        ]
         data_batch_dict["final_pcd_tensor"] = final_pcd_tensor
         return data_batch_dict, data_sample_list
         

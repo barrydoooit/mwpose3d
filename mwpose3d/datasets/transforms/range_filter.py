@@ -3,9 +3,12 @@ from typing import List, Literal, Tuple
 import h5py
 import numpy as np
 
-from .base import BaseTransform
+from .base import BaseTransform, OnlineEnabled
 from mwpose3d.registry import TRANSFORMS
 
+
+
+@OnlineEnabled
 @TRANSFORMS.register_module()
 class PointCloudRangeFilter(BaseTransform):
     def __init__(self,
@@ -73,20 +76,6 @@ class PointCloudRangeFilter(BaseTransform):
                 input['skel_frames'] = shifted_skel_frames
             return shifted_frames
         elif self.empty_frame_op == 'error':
-            raise RuntimeError("Empty frame found in online mode. Current frame should be skipped.")
+            raise RuntimeError("Empty frame found. Current frame should be skipped.")
         else:
             raise ValueError(f"Unknown operation for empty frames: {self.empty_frame_op}")
-        
-    def transform_online(self, input: dict):
-        pcd_frames: Tuple[np.ndarray] = input['pcd_frames']
-        num_recent_frames = input.get('num_recent_frames', 1)
-        recent_frames = pcd_frames[-num_recent_frames:]
-        
-        filtered_recent_frames = self.get_filtered_frames(recent_frames)
-        empty_frame_indices = [i for i, frame in enumerate(filtered_recent_frames) if frame.shape[0] == 0]
-        
-        if empty_frame_indices:
-            filtered_recent_frames = self.operate_empty_frames(input, filtered_recent_frames, empty_frame_indices)
-        input['pcd_frames'] = pcd_frames[:-num_recent_frames] + tuple(filtered_recent_frames)
-        
-        return input        

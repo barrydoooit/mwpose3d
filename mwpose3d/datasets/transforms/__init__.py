@@ -1,4 +1,4 @@
-from .base import BaseTransform
+from .base import BaseTransform, OnlineEnabled, is_online_enabled
 from .loading import LoadSingleFrameFromH5
 from .range_filter import PointCloudRangeFilter
 from .skel_filter import SkeletonKeypointFilter, SkeletonCoordNormalization
@@ -17,13 +17,3 @@ __all__ = ['LoadSingleFrameFromH5', 'PointCloudRangeFilter', 'SkeletonKeypointFi
            'SkeletonCoordinateTransform', 'PointCloudCoordinateTransform',
            'PointSortAndClip', 'NormalizePointAttr',
            'RelativeCoordtoTrackingCentroid']
-
-WITH_ONLINE_FUNCTIONALITY = [
-    'AddRangeDimension',
-    'Kinect2TICoordinateTransform',
-    'PointCloudRangeFilter',
-    'PointDuplicator',
-    'PointSortAndClip',
-    'PointPadding',
-    'NormalizePointAttr',
-]
