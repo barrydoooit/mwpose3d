@@ -2,7 +2,7 @@ from typing import List, Optional, Sequence, Union
 
 import numpy as np
 from mwcore.visualization import OnlinePointCloudVisualizer
-from mwpose3d.registry import VISUALIZER
+from mwpose3d.registry import VISUALIZERS
 import pyqtgraph.opengl as gl
 import logging
 
@@ -10,7 +10,7 @@ logger = logging.getLogger(__name__)
 
 
 
-@VISUALIZER.register_module()
+@VISUALIZERS.register_module()
 class OnlineSkeletonVisualizer(OnlinePointCloudVisualizer):
     def __init__(self,
                  parent=None,

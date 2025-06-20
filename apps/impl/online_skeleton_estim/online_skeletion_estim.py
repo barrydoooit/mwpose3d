@@ -4,7 +4,7 @@ from typing import Optional, Union, TYPE_CHECKING
 from apps.impl.online_skeleton_estim.estimation_worker import InferenceWorkerThread
 from mwcore.apps import BaseMWOnlineApp
 from mwcore.registry import APPS
-from mwpose3d.registry import VISUALIZER
+from mwpose3d.registry import VISUALIZERS
 from mwcore.visualization import OnlinePointCloudVisualizer
 from mwpose3d.runner.inference_engine import InferenceEngine
 from mmengine.config import Config
@@ -52,7 +52,7 @@ class OnlineSkeletionEstimationApp(BaseMWOnlineApp):
         def _on_close(event):
             self.reader_thread.requestInterruption()
             self.reader_thread.wait()
-        visualizer = VISUALIZER.build(dict(
+        visualizer = VISUALIZERS.build(dict(
             vis_cfg,
             on_close=_on_close
         ))
