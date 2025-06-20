@@ -128,7 +128,7 @@ class EpochBasedTrainLoop(BaseLoop):
             'after_train_iter',
             batch_idx=idx,
             data_batch=data_batch,
-            outputs=loss
+            outputs=loss)
         self._iter += 1
         
         
