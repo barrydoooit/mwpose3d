@@ -90,9 +90,8 @@ class EpochBasedTrainLoop(BaseLoop):
                     and (self._epoch % self.val_interval == 0
                          or self._epoch == self._max_epochs)):
                 ret = self.runner.val_loop.run()
-                if isinstance(self.runner.val_loop, FastEvalLoop):
-                    if self.out_file is not None:
-                        self._update_out_file(self._epoch_loss, ret)
+                if isinstance(self.runner.val_loop, FastEvalLoop) and self.out_file is not None:
+                    self._update_out_file(self._epoch_loss, ret)
                 self.runner.save_checkpoint(f'epoch_{self._epoch}.pth')
         
         self.epoch_pbar.close()
