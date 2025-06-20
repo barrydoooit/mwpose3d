@@ -102,6 +102,8 @@ class EpochBasedTrainLoop(BaseLoop):
     def _run_epoch(self) -> None:
         self.runner.call_hook('before_train_epoch')
         self.runner.model.train()
+        self._epoch_sum_loss = 0
+        self._epoch_loss_count = 0
         for idx, data_batch in enumerate(self.dataloader):
             self._run_iter(idx, data_batch)
             
