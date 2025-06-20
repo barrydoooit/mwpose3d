@@ -12,7 +12,7 @@ apt-get update && apt-get install -y ninja-build g++ ffmpeg libsm6 libxext6
 
 # Layer 2 - Only changes when conda needs to rebuild anyway
 %files 
-./environment_from_wsl.yml ./mmwave/environment.yml
+./environment_from_container.yml ./mmwave/environment.yml
 
 # Layer 3 - Should only change when l2 changes - depends on l1 and l2
 %post 
