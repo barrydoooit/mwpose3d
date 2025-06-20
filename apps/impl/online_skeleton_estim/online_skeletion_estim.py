@@ -8,6 +8,8 @@ from mwpose3d.registry import VISUALIZERS
 from mwcore.visualization import OnlinePointCloudVisualizer
 from mwpose3d.runner.inference_engine import InferenceEngine
 from mmengine.config import Config
+from PySide6.QtCore import Qt, QCoreApplication
+QCoreApplication.setAttribute(Qt.AA_UseDesktopOpenGL)
 from PySide6.QtWidgets import QApplication
 from PySide6.QtCore import Qt
 import logging
@@ -63,7 +65,7 @@ class OnlineSkeletionEstimationApp(BaseMWOnlineApp):
         self.app = QApplication(sys.argv)
         logger.info("Starting Online Skeleton Estimation Application...")
         self.reader_thread.array_data.connect(self.inference_thread.enqueue, Qt.QueuedConnection)
-        self.reader_thread.array_data.connect(self.visualizer.update_point_cloud)
+        self.reader_thread.array_data.connect(self.visualizer.on_new_cloud, Qt.QueuedConnection)
         self.inference_thread.start()
         self.reader_thread.start()
         self.visualizer.show()
