@@ -123,7 +123,7 @@ class EpochBasedTrainLoop(BaseLoop):
         self._epoch_loss = self._epoch_sum_loss / self._epoch_loss_count
         if self._iter % 30 == 0:
             self.epoch_pbar.set_postfix_str(f'loss: {self._epoch_loss:.4f}')
-        )
+
         self.runner.call_hook(
             'after_train_iter',
             batch_idx=idx,
