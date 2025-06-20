@@ -39,9 +39,8 @@ class EpochBasedTrainLoop(BaseLoop):
             self.out_file = Path(self.runner.work_dir / self.out_file)
             if not self.out_file.parent.exists():
                 self.out_file.parent.mkdir(parents=True, exist_ok=True)
-            else:
-                with open(self.out_file, 'w') as f:
-                    f.write('epoch, train_loss, validation_loss\n')
+            with open(self.out_file, 'w') as f:
+                f.write('epoch, train_loss, validation_loss\n')
 
 
         
@@ -90,7 +89,8 @@ class EpochBasedTrainLoop(BaseLoop):
                     and (self._epoch % self.val_interval == 0
                          or self._epoch == self._max_epochs)):
                 ret = self.runner.val_loop.run()
-                if isinstance(self.runner.val_loop, FastEvalLoop) and self.out_file is not None:
+                if isinstance(self.runner.val_loop, FastEvalLoop) and self.out_file:
+                    print("writing results to file...")
                     self._update_out_file(self._epoch_loss, ret)
                 self.runner.save_checkpoint(f'epoch_{self._epoch}.pth')
         
