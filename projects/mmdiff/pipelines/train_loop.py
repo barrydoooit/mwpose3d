@@ -28,10 +28,11 @@ class MMDiffTwoStageEpochBasedTrainLoop(BaseLoop):
         phase_cfg: dict = {},
         load_pretrain_from: Optional[str] = None,
         val_begin: int = 1,
+        out_file: Optional[str] = None
     ):
         assert isinstance(dataloader, dict), f"For {self.__class__.__name__}, `dataloader` should be a dict, but got {type(dataloader)}."
         self.dataloader_cfg = deepcopy(dataloader)
-        super().__init__(runner, dataloader)
+        super().__init__(runner, dataloader, out_file=out_file)
         self.pretrain_max_epochs = pretrain_max_epochs
         self.train_max_epochs = train_max_epochs
         self._max_epochs = int(pretrain_max_epochs + train_max_epochs)
@@ -59,11 +60,6 @@ class MMDiffTwoStageEpochBasedTrainLoop(BaseLoop):
         return self._max_iters
 
     @property
-    def epoch(self):
-        """int: Current epoch."""
-        return self._epoch
-
-    @property
     def iter(self):
         """int: Current iteration."""
         return self._iter
@@ -88,8 +84,9 @@ class MMDiffTwoStageEpochBasedTrainLoop(BaseLoop):
                     and phase_epoch_idx >= self.val_begin
                     and (phase_epoch_idx % val_interval == 0
                         or phase_epoch_idx == phase_epochs)):
-                self.runner.val_loop.run()
-                self.runner.save_checkpoint(f'phase_{current_phase}-epoch_{self._epoch - (current_phase - 1) * self.pretrain_max_epochs}.pth')
+                checkpoint_name: str = f'phase_{current_phase}-epoch_{self._epoch - (current_phase - 1) * self.pretrain_max_epochs}.pth'
+                loss: float | None = self.validate(self._epoch, filename=checkpoint_name)
+                self._write_training_progress_to_file(self._epoch, self._epoch_loss, loss)
         
         epoch_pbar.close()
         self.runner.call_hook('after_train')

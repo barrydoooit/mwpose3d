@@ -5,7 +5,6 @@ from tqdm import tqdm
 from .base_loop import BaseLoop
 from mwpose3d.registry import LOOPS
 from pathlib import Path
-from mwpose3d.runner.fast_eval_loop import FastEvalLoop
 
 if TYPE_CHECKING:
     from mwpose3d.runner.runner import Runner
@@ -21,7 +20,7 @@ class EpochBasedTrainLoop(BaseLoop):
         val_interval: int = 1,
         out_file: Optional[str] = None
     ):
-        super().__init__(runner, dataloader)
+        super().__init__(runner, dataloader, out_file=out_file)
         self._max_epochs = int(max_epochs)
         assert self._max_epochs == max_epochs, \
             f'`max_epochs` should be a integer number, but get {max_epochs}.'
@@ -34,15 +33,6 @@ class EpochBasedTrainLoop(BaseLoop):
         self.val_begin = val_begin
         self.val_interval = val_interval
         self.stop_training = False
-        self.out_file = out_file
-        if self.out_file is not None:
-            self.out_file = Path(self.runner.work_dir / self.out_file)
-            if not self.out_file.parent.exists():
-                self.out_file.parent.mkdir(parents=True, exist_ok=True)
-            with open(self.out_file, 'w') as f:
-                f.write('epoch, train_loss, validation_loss\n')
-
-
         
     @property
     def max_epochs(self):
@@ -55,18 +45,9 @@ class EpochBasedTrainLoop(BaseLoop):
         return self._max_iters
 
     @property
-    def epoch(self):
-        """int: Current epoch."""
-        return self._epoch
-
-    @property
     def iter(self):
         """int: Current iteration."""
         return self._iter
-
-    def _update_out_file(self, train_loss, validation_loss):
-        with open(self.out_file, 'a') as f:
-            f.write(f'{self.epoch}, {train_loss}, {validation_loss}\n')
 
     def run(self) -> torch.nn.Module:
         self.runner.call_hook('before_train')
@@ -88,11 +69,9 @@ class EpochBasedTrainLoop(BaseLoop):
                     and self._epoch >= self.val_begin
                     and (self._epoch % self.val_interval == 0
                          or self._epoch == self._max_epochs)):
-                ret = self.runner.val_loop.run()
-                if isinstance(self.runner.val_loop, FastEvalLoop) and self.out_file:
-                    print("writing results to file...")
-                    self._update_out_file(self._epoch_loss, ret)
-                self.runner.save_checkpoint(f'epoch_{self._epoch}.pth')
+                loss: float | None = self.validate()
+                self._write_training_progress_to_file(self._epoch, self._epoch_loss, loss)
+
         
         self.epoch_pbar.close()
         self.runner.call_hook('after_train')
