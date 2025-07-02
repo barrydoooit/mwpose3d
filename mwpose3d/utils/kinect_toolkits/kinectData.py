@@ -1,7 +1,7 @@
 import csv
 import io
 from enum import Enum
-from typing import List, Dict, Literal, Optional, Tuple
+from typing import List, Dict, Literal, Optional, Sequence, Tuple
 
 import pandas as pd
 
@@ -99,6 +99,20 @@ class Skeleton:
         self.extras = extras
         self.used_points = used_points
     
+    def transpose_(self, *order: int, with_extra: bool = False) -> 'Skeleton':
+        if len(order) == 1 and isinstance(order[0], Sequence):
+            order = order[0],
+        if len(order) != 3 or set(order) != {0, 1, 2}:
+            raise ValueError("Order must be a sequence of three unique indices (0, 1, 2).")
+        for kp in self.keypoints.values():
+            coords = (kp.x, kp.y, kp.z)
+            kp.x, kp.y, kp.z = coords[order[0]], coords[order[1]], coords[order[2]]
+        
+        if self.extras and with_extra:
+            raise NotImplementedError("Transposing extras is not implemented.")
+
+        return self
+
     def flatten(self) -> Tuple[list[str], list[float]]:
         headers = ['timestamp', 'unix_ms'] + \
                     [item for kp in self.used_points for item in \

@@ -3,6 +3,8 @@ import sys
 import time
 from typing import Optional, Union, TYPE_CHECKING
 import logging
+
+from apps.impl.dataset_collection.metadata_input_dialog import InputPopupDialog
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s %(threadName)-10s %(levelname)-8s %(name)s: %(message)s",
@@ -56,6 +58,12 @@ class HPEDatasetCollectionApp(BaseMWOnlineApp):
         ))
         return visualizer
 
+    @property
+    def visualizer(self) -> 'OnlineSkeletonVisualizer':
+        if not hasattr(self, '_visualizer'):
+            self._visualizer = self._make_visualizer(self.vis_cfg)
+        return self._visualizer
+    
     def _on_visualizer_close(self, event):
         self._controller.stop_all()
     
@@ -81,29 +89,42 @@ class _LoopController(QObject):
         super().__init__()
         self.app = app
 
+        self.metainfo_popup = InputPopupDialog(labels=[
+            "Participant ID", "Game", "Position X", "Position Y", "Speed", "Description"])
+        self.metainfo_popup.accepted.connect(self.app.instruction_worker.instructionsOnInit.emit)
+        self.metainfo_popup.rejected.connect(self.app.instruction_worker.instructionsOnInit.emit)
+        self.metainfo_popup.submitted.connect(self.app.pcd_buffering_worker.recordMeta.emit)
+
         # Wire signals
-        app.reader_thread.array_data.connect(app.visualizer.on_new_cloud, Qt.ConnectionType.QueuedConnection)
-        app.reader_thread.raw_data.connect(
-            app.pcd_buffering_worker.enqueue_raw,
-            Qt.ConnectionType.QueuedConnection
-        )
-        app.instruction_worker.finishedOnInit.connect(self._on_init_stage_complete, Qt.ConnectionType.QueuedConnection)
-        app.pcd_buffering_worker.bufferFull.connect(self._on_buffer_full)
-        app.pcd_buffering_worker.bufferDumped.connect(lambda x: app.kinect_mgr_worker.dumpSkeletonsSignal.emit(Path(x).name))
-        app.instruction_worker.finishedOnStop.connect(self._on_cycle_complete, Qt.ConnectionType.QueuedConnection)
+        self.app.reader_thread.array_data.connect(self.app.visualizer.on_new_cloud, Qt.ConnectionType.QueuedConnection)
+        self.app.pcd_buffering_worker.frameCount.connect(lambda x: self.app.visualizer.update_label(f"Frames: {x:04d}"))
+        self.app.kinect_mgr_worker.recentSkeletonJointCoordSignal.connect(self.app.visualizer.update_skeleton, Qt.ConnectionType.QueuedConnection)
+        self.app.instruction_worker.finishedOnInit.connect(self._on_init_stage_complete, Qt.ConnectionType.QueuedConnection)
+        self.app.pcd_buffering_worker.bufferFull.connect(self._on_buffer_full)
+        self.app.pcd_buffering_worker.bufferDumped.connect(lambda x: self.app.kinect_mgr_worker.dumpSkeletonsSignal.emit(Path(x).name))
+        self.app.instruction_worker.finishedOnStop.connect(self._on_cycle_complete, Qt.ConnectionType.QueuedConnection)
+
+    @Slot()
+    def before_init(self):
+        popup = self.metainfo_popup
+        popup.refresh_fields()
+        popup.open()
 
     @Slot()
     def _on_init_stage_complete(self):
         app = self.app
-        app.reader_thread.raw_data.connect(
-            self.app.pcd_buffering_worker.enqueue_raw,
-            Qt.ConnectionType.QueuedConnection
-        )
+        if not app.kinect_mgr_worker._running:
+            app.kinect_mgr_worker.startSkeletonCaptureSignal.emit()
+
         timer = QTimer(self)
         timer.setInterval(2000)
         def _check():
             if app.kinect_mgr_worker._running:
                 timer.stop()
+                app.reader_thread.raw_data.connect(
+                    self.app.pcd_buffering_worker.enqueue_raw,
+                    Qt.ConnectionType.QueuedConnection
+                )
                 app.kinect_mgr_worker.resumeSkeletonCaptureSignal.emit()
                 app.instruction_worker.instructionsOnStart.emit()
             else:
@@ -127,7 +148,7 @@ class _LoopController(QObject):
             Qt.ConnectionType.QueuedConnection,
         )
 
-        self.app.instruction_worker.instructionsOnInit.emit()
+        self.before_init()
 
     def start_all(self):
         app = self.app
@@ -137,7 +158,9 @@ class _LoopController(QObject):
             app.instruction_thread,
             app.pcd_buffering_thread,
         ): t.start()
-        
+
+        self.before_init()
+
     def stop_all(self):
         for tn in (
             "reader_thread",
@@ -148,5 +171,7 @@ class _LoopController(QObject):
             logger.info(f"Requesting interruption for thread: app.{tn}")
             t: "QThread" = getattr(self.app, tn)
             t.requestInterruption()
+            logger.info(f"Quitting thread: app.{tn}")
             t.quit()
+            logger.info(f"Waiting for thread: app.{tn} to quit")
             t.wait()

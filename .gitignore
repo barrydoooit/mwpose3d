@@ -13,3 +13,6 @@
 environment.yml
 requirements.txt
 .idea
+**.csv
+**.json
+traces

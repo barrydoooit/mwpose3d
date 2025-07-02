@@ -21,6 +21,9 @@ class KinectManager:
                  ):
         self.exe_path = os.path.abspath(exe_path)
         self.output_dir = Path(output_dir)
+        if not self.output_dir.exists():
+            logger.info(f"Output directory {self.output_dir} does not exist. Creating it.")
+            self.output_dir.mkdir(parents=True, exist_ok=True)
         self.output_prefix = Path(output_dir) / self.FILE_PREFIX
         self.process = None
         self.mode = copy(mode)
@@ -139,11 +142,11 @@ class KinectManager:
             return None
         return get_last_record(file_path)
 
-    def get_new_records(self) -> List[Skeleton]:
+    def get_new_records(self, to_radar_coord: bool = True) -> List[Skeleton]:
         if not self.is_capturing:
             return self.error_if_not_capturing()
         
-        records = []
+        records: list[Skeleton] = []
         for frame in self.capture_mmf_reader.read_frames():
             joints = frame["joints"]
             skeleton = Skeleton.from_sequence(
@@ -152,6 +155,12 @@ class KinectManager:
                 sequence=[coord for joint in joints for coord in joint["position"]],
             )
             records.append(skeleton)
+        if to_radar_coord:
+            for record in records:
+                record.transpose_(0, 2, 1)
+                for joint in record.keypoints:
+                    record.keypoints[joint].x *= -1  # Invert x-axis for radar coordinates
+
         return records
 
     @property
@@ -194,7 +203,7 @@ class CaptureMmfReader:
             -1,
             self._total_size,
             tagname=tagname,
-            access=mmap.ACCESS_READ
+            access=mmap.ACCESS_WRITE
         )
         self._last_id = None
 

@@ -42,6 +42,10 @@ class KinectManagerWorker(QObject):
     
     @Slot()
     def _on_start(self):
+        self._ct = threading.Thread(target=self._run_capture_loop, name="KinectCaptureLoop", daemon=True)
+        self._ct.start()
+    
+    def _run_capture_loop(self):
         try:
             self.kinect_mgr.start_skeleton_capture()
             self.kinect_mgr.wait_for_capture_starts()
@@ -53,7 +57,7 @@ class KinectManagerWorker(QObject):
         self._running = self.kinect_mgr.running
         self._paused = False
         
-        while self._running:
+        while self._running and not QThread.currentThread().isInterruptionRequested():
             if self._paused:
                 time.sleep(0.1)
                 continue
@@ -68,7 +72,7 @@ class KinectManagerWorker(QObject):
                 self.recentSkeletonJointCoordSignal.emit(self.skeletons[-1].flatten()[1][2:])  # Emit only the flattened data excluding timestamp and unix_ms
             
             time.sleep(0.01)
-    
+
     @Slot()
     def _on_pause(self):
         if not self._running:
@@ -84,9 +88,9 @@ class KinectManagerWorker(QObject):
     
     @Slot()
     def _on_stop(self):
-        if not self._running:
-            logger.warning("Terminate ignored: Kinect capture is not running.")
-            return
+        if self._ct.is_alive():
+            logger.info("Stopping Kinect Capture thread.")
+            self._ct.join(timeout=1)
         self.kinect_mgr.stop_skeleton_capture()
         self._running = False
         self._paused = False
@@ -104,7 +108,7 @@ class KinectManagerWorker(QObject):
         filename = (Path(self.kinect_mgr.output_dir) / filename).with_suffix('.csv')
         try:
             with open(filename, 'w') as f:
-                writer = csv.writer(f)
+                writer = csv.writer(f, lineterminator='\n')
                 headers, _ = skeletons_copy[0].flatten()
                 writer.writerow(headers)
                 for sk in skeletons_copy:
@@ -123,7 +127,6 @@ class KinectManagerWorker(QObject):
         thread = QThread()
         worker.moveToThread(thread)
 
-        thread.started.connect(worker._on_start)
         worker.startSkeletonCaptureSignal.connect(worker._on_start)
         worker.pauseSkeletonCaptureSignal.connect(worker._on_pause)
         worker.resumeSkeletonCaptureSignal.connect(worker._on_resume)

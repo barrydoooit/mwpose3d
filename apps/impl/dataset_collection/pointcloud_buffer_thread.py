@@ -61,6 +61,8 @@ class PointCloudBuffer:
             self._container = deque(container, maxlen=new_size)
     
     def append(self, point_cloud: SimplePointCloud5D, timestamp: float = None):
+        if self._check_full():
+            return 
         if isinstance(point_cloud, PointCloudFrame):
             with self.lock() as container:
                 if timestamp is not None:
@@ -88,6 +90,7 @@ class PointCloudBuffer:
     def dump_to_json(self, json_file: Union[str, Path]):
         with self.lock() as container:
             frames = list(container)
+        meta_data = self._meta_data.copy()
         self.clear()
 
         json_path = Path(json_file)
@@ -108,17 +111,19 @@ class PointCloudBuffer:
         }
         with open(json_path, 'w') as f:
             json.dump(data, f)
-        
-        if len(self._meta_data) > 0:
+
+        if len(meta_data) > 0:
             meta_path = json_path.with_suffix('.meta.json')
             with open(meta_path, 'w') as f:
-                json.dump(self._meta_data, f)
+                json.dump(meta_data, f)
         
         return str(json_path)
     
 class PointCloudBufferingWorker(QObject):
     bufferFull = Signal()
     bufferDumped = Signal(str) # json file path
+    recordMeta = Signal(dict)
+    frameCount = Signal(int)
 
     def __init__(self, dump_dir: Union[str, Path], buffer_size: int = 1000):
         super().__init__()
@@ -128,6 +133,8 @@ class PointCloudBufferingWorker(QObject):
     @Slot(object, float)
     def enqueue(self, point_cloud: 'SimplePointCloud5D', timestamp: Optional[float] = None):
         self.buffer.append(point_cloud, timestamp)
+        length = len(self.buffer)
+        self.frameCount.emit(length)
         if self.buffer._check_full():
             self.bufferFull.emit()
     
@@ -143,6 +150,11 @@ class PointCloudBufferingWorker(QObject):
         final_path = self.buffer.dump_to_json(dump_path)
         self.bufferDumped.emit(final_path)
     
+    @Slot(dict)
+    def record_meta(self, meta_data: dict):
+        for key, value in meta_data.items():
+            self.buffer.record_meta(key, value)
+
     @Slot()
     def clear_buffer(self):
         self.buffer.clear()
@@ -160,6 +172,7 @@ class PointCloudBufferingWorker(QObject):
         thread = QThread()
         worker = cls(dump_dir=dump_dir, buffer_size=buffer_size)
         worker.moveToThread(thread)
+        worker.recordMeta.connect(worker.record_meta)
         thread.finished.connect(worker.deleteLater)
         thread.finished.connect(thread.deleteLater)
 

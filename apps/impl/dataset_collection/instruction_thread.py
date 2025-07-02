@@ -7,7 +7,8 @@ from PySide6.QtCore import (
     QThread,
     Signal,
     Slot,
-    QTimer
+    QTimer,
+    QMetaObject, Qt
 )
 from PySide6.QtWidgets import QApplication, QDialog, QLabel, QVBoxLayout
 
@@ -22,6 +23,8 @@ class InstructionPopup(QDialog):
         super().__init__()
         self.setWindowTitle("Instruction")
         self.label = QLabel("")
+        self._timer = QTimer(self)
+        self._timer.setSingleShot(True)
 
         if 'style_sheet' in kwargs:
             self.setStyleSheet(kwargs['style_sheet'])
@@ -36,16 +39,25 @@ class InstructionPopup(QDialog):
         if not self.isVisible():
             self.show()
 
+    @Slot(str, int)
     def schedule_update_message(self, stage: str, delay_ms: int):
-        QTimer.singleShot(delay_ms, lambda: self.nextMessageRequested.emit(stage))
+        if self._timer.isActive():
+            self._timer.stop()
+        try:
+            self._timer.timeout.disconnect()
+        except (TypeError, RuntimeError):
+            pass
+        self._timer.timeout.connect(lambda: self.nextMessageRequested.emit(stage))
+        self._timer.start(delay_ms)
 
 class InstructionWorker(QObject):
     newMessage = Signal(str)
     finishedOnInit = Signal()
     finishedOnStart = Signal()
     finishedOnStop = Signal()
+
+    schduleUpdateMessage = Signal(str, int)
     closePopup = Signal()
-    
     instructionsOnInit = Signal()
     instructionsOnStart = Signal()
     instructionsOnStop = Signal(bool)
@@ -90,6 +102,7 @@ class InstructionWorker(QObject):
         self._popup = InstructionPopup(style_sheet="font-size: 32px;")
         self._popup.nextMessageRequested.connect(self._advance_stage)
         self.newMessage.connect(self._popup.update_message)
+        self.schduleUpdateMessage.connect(self._popup.schedule_update_message)
         self.closePopup.connect(self._popup.close)
     
     @classmethod
@@ -113,7 +126,6 @@ class InstructionWorker(QObject):
         
         worker = cls(on_init=on_init, on_start=on_start, on_stop=on_stop)
         thread = QThread()
-        thread.started.connect(worker.instructionsOnInit.emit)
         thread.finished.connect(worker.popup.close)
         thread.finished.connect(worker.popup.deleteLater)
         worker.moveToThread(thread)
@@ -142,7 +154,7 @@ class InstructionWorker(QObject):
         self.newMessage.emit(msg)
         self._seq_index += 1
 
-        self.popup.schedule_update_message(stage, delay)
+        self.schduleUpdateMessage.emit(stage, delay)
 
     @Slot()
     def _run_init(self):

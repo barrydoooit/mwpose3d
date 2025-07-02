@@ -31,7 +31,7 @@ instructions = dict(
 
 buffer_cfg = dict(
     dump_dir='apps/impl/dataset_collection/traces/pointcloud',
-    buffer_size=1000
+    buffer_size=5000
 )
 
 kinect_cfg = dict(
