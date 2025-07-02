@@ -85,7 +85,7 @@ class MMDiffTwoStageEpochBasedTrainLoop(BaseLoop):
                     and (phase_epoch_idx % val_interval == 0
                         or phase_epoch_idx == phase_epochs)):
                 checkpoint_name: str = f'phase_{current_phase}-epoch_{self._epoch - (current_phase - 1) * self.pretrain_max_epochs}.pth'
-                loss: float | None = self.validate(self._epoch, filename=checkpoint_name)
+                loss: float | None = self.validate(checkpoint_name)
                 self._write_training_progress_to_file(self._epoch, self._epoch_loss, loss)
         
         epoch_pbar.close()
