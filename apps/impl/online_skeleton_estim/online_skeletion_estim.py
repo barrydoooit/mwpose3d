@@ -64,8 +64,8 @@ class OnlineSkeletionEstimationApp(BaseMWOnlineApp):
     def start(self):
         self.app = QApplication(sys.argv)
         logger.info("Starting Online Skeleton Estimation Application...")
-        self.reader_thread.array_data.connect(self.inference_thread.enqueue, Qt.QueuedConnection)
-        self.reader_thread.array_data.connect(self.visualizer.on_new_cloud, Qt.QueuedConnection)
+        self.reader_thread.array_data.connect(self.inference_thread.enqueue, Qt.ConnectionType.QueuedConnection)
+        self.reader_thread.array_data.connect(self.visualizer.on_new_cloud, Qt.ConnectionType.QueuedConnection)
         self.inference_thread.start()
         self.reader_thread.start()
         self.visualizer.show()

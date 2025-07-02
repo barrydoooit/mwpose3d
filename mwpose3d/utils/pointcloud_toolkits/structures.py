@@ -43,3 +43,23 @@ class SimplePointCloud5D:
         
     def serialize(self, compact=False)-> Union[List[List[float]], List[dict]]:
         return [point.serialize(compact) for point in self.points]
+
+class PointCloudFrame(SimplePointCloud5D):
+    def __init__(self, seq_num: int, timestamp: float, points: List[SimplePoint5D]):
+        super().__init__(points)
+        self.seq_num = seq_num
+        self.timestamp = timestamp
+    
+    def serialize(self, compact=False) -> Union[dict, List]:
+        if compact:
+            return [self.seq_num, self.timestamp, super().serialize(compact)]
+        else:
+            return {
+                'seq': self.seq_num,
+                'ts': self.timestamp,
+                'points': super().serialize(compact)
+            }
+    
+    @classmethod
+    def from_pcd(cls, pcd: SimplePointCloud5D, seq_num: int, timestamp: float) -> 'PointCloudFrame':
+        return cls(seq_num, timestamp, pcd.points)

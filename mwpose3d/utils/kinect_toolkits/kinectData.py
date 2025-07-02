@@ -1,7 +1,7 @@
 import csv
 import io
 from enum import Enum
-from typing import List, Dict, Literal, Optional
+from typing import List, Dict, Literal, Optional, Tuple
 
 import pandas as pd
 
@@ -91,14 +91,30 @@ class Skeleton:
     def __init__(self, timestamp: float,
                  unix_ms: int,
                  keypoints: Dict[KeypointType, Keypoint],
-                 extras: Optional[SkeletonExtras] = None):
+                 extras: Optional[SkeletonExtras] = None,
+                 used_points: List[int] = USED_KEYPOINTS):
         self.timestamp = timestamp
         self.unix_ms = unix_ms
         self.keypoints = keypoints
         self.extras = extras
-        
+        self.used_points = used_points
+    
+    def flatten(self) -> Tuple[list[str], list[float]]:
+        headers = ['timestamp', 'unix_ms'] + \
+                    [item for kp in self.used_points for item in \
+                     (f'{KeypointType(kp).name.lower()}_x', f'{KeypointType(kp).name.lower()}_y', f'{KeypointType(kp).name.lower()}_z')]
+        flat_data = []
+        for kp_type_val in self.used_points:
+            kp_type = KeypointType(kp_type_val)
+            kp = self.keypoints.get(kp_type)
+            if kp:
+                flat_data.extend([kp.x, kp.y, kp.z])
+            else:
+                flat_data.extend([0.0, 0.0, 0.0])
+        return headers, [self.timestamp, self.unix_ms] + flat_data
+
     @classmethod
-    def from_dataframe(cls, row: pd.Series, used_points: List[int] = None):
+    def from_dataframe(cls, row: pd.Series, used_points: List[int] = None, extras: Optional[SkeletonExtras] = None):
         kps = {}
         used_points = used_points or USED_KEYPOINTS
         for kp_type_val in used_points:
@@ -107,10 +123,11 @@ class Skeleton:
             x, y, z = row[f'{kp_type_name_lower}_x'], row[f'{kp_type_name_lower}_y'], row[f'{kp_type_name_lower}_z']
             connections = Connectivity.get(kp_type, [])
             kps[kp_type] = Keypoint(kp_type, x, y, z, connections)
-        return Skeleton(row['timestamp'], row['unix_ms'], kps)
+        return Skeleton(row['timestamp'], row['unix_ms'], kps, used_points=used_points, extras=extras)
 
     @classmethod
-    def from_sequence(cls, sequence: list[float], used_points: List[int] = None, order: Literal['xyz', 'xzy'] = 'xyz'):
+    def from_sequence(cls, sequence: list[float], used_points: List[int] = None, order: Literal['xyz', 'xzy'] = 'xyz',
+                      timestamp: float = 0.0, unix_ms: int = 0, extras: Optional[SkeletonExtras] = None):
         kps = {}
         swap_order = order == 'xzy'
         used_points = used_points or USED_KEYPOINTS
@@ -121,7 +138,7 @@ class Skeleton:
                 y, z = z, y
             connections = Connectivity.get(kp_type, [])
             kps[kp_type] = Keypoint(kp_type, x, y, z, connections)
-        return Skeleton(0, 0, kps)
+        return Skeleton(timestamp, unix_ms, kps, used_points=used_points, extras=extras)
     
 Connectivity = {
     KeypointType.SPINE_BASE: [KeypointType.SPINE_MID],

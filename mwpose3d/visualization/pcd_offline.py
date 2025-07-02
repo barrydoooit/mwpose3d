@@ -1,19 +1,19 @@
 from typing import Iterable, Iterator, List, Literal, Optional, Union
-from PySide2.QtWidgets import (QApplication, QMainWindow, QWidget, QHBoxLayout, QVBoxLayout, QPushButton)
-from PySide2.QtCore import QTimer, Qt
+from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QHBoxLayout, QVBoxLayout, QPushButton)
+from PySide6.QtCore import QTimer, Qt
 import numpy as np
 import sys
 import pyqtgraph.opengl as gl
 from mwcore.visualization.vis_utils import _draw_bboxes
 from mwcore.visualization.plot_3d import Plot3D
 import os
-from PySide2 import QtCore
-pyside2_plugin_path = os.path.join(
-    os.path.dirname(QtCore.__file__),
-    "plugins",
-    "platforms",
-)
-os.environ["QT_QPA_PLATFORM_PLUGIN_PATH"] = pyside2_plugin_path
+from PySide6 import QtCore
+# pyside2_plugin_path = os.path.join(
+#     os.path.dirname(QtCore.__file__),
+#     "plugins",
+#     "platforms",
+# )
+# os.environ["QT_QPA_PLATFORM_PLUGIN_PATH"] = pyside2_plugin_path
 
 
 
