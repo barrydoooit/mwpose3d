@@ -8,11 +8,10 @@ logger = logging.getLogger(__name__)
 import numpy as np
 import pandas as pd
 
-from apps.common.pcd.pointCloud import SimplePoint5D
-from mwpose3d.tools.rawproc.alignment import AlignTraces
-from mwpose3d.tools.rawproc.time_calib import TimeCalibrator
-from mwpose3d.tools.rawproc.time_calib_manual import CalibrateTimeWindow
-from kinect_toolkits.kinectData import Skeleton
+from mwpose3d.utils.pointcloud_toolkits.structures import SimplePoint5D
+from tools.rawproc.alignment import AlignTraces
+from tools.rawproc.time_calib_manual import CalibrateTimeWindow
+from mwpose3d.utils.kinect_toolkits.kinectData import Skeleton
 
 from . import load_utils
 
@@ -63,13 +62,17 @@ class Episode:
     def load_pcd_meta(self, meta_data_dir: Path, allow_missing: bool = False):
         meta_data_file = meta_data_dir / f'{self.episode_name}.json'
         if not meta_data_file.exists() and not allow_missing:
-            raise FileNotFoundError(f'{meta_data_file} does not exist.')
-        if not meta_data_file.exists():
-            return None
+            if meta_data_file.with_suffix('.meta.json').exists():
+                meta_data_file = meta_data_file.with_suffix('.meta.json')
+            else:
+                raise FileNotFoundError(f'{meta_data_file} does not exist.')
         with open(meta_data_file, 'r') as f:
             self.pcd_meta = json.load(f)
-        calib_frames = self.pcd_meta['calib_frames']
-        self.episode_length = int(self.episode_name.split('_')[-1]) - calib_frames
+        if 'calib_frames' in self.pcd_meta:
+            calib_frames = self.pcd_meta['calib_frames']
+            self.episode_length = int(''.join(filter(str.isdigit, self.episode_name.split('_')[-1]))) - calib_frames
+        else:
+            self.episode_length = int(''.join(filter(str.isdigit, self.episode_name.split('_')[-1])))
         
     def load_skeleton(self, raw_data_dir: Path, allow_missing: bool = False):
         raw_data_file = raw_data_dir / f'{self.episode_name}.csv'
@@ -77,13 +80,11 @@ class Episode:
             raise FileNotFoundError(f'{raw_data_file} does not exist.')
         if not raw_data_file.exists():
             return None
-        self.skel_df = load_utils.load_raw_skeleton_csv_to_df(raw_data_file)
+        self.skel_df = load_utils.load_framed_skeleton_csv_to_df(raw_data_file)
         
     def calibrate_time(self, manual: bool = False):
         if not manual:
-            calibrator = TimeCalibrator(self)
-            calibrator.calib()
-            return calibrator.make_episode()
+            raise NotImplementedError("Automatic time calibration is removed.")
         else:
             calibrator_gui = CalibrateTimeWindow(self)
             calibrator_gui.wait_window()

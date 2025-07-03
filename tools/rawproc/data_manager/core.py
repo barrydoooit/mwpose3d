@@ -1,3 +1,4 @@
+from copy import deepcopy
 import logging
 import tkinter as tk
 from tkinter import ttk, messagebox
@@ -28,7 +29,7 @@ class DataProcessorProtocol(Protocol):
     @abstractmethod
     def processed_episode_names(self) -> set: ...
     @abstractmethod
-    def load_processed_episodes(self, lazy: bool) -> list: ...
+    def load_processed_episodes(self) -> list: ...
 
     @property
     def episodes(self) -> Dict[str, Episode]: ...
@@ -179,10 +180,10 @@ class DataProcessorGUI(tk.Tk):
             btn.config(state=state)
     
     def refresh_episode_lists(self):
-        radar_dir = self.processor.raw_dir / "radar"
+        radar_dir = self.processor.raw_dir / "pointcloud"
         if radar_dir.exists():
-            radar_files = list(radar_dir.glob("*"))
-            episode_names = {f.stem for f in radar_files if f.name != "meta"}
+            radar_files: list[Path] = list(radar_dir.glob("*"))
+            episode_names = {f.stem for f in radar_files if not f.is_dir()}
         else:
             episode_names = set()
         
@@ -220,22 +221,20 @@ class DataProcessorDelegate(DataProcessorProtocol):
     def processed_episode_names(self):
         return self._processed_episode_names
     
-    def load_processed_episodes(self, lazy=True):
+    def load_processed_episodes(self):
         info_path = self.output_dir / "info_all.pkl"
         if info_path.exists():
             with open(info_path, "rb") as f:
                 self._processed_episode_names = {
-                    Path(name).stem for name in pickle.load(f)
+                    info["id"] for info in pickle.load(f)
                 }
-        if lazy:
-            return
 
     def get_episode(self, name: str):
         if name in self.episodes:
             return self.episodes[name]
         episode = Episode(name)
-        episode.load_pcd(self.raw_dir / 'radar')
-        episode.load_pcd_meta(self.raw_dir / 'radar' / 'meta')
+        episode.load_pcd(self.raw_dir / 'pointcloud')
+        episode.load_pcd_meta(self.raw_dir / 'meta')
         episode.load_skeleton(self.raw_dir / 'kinect')
         self.episodes[name] = episode
         return episode
@@ -262,7 +261,7 @@ class DataProcessorDelegate(DataProcessorProtocol):
                         hdf5_maker.save(suffixes)
                         self._processed_episode_names.add(name)
                     except Exception as e:
-                        logger.error(f"Failed to create data: {e}")
+                        logger.error(f"Failed to create data: {e.with_traceback(traceback.format_exc())}")
                 self.gui_refresh_callback()
             
         threading.Thread(target=task, daemon=True).start()
@@ -272,8 +271,8 @@ class DataProcessorDelegate(DataProcessorProtocol):
             for name in episodes:
                 try:
                     paths = [
-                        self.raw_dir / 'radar' / f"{name}.json",
-                        self.raw_dir / 'radar' / 'meta' / f"{name}.json",
+                        self.raw_dir / 'pointcloud' / f"{name}.json",
+                        self.raw_dir / 'meta' / f"{name}.json",
                         self.raw_dir / 'kinect' / f"{name}.csv"
                     ]
                     for p in paths:
@@ -288,21 +287,36 @@ class DataProcessorDelegate(DataProcessorProtocol):
     def handle_allocate_to_info(self, episodes: list, suffix: str):
         def task():
             try:
-                info_all ={}
+                info_all = []
                 info_pkl_path = self.output_dir / "info_all.pkl"
                 if info_pkl_path.exists():
                     with open(info_pkl_path, "rb") as f:
                         info_all = pickle.load(f)
-                new_info = {}
+                new_info = []
                 new_info_path = self.output_dir / f"info_{suffix}.pkl"
                 if new_info_path.exists():
                     with open(new_info_path, "rb") as f:
                         new_info = pickle.load(f)
                 for name in episodes:
                     try:
-                        key = f'{name}.h5'
-                        if key in info_all:
-                            new_info[key] = info_all[key]
+                        key = name
+                        _info = None
+                        for infoa in info_all:
+                            if infoa["id"] == key:
+                                _info = deepcopy(infoa)
+                                break
+                        else:
+                            raise KeyError(f"Episode {name} not found in info_all. Create data first.")
+                        for infon in new_info:
+                            infon: dict
+                            if infon["id"] == key:
+                                logger.warning(f"Episode {name} already exists in info_{suffix}.pkl. Coverwriting.")
+                                infon.clear()
+                                infon.update(_info)
+                        else:
+                            new_info.append(deepcopy(_info))
+                            logger.info(f"Episode {name} added to info_{suffix}.pkl.")
+
                     except Exception as e:
                         logger.error(f"Failed to allocate to info: {e}")            
                 with open(new_info_path, "wb") as f:
@@ -355,8 +369,8 @@ class DataProcessorDelegate(DataProcessorProtocol):
             try:
                 for name in episodes:
                     episode = Episode(name)
-                    episode.load_pcd(self.raw_dir / 'radar')
-                    episode.load_pcd_meta(self.raw_dir / 'radar' / 'meta')
+                    episode.load_pcd(self.raw_dir / 'pointcloud')
+                    episode.load_pcd_meta(self.raw_dir / 'meta')
                     episode.load_skeleton(self.raw_dir / 'kinect')
                     self.update_episode(name, episode)
                     self.status_df.loc[name] = [False] * len(self.status_df.columns)

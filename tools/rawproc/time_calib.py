@@ -37,9 +37,9 @@ def find_stationary_periods_of_skeleton_df(skel_df: pd.DataFrame,
             diff_sum = 0.0
             for kp in keypoints:
                 kp_str = kntk.KeypointType(kp).name.lower()
-                dx = current_row[f"{kp_str}_x"] - ref_row[f"{kp_str}_x"]
-                dy = current_row[f"{kp_str}_y"] - ref_row[f"{kp_str}_y"]
-                dz = current_row[f"{kp_str}_z"] - ref_row[f"{kp_str}_z"]
+                dx = current_row[f"{kp_str}.x"] - ref_row[f"{kp_str}.x"]
+                dy = current_row[f"{kp_str}.y"] - ref_row[f"{kp_str}.y"]
+                dz = current_row[f"{kp_str}.z"] - ref_row[f"{kp_str}.z"]
                 diff_sum += distance_func_to_use(dx, dy, dz)
             # 如果差异超过阈值，则结束当前静止段的判断
             if diff_sum >= stationary_threshold_m:

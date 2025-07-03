@@ -116,7 +116,7 @@ class Skeleton:
     def flatten(self) -> Tuple[list[str], list[float]]:
         headers = ['timestamp', 'unix_ms'] + \
                     [item for kp in self.used_points for item in \
-                     (f'{KeypointType(kp).name.lower()}_x', f'{KeypointType(kp).name.lower()}_y', f'{KeypointType(kp).name.lower()}_z')]
+                     (f'{KeypointType(kp).name.lower()}.x', f'{KeypointType(kp).name.lower()}.y', f'{KeypointType(kp).name.lower()}.z')]
         flat_data = []
         for kp_type_val in self.used_points:
             kp_type = KeypointType(kp_type_val)
@@ -134,7 +134,7 @@ class Skeleton:
         for kp_type_val in used_points:
             kp_type = KeypointType(kp_type_val)
             kp_type_name_lower = kp_type.name.lower()
-            x, y, z = row[f'{kp_type_name_lower}_x'], row[f'{kp_type_name_lower}_y'], row[f'{kp_type_name_lower}_z']
+            x, y, z = row[f'{kp_type_name_lower}.x'], row[f'{kp_type_name_lower}.y'], row[f'{kp_type_name_lower}.z']
             connections = Connectivity.get(kp_type, [])
             kps[kp_type] = Keypoint(kp_type, x, y, z, connections)
         return Skeleton(row['timestamp'], row['unix_ms'], kps, used_points=used_points, extras=extras)

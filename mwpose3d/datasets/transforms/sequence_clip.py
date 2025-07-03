@@ -23,14 +23,15 @@ class SequenceClip(BaseTransform):
     
     def transform(self, input: dict):
         pcd_frames: List[np.ndarray] = input['pcd_frames']
-        assert len(pcd_frames) >= self.sequence_length
+        original_length = len(pcd_frames)
+        assert original_length >= self.sequence_length
         
         if self.mode == 'random':
-            selected_frame_indices = np.random.randint(0, len(pcd_frames), self.sequence_length)
+            selected_frame_indices = np.random.randint(0, original_length, self.sequence_length)
         elif self.mode == 'first':
             selected_frame_indices = np.arange(self.sequence_length)
         elif self.mode == 'last':
-            selected_frame_indices = np.arange(len(pcd_frames) - self.sequence_length, len(pcd_frames))
+            selected_frame_indices = np.arange(original_length - self.sequence_length, original_length)
         else:
             raise ValueError(f'Invalid mode {self.mode} for SequenceClip.')
 
@@ -39,7 +40,7 @@ class SequenceClip(BaseTransform):
 
         if 'skel_frames' in input:
             skel_frames: List[np.ndarray] = input['skel_frames']
-            assert len(pcd_frames) == len(skel_frames)
+            assert original_length == len(skel_frames)
             skel_frames = [skel_frames[i] for i in selected_frame_indices]
             input['skel_frames'] = skel_frames
         return input

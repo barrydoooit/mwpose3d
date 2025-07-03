@@ -25,9 +25,13 @@ class ToHdf5:
         # Check if 'seq' column is ascending from 0
         frame_ids = self.alligned_episode.pcd_df['seq'].unique()
         assert (np.diff(frame_ids) == 1).all() and frame_ids[0] == 0, ValueError("'seq' column is not ascending from 0.")
-
-        (self.output_dir / 'h5').mkdir(parents=True, exist_ok=True)
-        hdf5_path = self.output_dir / 'h5' / f'{self.alligned_episode.episode_name}.h5'
+        
+        mmwave_dir = self.output_dir / 'mmwave'
+        skeleton_dir = self.output_dir / 'skeleton'
+        mmwave_dir.mkdir(parents=True, exist_ok=True)
+        skeleton_dir.mkdir(parents=True, exist_ok=True)
+        out_mmwave = mmwave_dir / f'{self.alligned_episode.episode_name}.h5'
+        out_skeleton = skeleton_dir / f'{self.alligned_episode.episode_name}.h5'
         pcd_df = self.alligned_episode.pcd_df
         
         all_points = []
@@ -45,14 +49,17 @@ class ToHdf5:
         skel_df = self.alligned_episode.skel_df
         skel_all = skel_df.to_numpy(np.float32)
         
-        with h5py.File(hdf5_path, 'w') as h5file:
+        with h5py.File(out_mmwave, 'w') as h5file:
             grp_pcd = h5file.create_group('pcd')
             ds_data = grp_pcd.create_dataset('data', data=pcd_all)
             ds_index = grp_pcd.create_dataset('index', data=frame_indices)
             ds_data.attrs['columns'] = np.array(pcd_df.columns, dtype='S')
+        
+        with h5py.File(out_skeleton, 'w') as h5file:
             ds_skel = h5file.create_dataset('skel', data=skel_all)
             ds_skel.attrs['columns'] = np.array(skel_df.columns, dtype='S')
-        file_key, file_info = self.update_info_file(hdf5_path, self.output_dir / f'info_all.pkl')
+
+        file_key, file_info = self.update_info_file(self.output_dir / f'info_all.pkl')
         for suffix in info_suffices:
             if suffix == 'all':
                 continue
@@ -61,30 +68,37 @@ class ToHdf5:
                 with open(info_path, 'rb') as f:
                     infos = pickle.load(f)
             else:
-                infos = {}
+                infos = []
             with open(self.output_dir / f'info_{suffix}.pkl', 'wb') as f:
-                pickle.dump(dict(infos, **{file_key: file_info}), f)
+                pickle.dump(infos + [file_info], f)
         
-    def update_info_file(self, dataset_h5_file: Path, info_pkl_path: Path) -> dict:
-        info_all = {}
+    def update_info_file(self, info_pkl_path: Path) -> dict:
+        info_all = []
         if info_pkl_path.exists():
             with open(info_pkl_path, 'rb') as f:
                 info_all = pickle.load(f)
         
-        file_key = dataset_h5_file.name
-        if file_key in info_all:
-            print(f"File key {file_key} already exists in info file. Overwriting is not allowed for now.")
-            return file_key, info_all[file_key]
-        existing_tokens = {info['token'] for info in info_all.values() if 'token' in info}
-        new_token = uuid.uuid4().hex
-        while new_token in existing_tokens:
-            new_token = uuid.uuid4().hex
-        info_all[file_key] = {'token': new_token}
-        
-        with h5py.File(dataset_h5_file, 'r') as h5file:
-            frame_count = h5file['skel'].shape[0]
-        
-        info_all[file_key]['frame_count'] = frame_count
+        file_key = self.alligned_episode.episode_name
+        frame_count = self.alligned_episode.pcd_df['seq'].nunique()
+        assert frame_count == self.alligned_episode.episode_length
+        meta = self.alligned_episode.pcd_meta
+        if meta is None: meta = {}
+        new_info_entry = dict(
+            meta,
+            frame_count=frame_count,
+            id=file_key,
+            mmwave_path=f'{file_key}.h5',
+            skeleton_path=f'{file_key}.h5',
+        )
+
+        for info in info_all:
+            if info['id'] == file_key:
+                info.clear()
+                info.update(new_info_entry)
+                break
+        else:
+            info_all.append(new_info_entry)
+                
         with open(info_pkl_path, 'wb') as f:
             pickle.dump(info_all, f)
-        return file_key, info_all[file_key]
+        return file_key,  new_info_entry

@@ -30,16 +30,6 @@ def custom_data_prep(root_path: str,
             traceback.print_exc()
         finally:
             return
-    else:
-        print("Data not processed. Using GUI to manually process files.")
-        # example_episode_name = "20250227_122654-122851_647"
-        # example_episode = Episode(episode_name=example_episode_name, episode_length=600)
-        # example_episode.load_pcd(root_path / 'radar')
-        # example_episode.load_pcd_meta(root_path / 'radar' / 'meta')
-        # example_episode.load_skeleton(root_path / 'kinect')
-        # calibrated_episode = example_episode.calibrate_time()
-        # aligned_episode = calibrated_episode.align_traces(use_interp_skel=True)
-        # ToHdf5(alligned_episode=aligned_episode, output_dir=out_dir).save()
 
 def mars_data_prep(root_path: str,
                    out_dir: str,
@@ -233,6 +223,12 @@ def main():
             output_root=args.out_dir,
             seed=42)
         converter.process_all()
-
+    else:
+        print(f"Processing Custom dataset: {args.dataset}")
+        custom_data_prep(
+            root_path=args.root_path,
+            out_dir=args.out_dir,
+            use_gui=True)
+        
 if __name__ == '__main__':
     main()

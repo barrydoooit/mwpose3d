@@ -27,6 +27,13 @@ def load_radar_schema_json_to_df(json_path: Path) -> pd.DataFrame:
     # df['ts'] = df['ts'].astype(pd.Int64Dtype())
     return df
 
+def load_framed_skeleton_csv_to_df(csv_path: Path) -> pd.DataFrame:
+    framed_skeleton_df = pd.read_csv(csv_path)
+    return framed_skeleton_df
+
+# NOTE: DEPRECATED: These functions below are used to process the csv from original BodyFrameDumper.cs. 
+# From now on the data is collected after organizing each frame to a single row.
+
 def clean_raw_skeleton_df(raw_skeleton_df: pd.DataFrame) -> pd.DataFrame:
     raw_skeleton_df.rename(columns=lambda x: x.strip('#').strip(), inplace=True)
     cleaned_df = raw_skeleton_df.groupby('timestamp').filter(lambda group: len(group) == len(kntk.kinectData.ALL_KEYPOINTS))
@@ -46,8 +53,8 @@ def load_raw_skeleton_csv_to_df(csv_path: Path, parse: bool = True) -> pd.DataFr
         row = {'timestamp': ts, 'unix_ms': skeleton.unix_ms * 1000}
         for kp_type, kp in skeleton.keypoints.items():
             kp_type_str = kp_type.name.lower()
-            row.update({f'{kp_type_str}_x': kp.x,
-                        f'{kp_type_str}_y': kp.y,
-                        f'{kp_type_str}_z': kp.z})
+            row.update({f'{kp_type_str}.x': kp.x,
+                        f'{kp_type_str}.y': kp.y,
+                        f'{kp_type_str}.z': kp.z})
         rows.append(row)
     return pd.DataFrame(rows)

@@ -151,7 +151,7 @@ class KinectManager:
             joints = frame["joints"]
             skeleton = Skeleton.from_sequence(
                 timestamp=frame["rel_time"],
-                unix_ms=frame["unix_time"],
+                unix_ms=frame["unix_ms"],
                 sequence=[coord for joint in joints for coord in joint["position"]],
             )
             records.append(skeleton)
@@ -241,7 +241,7 @@ class CaptureMmfReader:
             yield {
                 "frame_id": frame_id,
                 "rel_time": relMs,
-                "unix_time": unixMs,
+                "unix_ms": unixMs,
                 "joints": joints
             }
         self._last_id = head_id

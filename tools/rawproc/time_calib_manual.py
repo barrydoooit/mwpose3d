@@ -3,13 +3,13 @@ from tkinter import ttk, messagebox
 from typing import TYPE_CHECKING, List
 
 
-from apps.common.pcd.pointCloudVis import PointCloudFigureFrame
-from mwpose3d.tools.rawproc.time_calib import TimeCalibrator
-from kinect_toolkits.kinectVis import SkeletonFigureFrame
+from mwpose3d.utils.pointcloud_toolkits.pcdVis import PointCloudFigureFrame
+from tools.rawproc.time_calib import TimeCalibrator
+from mwpose3d.utils.kinect_toolkits.kinectVis import SkeletonFigureFrame
 
 if TYPE_CHECKING:
-    from apps.common.pcd.pointCloud import SimplePoint5D
-    from mwpose3d.tools.rawproc.episode import Episode
+    from mwpose3d.utils.pointcloud_toolkits.structures import SimplePoint5D
+    from tools.rawproc.episode import Episode
 
 
 class CalibrateTimeWindow(tk.Toplevel):

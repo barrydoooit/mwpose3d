@@ -68,7 +68,7 @@ def inspect(runner, dataloader: Config, vis: bool = False):
     dataloader_new = deepcopy(dataloader.to_dict())
     for transform in dataloader['dataset']['pipeline']:
         if transform['type'] in ['PointDuplicator', 'PointPadding', 'PointSortAndClip', 'RandomTransform', 'NormalizePointAttr', 'SkeletonCoordNormalization',
-                                 'SkeletonCoordinateTransform', 'PointCloudCoordinateTransform']:
+                                 ]:#'SkeletonCoordinateTransform', 'PointCloudCoordinateTransform']:
             dataloader_new['dataset']['pipeline'].remove(transform)
     dataloader_new.update(dict(batch_size=1, num_workers=0, shuffle=False))
     dataloader = runner.build_dataloader(dataloader_new)
@@ -143,9 +143,6 @@ def inspect(runner, dataloader: Config, vis: bool = False):
         # print('Skeleton std:', [round(x, 2) for x in skel_stds])
     
     if vis:
-        from PySide2.QtWidgets import QApplication
-        from mwpose3d.visualization import PointCloudOfflineVisualizerSK
-
         def pcd_generator():
             for idx, data_batch in enumerate(dataloader):
                 assert len(data_batch['pcd_frames'][-1]) == 1
@@ -154,9 +151,11 @@ def inspect(runner, dataloader: Config, vis: bool = False):
         def skel_generator():
             for idx, data_batch in enumerate(dataloader):
                 yield data_batch['skel_frames'][-1][0]
-        
+
+        from PySide6.QtWidgets import QApplication
         app = QApplication(sys.argv)
         total = len(dataloader) if hasattr(dataloader, '__len__') else None
+        from mwpose3d.visualization import PointCloudOfflineVisualizerSK
         visualizer = PointCloudOfflineVisualizerSK(
             pcd_generator(),
             skel_generator(),

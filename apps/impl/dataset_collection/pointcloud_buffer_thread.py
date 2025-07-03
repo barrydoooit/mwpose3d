@@ -73,7 +73,7 @@ class PointCloudBuffer:
         
         with self.lock() as container:
             ts_ms = timestamp if timestamp is not None else int(time.time() * 1000)
-            frame = PointCloudFrame.from_pcd(point_cloud, self._frame_counter-1, ts_ms)
+            frame = PointCloudFrame.from_pcd(point_cloud, self._frame_counter, ts_ms)
             container.append(frame)
             self._counter_increment()
         return

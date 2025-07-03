@@ -3,8 +3,8 @@ from matplotlib.figure import Figure
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 
 import mwpose3d.utils.kinect_toolkits as kntk
-from kinect_toolkits.kinectData import Skeleton
-from kinect_toolkits.transforms import kinect_coord_to_radar
+from .kinectData import Skeleton
+from .transforms import kinect_coord_to_radar
 
 
 

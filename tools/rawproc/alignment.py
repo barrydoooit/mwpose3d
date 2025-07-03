@@ -1,7 +1,8 @@
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
 
 import numpy as np
 import pandas as pd
+
 
 
 if TYPE_CHECKING:
@@ -10,9 +11,12 @@ if TYPE_CHECKING:
 class AlignTraces:
     def __init__(self,
                  episode: 'Episode',
-                 use_interp_skel: bool = True):
+                 use_interp_skel: bool = True,
+                 skeleton_ts_type: Literal['real_ts', 'unix_ms'] = 'unix_ms' # real_ts is calculated in calibrator as start unix_ms + timestamp
+                 ): 
         self.use_interp_skel = use_interp_skel
         self.episode = episode
+        self.skeleton_ts_type = skeleton_ts_type
         self.output_pcd_df = None
         self.output_skel_df = None
         
@@ -42,7 +46,7 @@ class AlignTraces:
                 self.output_skel_df = pd.DataFrame(aligned_skels).reset_index(drop=True)
                 return pcd_ts
             next_available_skel = df_skel.loc[available_skel_idx].copy()
-            next_available_skel['ts_diff'] = np.abs(next_available_skel['real_ts'] - pcd_ts).abs()
+            next_available_skel['ts_diff'] = np.abs(next_available_skel[self.skeleton_ts_type] - pcd_ts).abs()
             closest_skel_idx = next_available_skel['ts_diff'].idxmin()
             used_idx[closest_skel_idx] = True
             row = df_skel.loc[closest_skel_idx].copy()
@@ -59,7 +63,7 @@ class AlignTraces:
         aligned_skels = []
         
         unique_radar_ts = np.sort(df_pcd['ts'].unique())
-        skel_ts_values = df_skel['real_ts'].values
+        skel_ts_values = df_skel[self.skeleton_ts_type].values
         
         for pcd_ts in  unique_radar_ts:
             idx = np.searchsorted(skel_ts_values, pcd_ts, side='left')
@@ -74,8 +78,8 @@ class AlignTraces:
                 lower_row = df_skel.iloc[lower_idx]
                 upper_row = df_skel.iloc[upper_idx]
                 
-                t0 = lower_row['real_ts']
-                t1 = upper_row['real_ts']
+                t0 = lower_row[self.skeleton_ts_type]
+                t1 = upper_row[self.skeleton_ts_type]
                 if t0 == t1:
                     weight = 0.0
                 else:
@@ -109,5 +113,6 @@ class AlignTraces:
         new_episode = Episode(episode_name, length)
         new_episode.skel_df = self.output_skel_df
         new_episode.pcd_df = self.output_pcd_df
+        new_episode.pcd_meta = self.episode.pcd_meta
         new_episode.clean_skel_df()
         return new_episode
