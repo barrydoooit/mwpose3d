@@ -46,8 +46,8 @@ class BaseLoop(metaclass=ABCMeta):
         with open(self.out_file, 'a') as f:
             f.write(f'{epoch}, {train_loss}, {validation_loss}\n')
 
-    def validate(self, filename: str | None = None) -> float | None:
-        loss: float | None = self.runner.val_loop.run()
+    def validate(self, filename: str | None = None, mode: str = "loss") -> float | None:
+        loss: float | None = self.runner.val_loop.run(mode=mode)
 
         if filename:
             self.runner.save_checkpoint(filename)

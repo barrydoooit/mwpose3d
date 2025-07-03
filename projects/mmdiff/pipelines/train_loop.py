@@ -41,6 +41,7 @@ class MMDiffTwoStageEpochBasedTrainLoop(BaseLoop):
         self._max_iters = self._max_epochs * len(self.dataloader)
         self._epoch = 0
         self._iter = 0
+        self._avg_loss = 0
         self.val_interval = val_interval
         self.val_begin = val_begin
         self.load_pretrain_from = load_pretrain_from
@@ -86,7 +87,7 @@ class MMDiffTwoStageEpochBasedTrainLoop(BaseLoop):
                         or phase_epoch_idx == phase_epochs)):
                 checkpoint_name: str = f'phase_{current_phase}-epoch_{self._epoch - (current_phase - 1) * self.pretrain_max_epochs}.pth'
                 loss: float | None = self.validate(checkpoint_name, mode="loss-pretrain")
-                self._write_training_progress_to_file(self._epoch, self._epoch_loss, loss)
+                self._write_training_progress_to_file(self._epoch, self._avg_loss, loss)
         
         epoch_pbar.close()
         self.runner.call_hook('after_train')
@@ -103,8 +104,8 @@ class MMDiffTwoStageEpochBasedTrainLoop(BaseLoop):
         for idx, data_batch in enumerate(self.dataloader):
             loss = run_iter(idx, data_batch)
             sliding_window.append(loss.item())
-            avg_loss = sum(sliding_window) / len(sliding_window)
-            epoch_pbar.set_postfix(avg_loss=f'{avg_loss:.4f}')
+            self._avg_loss = sum(sliding_window) / len(sliding_window)
+            epoch_pbar.set_postfix(avg_loss=f'{self._avg_loss:.4f}')
         
         self.runner.call_hook('after_train_epoch')
         self._epoch += 1
