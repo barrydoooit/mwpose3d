@@ -98,3 +98,51 @@ class ToRelativeSkeleton(BaseTransform):
 
         input['skel_frames'] = tuple(relative_skel_frames)
         return input
+
+@TRANSFORMS.register_module()
+class SkeletonDatasetTransform(BaseTransform):
+    """
+        The goal of this Reorder is to receive an input of dataset A and transform the joints and order as if it were dataset B.
+        This is specifically useful when training on A and testing on B.
+    """
+    DONT_CHANGE_AXIS = ()
+    VALID_DATASETS = ["mars", "mmfi"]
+    MAPS = {
+        "mars": {
+            "mars": DONT_CHANGE_AXIS,
+            "mmfi": (0, 14, 15, 17, 10, 11, 13, 1, 18, 2, 3, 4, 5, 6, 7, 8, 9), # Drops axis (12,16) (ankles)
+        },
+        "mmfi": {
+            "mars": (0, 7, 9, 10, 11, 12, 13, 14, 15, 16, 4, 5, 6, 1, 2, 3, 8), # Don't drop anything, just reorder
+            "mmfi": DONT_CHANGE_AXIS,
+        },
+    }
+
+    def __init__(self, frm: str, to: str, online_mode: bool = False):
+        super().__init__(online_mode)
+        self.dataset_from = frm.lower()
+        self.dataset_to = to.lower()
+
+        assert self.dataset_from in self.VALID_DATASETS, f"{self.dataset_from} not in {self.VALID_DATASETS}"
+        assert self.dataset_to in self.VALID_DATASETS, f"{self.dataset_to} not in {self.VALID_DATASETS}"
+
+    def transform(self, input):
+        mapping = self.MAPS[self.dataset_from][self.dataset_to]
+
+        data = input['skel_frames']
+
+        # Make sure to crash if this happens,
+        # However, I think we always get just a single frame, never an entire batch
+        assert len(data) == 1, f"This is likely more than one batch, which is not supported: {data}"
+
+        data = np.array(data).reshape((-1, 3))
+        data = self.reorder_axis(data, mapping)
+        input['skel_frames'] = tuple([data.flatten()])
+        return input
+
+    @staticmethod
+    def reorder_axis(data: np.ndarray, axis: tuple):
+        if len(axis) > 0:
+            return data[axis, :]
+        else:
+            return data
