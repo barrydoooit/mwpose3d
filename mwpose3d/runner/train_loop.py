@@ -17,10 +17,9 @@ class EpochBasedTrainLoop(BaseLoop):
         dataloader: Union[DataLoader, Dict],
         max_epochs: int,
         val_begin: int = 1,
-        val_interval: int = 1,
-        out_file: Optional[str] = None
+        val_interval: int = 1
     ):
-        super().__init__(runner, dataloader, out_file=out_file)
+        super().__init__(runner, dataloader)
         self._max_epochs = int(max_epochs)
         assert self._max_epochs == max_epochs, \
             f'`max_epochs` should be a integer number, but get {max_epochs}.'
@@ -69,8 +68,8 @@ class EpochBasedTrainLoop(BaseLoop):
                     and self._epoch >= self.val_begin
                     and (self._epoch % self.val_interval == 0
                          or self._epoch == self._max_epochs)):
-                loss: float | None = self.validate()
-                self._write_training_progress_to_file(self._epoch, self._epoch_loss, loss)
+                self.runner.val_loop.run()
+                self.runner.save_checkpoint(f'epoch_{self._epoch}.pth')
 
         
         self.epoch_pbar.close()
@@ -109,6 +108,70 @@ class EpochBasedTrainLoop(BaseLoop):
             data_batch=data_batch,
             outputs=loss)
         self._iter += 1
-        
-        
+
+class ValidationOutput:
+
+    def __init__(self, runner: 'Runner', out_file: str):
+        self._runner = runner
+        self.out_file = out_file
+        if self.out_file is not None:
+            self.out_file = Path(self.runner.work_dir / self.out_file)
+            self.out_file.parent.mkdir(parents=True, exist_ok=True)
+            with open(self.out_file, 'w') as f:
+                f.write('epoch, train_loss, validation_loss\n')
+
+    def _write_training_progress_to_file(self, epoch: int, train_loss: float, validation_loss: float):
+        if validation_loss is None or self.out_file is None:
+            return
+
+        with open(self.out_file, 'a') as f:
+            f.write(f'{epoch}, {train_loss}, {validation_loss}\n')
+
+    def validate(self, checkpoint_filename: str, mode: str = "loss") -> float | None:
+        loss: float | None = self._runner.val_loop.run(mode=mode)
+        self._runner.save_checkpoint(checkpoint_filename)
+        return loss
+
+@LOOPS.register_module()
+class EpochBasedTrainLoopWithValidationOutput(EpochBasedTrainLoop, ValidationOutput):
+    def __init__(
+        self,
+        runner: 'Runner',
+        dataloader: Union[DataLoader, Dict],
+        max_epochs: int,
+        out_file: str,
+        val_begin: int = 1,
+        val_interval: int = 1,
+    ):
+        EpochBasedTrainLoop.__init__(self, runner, dataloader, max_epochs, val_begin, val_interval)
+        ValidationOutput.__init__(self, self.runner, out_file)
+
+    def run(self) -> torch.nn.Module:
+        self.runner.call_hook('before_train')
+
+        # Lots of duplicated code below, should be merged with EpochBasedTrainLoop
+        self.epoch_pbar = tqdm(
+            range(1, self._max_epochs + 1),
+            desc='Epochs',
+            leave=True,
+            total=self._max_epochs
+        )
+
+        for epoch in self.epoch_pbar:
+            if self.stop_training:
+                break
+            self._run_epoch()
+
+            if (self.runner.val_loop is not None
+                    and self._epoch >= self.val_begin
+                    and (self._epoch % self.val_interval == 0
+                         or self._epoch == self._max_epochs)):
+                loss: float | None = self.validate(f'epoch_{self._epoch}.pth')
+                self._write_training_progress_to_file(self._epoch, self._epoch_loss, loss)
+
+        self.epoch_pbar.close()
+        self.runner.call_hook('after_train')
+        return self.runner.model
+
+
         

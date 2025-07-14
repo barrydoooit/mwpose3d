@@ -8,6 +8,7 @@ from torch.utils.data import DataLoader
 from mmengine.device import get_device
 from .ema import EMAHelper
 from mwpose3d.runner.base_loop import BaseLoop
+from mwpose3d.runner.train_loop import ValidationOutput
 from mwpose3d.registry import LOOPS
 from . import utils
 
@@ -17,7 +18,7 @@ if TYPE_CHECKING:
     from mwpose3d.runner.runner import Runner
 
 @LOOPS.register_module()
-class MMDiffTwoStageEpochBasedTrainLoop(BaseLoop):
+class MMDiffTwoStageEpochBasedTrainLoop(BaseLoop, ValidationOutput):
     def __init__(
         self,
         runner: 'Runner',
@@ -32,7 +33,9 @@ class MMDiffTwoStageEpochBasedTrainLoop(BaseLoop):
     ):
         assert isinstance(dataloader, dict), f"For {self.__class__.__name__}, `dataloader` should be a dict, but got {type(dataloader)}."
         self.dataloader_cfg = deepcopy(dataloader)
-        super().__init__(runner, dataloader, out_file=out_file)
+        BaseLoop.__init__(runner, dataloader)
+        ValidationOutput.__init__(self, self.runner, out_file)
+
         self.pretrain_max_epochs = pretrain_max_epochs
         self.train_max_epochs = train_max_epochs
         self._max_epochs = int(pretrain_max_epochs + train_max_epochs)
