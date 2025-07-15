@@ -4,12 +4,19 @@ _base_ = [
 custom_imports = dict(
     imports=['mwpose3d', 'apps.impl.online_skeleton_estim'], allow_failed_imports=False)
 type = 'OnlineSkeletionEstimationApp'
-hpe_model_cfg = './projects/mmdiff/configs/ptransv1_f5p64_b16_e10_mmfi.py'
-load_from = './checkpoints/ptransv1_f5p64_b16_e10_mmfi.pth'
+hpe_model_cfg = './projects/mmdiff/configs/ptransv1_f5p64_b16_e10_custom.py'
+# load_from = './checkpoints/ptransv1_f5p64_b16_e10_mmfi.pth'
+load_from = './checkpoints/ptransv1_f5p64_b16_e10_custom2m/phase_1-epoch_10.pth'
 vis_cfg = dict(
     type='OnlineSkeletonVisualizer',
-    joint_cnxn=[[0, 1], [1, 2], [2, 3], [0, 4], [4, 5], [5, 6], 
-                [0, 7], [7, 8], [8, 9], [9, 10],
-                [8, 11], [11, 12], [12, 13], [8, 14], [14, 15], [15, 16]],
-    joint_indices=list(range(0, 17)), 
+    # joint_cnxn=[[0, 1], [1, 2], [2, 3], [0, 4], [4, 5], [5, 6], 
+    #             [0, 7], [7, 8], [8, 9], [9, 10],
+    #             [8, 11], [11, 12], [12, 13], [8, 14], [14, 15], [15, 16]], # mmfi
+    joint_cnxn=[[0, 1], [1, 2], [2, 3],
+                [2, 4], [4, 5], [5, 6], [6, 7],
+                [2, 8], [8, 9], [9, 10], [10, 11],
+                [0, 12], [12, 13], [13, 14], [14, 15],
+                [0, 16], [16, 17], [17, 18], [18, 19]], # kinect v2
+    # joint_indices=list(range(0, 17)), 
+    joint_indices=[0, 1, 2, 4, 5, 6, 7, 8, 9, 10]
 )

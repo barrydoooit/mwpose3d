@@ -1,5 +1,5 @@
 from typing import Iterable, Iterator, List, Literal, Optional, Union
-from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QHBoxLayout, QVBoxLayout, QPushButton)
+from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QHBoxLayout, QVBoxLayout, QPushButton, QLineEdit)
 from PySide6.QtCore import QTimer, Qt
 import numpy as np
 import sys
@@ -96,8 +96,20 @@ class PointCloudOfflineVisualizer(QMainWindow):
         self.play_btn = QPushButton("PLAY")
         self.prev_btn = QPushButton("PREV")
         self.next_btn = QPushButton("NEXT")
+             # --- Go-to-frame controls ---
+        self.goto_field = QLineEdit()
+        self.goto_field.setFixedWidth(60)
+        self.goto_field.setPlaceholderText("Frame #")
+        self.goto_btn = QPushButton("Go")
+    
+        # connect
+        self.goto_btn.clicked.connect(self.go_to_frame)
+        self.goto_field.returnPressed.connect(self.go_to_frame)
+    
         controls.addWidget(self.play_btn)
         controls.addWidget(self.prev_btn)
+        controls.addWidget(self.goto_field)
+        controls.addWidget(self.goto_btn)
         controls.addWidget(self.next_btn)
         
         self.play_btn.clicked.connect(self.toggle_play)
@@ -281,6 +293,28 @@ class PointCloudOfflineVisualizer(QMainWindow):
             title += f"/{self.num_frames}"
         self.setWindowTitle(title)
 
+    def go_to_frame(self):
+        """Jump directly to the frame number in the text field."""
+        text = self.goto_field.text()
+        try:
+            requested = int(text) - 1
+            if requested < 0:
+                raise ValueError
+        except ValueError:
+            return  # bad input; ignore
+
+        # wrap if we know total_frames
+        if self.num_frames:
+            requested = requested % self.num_frames
+
+        # force‐load up through requested index
+        self._load_frame(requested)
+
+        # now clamp to however many actually exist in cache
+        max_idx = len(self._pc_cache) - 1
+        self.current_frame = max(0, min(requested, max_idx))
+
+        self.update_display()
 
 class PointCloudOfflineVisualizerSK(PointCloudOfflineVisualizer):
     def __init__(
