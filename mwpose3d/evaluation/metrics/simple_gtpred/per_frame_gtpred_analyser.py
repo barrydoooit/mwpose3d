@@ -22,20 +22,29 @@ class PerFrameGTPredAnalyzer(SimpleGTPredAnalyzer):
         self.fast_out_file = self.out_file.replace(".json", ".parquet")
         self.make_out_file(self.fast_out_file)
 
-    def _load_json(self) -> pd.DataFrame:
+    def _load_report(self, load_json: bool = False):
+        """
+        Normally, we would load the json, parse it and write back the parquet file. However,
+        we now have access to the original data, so we should prefer using that. Loading the json
+        should not be done.
+        """
+        if not load_json:
+            return self.report
+
+        with open(self.out_file, "r", encoding="UTF-8") as f:
+            json_data: list[dict] = json.loads(f.read())
+        return json_data
+
+    def _load_data(self, load_json: bool) -> pd.DataFrame:
         """
         Load the generated report and transform it into a faster and more usable format.
         Currently, we drop the per-joint errors and agr
 
         This code is copied from mmwave-generalization.
         """
-        if self.out_file is None:
-            return pd.DataFrame()
 
-        with open(self.out_file, "r", encoding="UTF-8") as f:
-            json_data: list[dict] = json.loads(f.read())
-
-        df_temp = pd.json_normalize(json_data)
+        report_data = self._load_report(load_json)
+        df_temp = pd.json_normalize(report_data)
 
         # Ensure correct column naming
         df_temp.index.name = "frame_nr"
@@ -47,7 +56,8 @@ class PerFrameGTPredAnalyzer(SimpleGTPredAnalyzer):
             id_vars="frame_nr", var_name="column_names", value_name="value"
         )
 
-        # Split 'column_names' into joint number and value name (e.g., '0.gt_joint' → '0', 'gt_joint')
+        # Split 'column_names' into joint number and value name
+        # (e.g., '0.gt_joint' → '0', 'gt_joint')
         df_temp[["joint", "value_name"]] = df_temp["column_names"].str.split(
             ".", expand=True
         )
@@ -102,5 +112,6 @@ class PerFrameGTPredAnalyzer(SimpleGTPredAnalyzer):
 
         # Instead of loading the dumped json, we could also directly read `self.report`, however,
         # does this produce the same result?
-        dataframe = self._load_json()
+        print(f"Finished evaluation, loading data and writing to {self.fast_out_file}")
+        dataframe = self._load_data(load_json=False)
         dataframe.to_parquet(self.fast_out_file)
