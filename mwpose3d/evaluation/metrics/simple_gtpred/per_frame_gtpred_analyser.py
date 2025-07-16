@@ -1,5 +1,6 @@
 import pandas as pd
 import orjson as json
+import numpy as np
 
 from mwpose3d.registry import METRICS
 from .simple_gtpred_analyzer import SimpleGTPredAnalyzer
@@ -25,30 +26,32 @@ class PerFrameGTPredAnalyzer(SimpleGTPredAnalyzer):
         """
         Load the generated report and transform it into a faster and more usable format.
         Currently, we drop the per-joint errors and agr
+
+        This code is copied from mmwave-generalization.
         """
         if self.out_file is None:
             return pd.DataFrame()
 
-        with open(self.out_file, "rb") as f:
-            json_data: bytes = json.loads(f.read())
+        with open(self.out_file, "r", encoding="UTF-8") as f:
+            json_data: list[dict] = json.loads(f.read())
 
         df_temp = pd.json_normalize(json_data)
 
         # Ensure correct column naming
         df_temp.index.name = "frame_nr"
-        df_temp.reset_index(inplace=True)
+        df_temp.index = df_temp.index.astype(np.int32)
+        df_temp = df_temp.reset_index()
 
         # Create a column of the columns names, such that we can split these later
         df_temp = df_temp.melt(
             id_vars="frame_nr", var_name="column_names", value_name="value"
         )
 
-        # Split 'column_names' into joint number and value name
-        # (e.g., '0.gt_joint' → '0', 'gt_joint')
+        # Split 'column_names' into joint number and value name (e.g., '0.gt_joint' → '0', 'gt_joint')
         df_temp[["joint", "value_name"]] = df_temp["column_names"].str.split(
             ".", expand=True
         )
-        df_temp["joint"] = df_temp["joint"].astype(int)
+        df_temp["joint"] = df_temp["joint"].astype(np.int8)
 
         # Pivot so that each value_name becomes a column again
         df_temp = df_temp.pivot_table(
@@ -58,8 +61,14 @@ class PerFrameGTPredAnalyzer(SimpleGTPredAnalyzer):
             aggfunc="first",
             sort=False,
         ).reset_index()
+
         # Remove index name 'value_name'
-        df_temp = df_temp.rename_axis(None, axis=1)
+        df_temp.columns.names = [None]
+
+        # We need to re-do this because the values where in the same column as the gt_joint values,
+        # which are _object_ (list)
+        df_temp.abs_error = df_temp.abs_error.astype(np.float32)
+        df_temp.square_error = df_temp.square_error.astype(np.float32)
 
         # Calculate the Mean Average Error
         df_temp["MAE"] = df_temp.groupby("frame_nr", sort=False)["abs_error"].transform(
@@ -94,14 +103,4 @@ class PerFrameGTPredAnalyzer(SimpleGTPredAnalyzer):
         # Instead of loading the dumped json, we could also directly read `self.report`, however,
         # does this produce the same result?
         dataframe = self._load_json()
-
-        import time
-
-        times = [time.perf_counter()]
         dataframe.to_parquet(self.fast_out_file)
-        times.append(time.perf_counter())
-
-        ## Test if h5 is faster
-        dataframe.to_hdf(self.fast_out_file.replace(".parquet", ".h5"), key="df")
-        times.append(time.perf_counter())
-        print(times)
