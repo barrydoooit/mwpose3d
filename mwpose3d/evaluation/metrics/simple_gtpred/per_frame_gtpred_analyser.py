@@ -1,0 +1,107 @@
+import pandas as pd
+import orjson as json
+
+from mwpose3d.registry import METRICS
+from .simple_gtpred_analyzer import SimpleGTPredAnalyzer
+
+
+@METRICS.register_module()
+class PerFrameGTPredAnalyzer(SimpleGTPredAnalyzer):
+    """
+    Implement the behaviour of the SimpleGTPredAnalyzer, but transfrom the data to be workable
+    er-frame. Moreover, we store the data in a faster file format than json.
+
+    Right now we process the json after it's been created, however, it would be faster to create
+    the dataframe as `process_sample` is being called.
+    """
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+
+        self.fast_out_file = self.out_file.replace(".json", ".parquet")
+        self.make_out_file(self.fast_out_file)
+
+    def _load_json(self) -> pd.DataFrame:
+        """
+        Load the generated report and transform it into a faster and more usable format.
+        Currently, we drop the per-joint errors and agr
+        """
+        if self.out_file is None:
+            return pd.DataFrame()
+
+        with open(self.out_file, "rb") as f:
+            json_data: bytes = json.loads(f.read())
+
+        df_temp = pd.json_normalize(json_data)
+
+        # Ensure correct column naming
+        df_temp.index.name = "frame_nr"
+        df_temp.reset_index(inplace=True)
+
+        # Create a column of the columns names, such that we can split these later
+        df_temp = df_temp.melt(
+            id_vars="frame_nr", var_name="column_names", value_name="value"
+        )
+
+        # Split 'column_names' into joint number and value name
+        # (e.g., '0.gt_joint' → '0', 'gt_joint')
+        df_temp[["joint", "value_name"]] = df_temp["column_names"].str.split(
+            ".", expand=True
+        )
+        df_temp["joint"] = df_temp["joint"].astype(int)
+
+        # Pivot so that each value_name becomes a column again
+        df_temp = df_temp.pivot_table(
+            index=["frame_nr", "joint"],
+            columns="value_name",
+            values="value",
+            aggfunc="first",
+            sort=False,
+        ).reset_index()
+        # Remove index name 'value_name'
+        df_temp = df_temp.rename_axis(None, axis=1)
+
+        # Calculate the Mean Average Error
+        df_temp["MAE"] = df_temp.groupby("frame_nr", sort=False)["abs_error"].transform(
+            "mean"
+        )
+
+        # Re-order columns, set the index
+        df_temp = df_temp[
+            [
+                "frame_nr",
+                "MAE",
+                "joint",
+                "gt_joint",
+                "pred_joint",
+                "abs_error",
+                "square_error",
+            ]
+        ]
+        df_temp = df_temp.set_index(["frame_nr", "MAE", "joint"])
+        return df_temp
+
+    def evaluate(self, **kwargs):
+        """
+        The process_sample function takes the processed data and ground truth and stores it as a
+        report in `self.report`, together with the ground truth in `self.gt` and prediction in
+        `self.pred_data`.
+
+        We take these results, transform them and save them as a parquet file.
+        """
+        super().evaluate(**kwargs)
+
+        # Instead of loading the dumped json, we could also directly read `self.report`, however,
+        # does this produce the same result?
+        dataframe = self._load_json()
+
+        import time
+
+        times = [time.perf_counter()]
+        dataframe.to_parquet(self.fast_out_file)
+        times.append(time.perf_counter())
+
+        ## Test if h5 is faster
+        dataframe.to_hdf(self.fast_out_file.replace(".parquet", ".h5"), key="df")
+        times.append(time.perf_counter())
+        print(times)
