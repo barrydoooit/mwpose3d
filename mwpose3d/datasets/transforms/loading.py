@@ -108,7 +108,7 @@ class LoadMultiFrameFromH5(BaseTransform):
                     else:
                         pcd_frame = pcd_data
                         last_valid = pcd_frame
-                pcd_frames.insert(0, pcd_frame)
+                pcd_frames.append(pcd_frame)
             input[self.PCD_FRAMES] = tuple(pcd_frames)
         
 
