@@ -13,11 +13,13 @@ class PointDuplicator(BaseTransform):
     def __init__(self,
                  target_num_points: int,
                  noise_std: float = 0.005,
+                 deterministic: bool = False,
                  online_mode: bool = False
                  ):
         super().__init__(online_mode)
         self.noise_std = noise_std
         self.target_num_points = target_num_points
+        self.deterministic = deterministic
     
     def transform(self, input: dict):
         pcd_frames: Tuple[np.ndarray] = input['pcd_frames']
@@ -29,14 +31,20 @@ class PointDuplicator(BaseTransform):
                 continue
             if num_points == 0:
                 raise ValueError("The point cloud frame is empty.")
-            duplicate_idx = np.random.choice(num_points, self.target_num_points - num_points, replace=True)
+            
+            if self.deterministic:
+                rng = np.random.default_rng(42)  # Fixed seed for reproducibility
+            else:
+                rng = np.random
+            duplicate_idx = rng.choice(num_points, self.target_num_points - num_points, replace=True)
             duplicate_points = pcd_frame[duplicate_idx]
             
             duplicate_points = duplicate_points.copy()
-            rand_shift = np.random.normal(0, self.noise_std, size=(duplicate_points.shape[0], 3))
-            rand_shift = np.clip(rand_shift, -0.01, 0.01)
-            duplicate_points[:, :3] += rand_shift.astype(duplicate_points.dtype)
-            
+            if self.noise_std > 0:
+                rand_shift = rng.normal(0, self.noise_std, size=(duplicate_points.shape[0], 3))
+                rand_shift = np.clip(rand_shift, -0.01, 0.01)
+                duplicate_points[:, :3] += rand_shift.astype(duplicate_points.dtype)
+                
             # rand_noise = np.random.normal(0, 2, size=duplicate_points.shape[0])
             # duplicate_points[:, -1] += rand_noise.astype(duplicate_points.dtype)
             
