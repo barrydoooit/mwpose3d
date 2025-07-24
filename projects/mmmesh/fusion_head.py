@@ -20,7 +20,7 @@ class SimpleKpFusionHead(nn.Module):
                 fusion_layers.append(nn.ReLU())
         self.fusion_layers = nn.Sequential(*fusion_layers)
     
-    def forward(self, g_vec, a_vec, batch_size, length_size):
+    def forward(self, g_vec, a_vec):
         x = torch.cat((g_vec, a_vec), dim=-1)
         x = self.fusion_layers(x)
         return x

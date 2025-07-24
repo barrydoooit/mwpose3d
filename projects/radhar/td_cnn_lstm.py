@@ -37,8 +37,8 @@ class RadHARCNNBiLSTM(BaseSkeletonEstimModel):
                  voxelize_reduce: bool = True,
                  keypoints_involved: List[int] = list(range(0, 21)),
                  criterion: Literal['MSELoss', 'CrossEntropyLoss', 'sdtw'] = 'sdtw',
-                 train_cfg: dict = dict(warmup_frames=0, splits=1),
-                 test_cfg: dict = dict(serial=False, splits=1),
+                 train_cfg: dict = dict(splits=1),
+                 test_cfg: dict = dict(cache_feats=True, splits=1),
                  ):
         super().__init__()
         self.middle_encoder: 'SparseEncoder' = MODELS.build(moddle_encoder)
