@@ -1,16 +1,12 @@
 from pathlib import Path
-from typing import TYPE_CHECKING, Dict, List, Sequence, Union
+from typing import TYPE_CHECKING, Dict, Sequence, Union
 import torch
 from torch.utils.data import DataLoader
 
-from mwpose3d.datasets.skel_data_sample import SkeletonDataSample
+from mmengine.runner.amp import autocast
 from mwpose3d.evaluation.metrics.base import BaseMetric
 from mwpose3d.registry import METRICS, LOOPS
 from .base_loop import BaseLoop
-
-import tkinter as tk
-from matplotlib.figure import Figure
-from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 
 if TYPE_CHECKING:
     from mwpose3d.runner.runner import Runner
@@ -24,6 +20,7 @@ class TestLoop(BaseLoop):
         dataloader: Union[DataLoader, Dict],
         metric_cfg: dict,
         checkpoints: Sequence[str] = None,
+        fp16: bool = False,
     ):
         super().__init__(runner, dataloader)
         self._iter = 0
@@ -35,6 +32,8 @@ class TestLoop(BaseLoop):
         
         self.evaluator: BaseMetric = METRICS.build(metric_cfg)
         self.checkpoints = None #checkpoints
+        self.stop_testing = False
+        self.fp16 = fp16
         
     @property
     def iter(self):
@@ -69,14 +68,18 @@ class TestLoop(BaseLoop):
                           total=len(self.dataloader),
                           desc='Testing'):
                 self._run_iter(idx, data_batch)
+                if self.stop_testing:
+                    break
 
+    @torch.no_grad()
     def _run_iter(self, idx: int, data_batch: dict) -> None:
         self.runner.call_hook(
             'before_test_iter', batch_idx=idx, data_batch=data_batch)
         assert hasattr(self.runner.model, 'pack_input')
         batch_inputs, data_samples = self.runner.model.pack_input(dict(data_batch, previous_output=self.last_output))
         assert len(data_samples) == 1, 'TestLoop only supports batch_size=1'
-        outputs = self.runner.model(batch_inputs, data_samples, mode='predict')
+        with autocast(enabled=self.fp16):
+            outputs = self.runner.model(batch_inputs, data_samples, mode='predict')
         self.last_output = outputs
         self.evaluator.process_sample(data_samples[0], data_batch=data_batch)
         

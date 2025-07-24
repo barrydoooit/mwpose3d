@@ -80,6 +80,11 @@ class Runner:
         print(f"Default scope: {self.default_scope.scope_name}")
         self.model: torch.nn.Module = MODELS.build(model)
         self.model.to(get_device())
+        params = sum(p.numel() for p in self.model.parameters())
+        trainable_params = sum(p.numel() for p in self.model.parameters()
+                       if p.requires_grad)
+        print(f'Number of parameters: {params / 1e6:.2f} M')
+        print(f'Number of trainable parameters: {trainable_params / 1e6:.2f} M')
         
         self._hooks: List[Hook] = []
         self.register_hooks(default_hooks, custom_hooks)
