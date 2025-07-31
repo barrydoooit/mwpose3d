@@ -8,9 +8,7 @@ from mwpose3d.evaluation.metrics.base import BaseMetric
 from mwpose3d.registry import METRICS, LOOPS
 from .base_loop import BaseLoop
 
-import tkinter as tk
-from matplotlib.figure import Figure
-from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+
 
 if TYPE_CHECKING:
     from mwpose3d.runner.runner import Runner
