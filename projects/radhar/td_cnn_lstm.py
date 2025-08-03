@@ -127,7 +127,7 @@ class RadHARCNNBiLSTM(BaseSkeletonEstimModel):
         return feats, coords, sizes
         
     def loss(self, batch_inputs, data_samples):
-        tensor, _, _ = tuple(self._forward(batch_inputs, data_samples).values())
+        tensor = tuple(self._forward(batch_inputs, data_samples).values())[0]
         gt = torch.stack([data_sample.gt for data_sample in data_samples], dim=0)
         if not isinstance(self.criterion, list):
             criterion = self.criterion
@@ -185,8 +185,8 @@ class RadHARCNNBiLSTM(BaseSkeletonEstimModel):
                 idx += sz
             seq_feats = torch.cat(seq_feats_list, dim=1)
         # print(seq_feats[:, :, 0].flatten())
-        h0 = batch_inputs.get('h0', self.h0)
-        c0 = batch_inputs.get('c0', self.c0)
+        h0 = batch_inputs.get('h0', self.h0.expand(-1, B, -1).contiguous())
+        c0 = batch_inputs.get('c0', self.c0.expand(-1, B, -1).contiguous())
         lstm_out, (hn, cn) = self.lstm(seq_feats, (h0, c0))
         flat = lstm_out.reshape(B * T, -1)
         logits = self.joints_head(flat)

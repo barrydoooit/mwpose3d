@@ -57,6 +57,8 @@ class StackPointCloudFrames(BaseTransform):
         self.keep_structure = keep_structure
     
     def transform(self, input: dict):
+        if self.stack_size <= 1:
+            return input
         pcd_frames: List[np.ndarray] = input['pcd_frames']
         original_length = len(pcd_frames)
         stacked_pcd_frames: List[np.ndarray] = []

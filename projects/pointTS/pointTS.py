@@ -30,6 +30,7 @@ class PointTSPredictor(BaseSkeletonEstimModel):
         self.backbone = MODELS.build(backbone_cfg)
         d_model = global_feat_dim
         encoder_layer = nn.TransformerEncoderLayer(
+            batch_first=True,
             d_model=d_model,
             nhead=transformer_cfg['nhead'],
             dim_feedforward=transformer_cfg['dim_feedforward'],

@@ -5,23 +5,23 @@ custom_imports = dict(
     imports=['mwpose3d', 'projects.pointTS'], allow_failed_imports=False)
 
 data_prefix = dict(
-    pcd='mmwave',
-    skel='skeleton'
+    pcd='mmwave_filtered',
+    skel='skeleton_filtered'
 )
 data_root = './data/mri'
-train_info = 'info_train.pkl'
-val_info = 'info_val.pkl'
-test_info = 'info_train.pkl'
+train_info = 'info_train_filtered.pkl'
+val_info = 'info_val_filtered.pkl'
+test_info = 'info_train_filtered.pkl'
 
 keypoints_involved=[i for i in range(0, 17) if i not in [1,2,3,4]]
-
-W=0
+pointcloud_range = [-10, -5, -2, 10, 5, 2]
+W=3
 K=3
 num_frames = K + W + 1
-backup_frames = 5
+backup_frames = 10
 total_frames = num_frames + backup_frames
 point_cloud_size = 64
-input_channels = 5
+input_channels = 3
 model = dict(
     type='PointTSPredictor',
     # Backbone builds a PointNet to extract per-window spatial features
@@ -39,8 +39,7 @@ model = dict(
         dim_feedforward=512,
         dropout=0.1,
         activation='relu',
-        agg='mean',
-        batch_first=True
+        agg='last',
     ),
     keypoints_involved=keypoints_involved,
     point_cloud_size_per_frame=point_cloud_size,
@@ -53,7 +52,7 @@ model = dict(
 train_pipeline = [
     dict(
         type='LoadMultiFrameFromH5',
-        load_pcd_dim=5,
+        load_pcd_dim=input_channels,
         num_frames=num_frames,
         backup_frames=backup_frames,
     ),
@@ -75,6 +74,13 @@ train_pipeline = [
         tran_xyz=(0, -2.38, 0),
     ),
     dict(
+        type='PointCloudRangeFilter',
+        point_cloud_range=pointcloud_range,
+        empty_frame_op='shift',
+        backup_frames=backup_frames,
+        min_num_frames=num_frames
+    ),
+    dict(
         type='RandomTransform',
         transform_prob=0.8,
         sigma_xyz=(0.02, 0.02, 0.02),
@@ -87,15 +93,16 @@ train_pipeline = [
     dict(
         type='PointSortAndClip',
         target_num_points=point_cloud_size,
-        sort_dim=4,
+        sort_dim=2,
         sort_order='desc'
     ),
-    dict(
-        type='NormalizePointAttr',
-        attr_indices=(3, 4,),
-        means=(0.0, 28.98583),
-        stds=(0.45029, 35.79703)
-    ),
+
+    # dict(
+    #     type='NormalizePointAttr',
+    #     attr_indices=(3, 4,),
+    #     means=(0.0, 28.98583),
+    #     stds=(0.45029, 35.79703)
+    # ),
     dict(
         type='StackPointCloudFrames',
         stack_size=W+1,
@@ -139,14 +146,9 @@ train_cfg = dict(
 val_pipeline = [
     dict(
         type='LoadMultiFrameFromH5',
-        load_pcd_dim=5,
+        load_pcd_dim=input_channels,
         num_frames=num_frames,
         backup_frames=backup_frames,
-    ),
-    dict(
-        type='SequenceClip',
-        mode='last',
-        sequence_length=num_frames
     ),
     dict(
         type='SkeletonKeypointFilter',
@@ -161,21 +163,28 @@ val_pipeline = [
         tran_xyz=(0, -2.38, 0),
     ),
     dict(
+        type='PointCloudRangeFilter',
+        point_cloud_range=pointcloud_range,
+        empty_frame_op='shift',
+        backup_frames=backup_frames,
+        min_num_frames=num_frames
+    ),
+    dict(
         type='PointDuplicator',
         target_num_points=point_cloud_size,
     ),
     dict(
         type='PointSortAndClip',
         target_num_points=point_cloud_size,
-        sort_dim=4,
+        sort_dim=2,
         sort_order='desc'
     ),
-    dict(
-        type='NormalizePointAttr',
-        attr_indices=(3, 4,),
-        means=(0.0, 28.98583),
-        stds=(0.45029, 35.79703)
-    ),
+    # dict(
+    #     type='NormalizePointAttr',
+    #     attr_indices=(3, 4,),
+    #     means=(0.0, 28.98583),
+    #     stds=(0.45029, 35.79703)
+    # ),
     dict(
         type='StackPointCloudFrames',
         stack_size=W+1,
