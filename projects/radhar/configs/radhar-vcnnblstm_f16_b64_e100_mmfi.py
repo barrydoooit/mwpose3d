@@ -204,3 +204,11 @@ test_cfg = dict(
     type='TestLoop',
     metric_cfg=metric
 )
+
+custom_hooks = [
+    dict(
+        type='LatencyProfilingHook',
+        subject_modules=[],
+        include_full_forward=True,
+    )
+]

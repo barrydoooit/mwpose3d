@@ -75,12 +75,6 @@ model = dict(
         type="SimpleKpFusionHead",
         channels=[128, 128, len(keypoints_involved)*3],
     ),
-    train_cfg=dict(
-        warmup_frames=0,
-    ),
-    test_cfg=dict(
-        serial=False,
-    )
 )
 
 train_pipeline = [
@@ -260,3 +254,11 @@ test_cfg = dict(
     metric_cfg=metric,
     checkpoints=list(range(10, 101, 10)),
 )
+
+custom_hooks = [
+    dict(
+        type='LatencyProfilingHook',
+        subject_modules=[],
+        include_full_forward=True,
+    )
+]

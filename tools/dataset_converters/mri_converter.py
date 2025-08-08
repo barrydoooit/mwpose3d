@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 import pickle
 from pathlib import Path
-from typing import Literal
+from typing import Literal, Optional
 
 import numpy as np
 import pandas as pd
@@ -15,7 +15,8 @@ class MRIDatasetConverter:
                  split: Literal[1, 2] = 2,
                  protocol: Literal[1, 2] = 2,
                  ratio: float = 0.8,
-                 seed: int = 42):
+                 seed: int = 42,
+                 point_cloud_range: Optional[tuple] = None): #[-10, 0, -2, 10, 10, 2]):
         self.input_root = input_root
         self.output_root = output_root
 
@@ -24,21 +25,31 @@ class MRIDatasetConverter:
         self.radar_dir = self.input_root / 'radar' / 'singleframe'
 
         # Output subfolders
-        self.out_skeleton = self.output_root / 'skeleton'
-        self.out_mmwave = self.output_root / 'mmwave'
+        if point_cloud_range is not None:
+            self.out_mmwave = self.output_root / 'mmwave_filtered'
+            self.out_skeleton = self.output_root / 'skeleton_filtered'
+            self.info_suffix = '_filtered'
+        else:
+            self.out_mmwave = self.output_root / 'mmwave'
+            self.out_skeleton = self.output_root / 'skeleton'
+            self.info_suffix = ''
+
+        self.point_cloud_range = point_cloud_range
         self.out_skeleton.mkdir(parents=True, exist_ok=True)
         self.out_mmwave.mkdir(parents=True, exist_ok=True)
 
         assert split in [1, 2], "Split must be 1 or 2"
-        assert protocol in [1, 2], "Protocol must be 1 or 2"
+        assert protocol in [1, 2, 3], "Protocol must be 1, 2, or 3"
         self.split = split
         self.protocol = protocol
         self.ratio = ratio
         # List to accumulate metadata records
         if self.protocol == 1:
             self.selected_labels = [f'pose_{i}' for i in range(1, 11)] + ['free_form', 'walk']
-        else:
+        elif self.protocol == 2:
             self.selected_labels = [f'pose_{i}' for i in range(1, 11)]
+        elif self.protocol == 3:
+            self.selected_labels = ['walk']
         
         self.records = dict(
             train=[],
@@ -68,8 +79,7 @@ class MRIDatasetConverter:
         video_label = data['video_label']
         return refined_gt_kps, gt_avail, radar_avail, video_label
 
-    @staticmethod
-    def load_radar(csv_path: Path, start: int, end: int):
+    def load_radar(self, csv_path: Path, start: int, end: int):
         """
         Read the single-frame radar CSV, group points by 'Camera Frame' between start and end (inclusive),
         and return:
@@ -86,17 +96,39 @@ class MRIDatasetConverter:
         grouped = df.groupby('seq', sort=True)
         pts_list = []
         idx = [0]
-        for fid in range(start, end + 1):
-            if fid in grouped.groups:
-                arr = grouped.get_group(fid)[['x','y','z','vel','snr']].to_numpy(np.float32)
-            else:
+        removed_frames = []
+
+        for i, fid in enumerate(range(start, end + 1)):
+            if fid not in grouped.groups:
                 raise ValueError(f"Frame {fid} not found in radar data")
-            pts_list.append(arr)
-            idx.append(idx[-1] + arr.shape[0])
-        pcd_data = np.concatenate(pts_list, axis=0) if pts_list else np.empty((0,5), dtype=np.float32)
+            pts = grouped.get_group(fid)[['x', 'y', 'z', 'vel', 'snr']].to_numpy(np.float32)
+
+            # apply filtering
+            if self.point_cloud_range is not None:
+                xmin, ymin, zmin, xmax, ymax, zmax = self.point_cloud_range
+                mask = np.ones(len(pts), dtype=bool)
+                for dim, mn, mx in zip(range(3), (xmin, ymin, zmin), (xmax, ymax, zmax)):
+                    if mn is not None:
+                        mask &= (pts[:, dim] >= mn)
+                    if mx is not None:
+                        mask &= (pts[:, dim] <= mx)
+                pts = pts[mask]
+
+            if pts.shape[0] == 0:
+                removed_frames.append(i)
+            else:
+                pts_list.append(pts)
+                idx.append(idx[-1] + pts.shape[0])
+
+        if not pts_list:
+            # All frames removed
+            total = end - start + 1
+            return None, None, None, list(range(total))
+
+        pcd_data = np.concatenate(pts_list, axis=0)
         pcd_idx = np.array(idx, dtype=np.int64)
-        pcd_cols = ['x','y','z','vel','snr']
-        return pcd_data, pcd_idx, pcd_cols
+        pcd_cols = ['x', 'y', 'z', 'vel', 'snr']
+        return pcd_data, pcd_idx, pcd_cols, removed_frames
 
     def write_clip(
         self,
@@ -146,11 +178,19 @@ class MRIDatasetConverter:
             J = sk.shape[2]
             sk = sk.transpose(0,2,1)
             sk[:, :, [1, 2]] = sk[:, :, [2, 1]]  # swap y and z so as to TI coordinate
+            sk[:, :, 0] = -sk[:, :, 0]  # flip x to TI coordinate
             sk = sk.reshape(n_frames, -1)  # (n,3*J)
             skel_cols = [f'joint{j}_{ax}' for j in range(J) for ax in ('x','y','z')]
             # radar
             csv_file = self.radar_dir / f'{subject}.csv'
-            pcd, idx, pcd_cols = self.load_radar(csv_file, start, end)
+            pcd, idx, pcd_cols, removed = self.load_radar(csv_file, start, end)
+            if pcd is None:
+                print("Empty data file for subject:", subject, "label:", lbl_key)
+                continue
+            if removed:
+                keep = [i for i in range(n_frames) if i not in set(removed)]
+                sk = sk[keep]
+                n_frames = len(keep)
             # write files
             fname = self.write_clip(subject, lbl_key, sk, pcd, idx, skel_cols, pcd_cols)
             # record entry
@@ -158,8 +198,8 @@ class MRIDatasetConverter:
                 'subject': subject,
                 'label': lbl_key,
                 'frame_count': n_frames,
-                'skeleton_path': fname,
-                'mmwave_path': fname,
+                f'{self.out_skeleton.stem}_path': fname,
+                f'{self.out_mmwave.stem}_path': fname,
             }
             all_entries.append(entry)
 
@@ -199,9 +239,11 @@ class MRIDatasetConverter:
 
         # write info files
         for sp in ['train','test','val']:
-            with open(self.output_root / f'info_{sp}.pkl', 'wb') as f:
+            with open(self.output_root / f'info_{sp}{self.info_suffix}.pkl', 'wb') as f:
                 pickle.dump(self.records[sp], f)
-    
+        with open(self.output_root / f'info_all{self.info_suffix}.pkl', 'wb') as f:
+            pickle.dump(all_entries, f)
+        
     MRI_KEYPOINT_TYPE = dict(
         NOSE=0,
         EYE_LEFT=1,

@@ -59,7 +59,7 @@ def attention(Q, K, V, mask=None, dropout=None):
 
     # padding mask
     if mask is not None:
-        scores = scores.masked_fill(mask == 0, -1e9)
+        scores = scores.masked_fill(mask == 0, -1e4)
 
     p_attn = F.softmax(scores, dim=-1)
     if dropout is not None:

@@ -11,7 +11,7 @@ data_prefix = dict(
 data_root = './data/mri'
 train_info = 'info_train_filtered.pkl'
 val_info = 'info_val_filtered.pkl'
-test_info = 'info_train_filtered.pkl'
+test_info = 'info_test_filtered.pkl'
 
 keypoints_involved=[i for i in range(0, 17) if i not in [1,2,3,4]]
 pointcloud_range = [-10, -5, -2, 10, 5, 2]

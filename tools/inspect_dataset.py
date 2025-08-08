@@ -78,7 +78,7 @@ def inspect(runner, dataloader: Config, vis: bool = False):
         indice_to_check = (3, 4)
         names = ('VOL', 'SNR')
         pcd_values = [[], []]
-
+        pcd_count = []
         # --- NEW: XYZ setup ---
         coord_indices = (0, 1, 2)
         coord_names = ('x', 'y', 'z')
@@ -95,6 +95,7 @@ def inspect(runner, dataloader: Config, vis: bool = False):
                 # accumulate VOL & SNR
                 for i, ind in enumerate(indice_to_check):
                     pcd_values[i].append(pcd_frame[:, ind])
+                pcd_count.append(pcd_frame.shape[0])
             except IndexError as e:
                 pass
 
@@ -113,6 +114,7 @@ def inspect(runner, dataloader: Config, vis: bool = False):
                 print(f'{name} shape: {arr.shape}')
                 print(f'{name} mean : {arr.mean():.4f}')
                 print(f'{name} std  : {arr.std():.4f}')
+            print(f'Average number of points per frame: {np.mean(pcd_count):.2f}')
             print('─' * 50)
         except Exception as e:
             logging.warning(f"VOL/SNR not available")
