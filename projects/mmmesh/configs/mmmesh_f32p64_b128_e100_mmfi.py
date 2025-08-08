@@ -225,6 +225,19 @@ val_dataloader = dict(
         allow_pad_sequence=False
     )
 )
+
+postprocess = [
+    dict(
+        type='SavGolayFilter',
+        window_length=7,
+        polyorder=2,
+        deriv=0,
+        delta=0.05,      # 1 / 20 Hz
+        mode='reflect',
+        time_axis=0
+    )
+]
+
 metric=dict(
     type='SimpleGTPredAnalyzer',
     keypoints_involved=keypoints_involved,
@@ -252,7 +265,7 @@ test_dataloader = dict(
 test_cfg = dict(
     type='TestLoop',
     metric_cfg=metric,
-    checkpoints=list(range(10, 101, 10)),
+    postprocess=postprocess,
 )
 
 custom_hooks = [

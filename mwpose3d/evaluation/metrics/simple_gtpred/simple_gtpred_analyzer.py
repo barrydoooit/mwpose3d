@@ -61,6 +61,7 @@ class SimpleGTPredAnalyzer(BaseMetric):
         pred = data_sample.pred
         assert isinstance(gt, torch.Tensor) and isinstance(pred, torch.Tensor), "Currently only support torch.Tensor as gt type, make conversion in the data_sample first"
         assert gt.shape == pred.shape, "gt and pred should have the same shape"
+        assert pred.dim() == 1, "Currently only support single frame/batch prediction, make conversion in the data_sample first"
         frame_report = {}
         for idx, joint in enumerate(self.keypoints_involved):
             gt_joint = gt[idx * 3: (idx + 1) * 3]

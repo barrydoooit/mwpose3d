@@ -5,6 +5,7 @@ from torch.utils.data import DataLoader
 
 from mmengine.runner.amp import autocast
 from mwpose3d.evaluation.metrics.base import BaseMetric
+from mwpose3d.evaluation.postprocessing.base import ComposePostProcess
 from mwpose3d.registry import METRICS, LOOPS
 from .base_loop import BaseLoop
 
@@ -19,7 +20,7 @@ class TestLoop(BaseLoop):
         runner: 'Runner',
         dataloader: Union[DataLoader, Dict],
         metric_cfg: dict,
-        checkpoints: Sequence[str] = None,
+        postprocess: list = None,
         fp16: bool = False,
     ):
         super().__init__(runner, dataloader)
@@ -30,6 +31,9 @@ class TestLoop(BaseLoop):
         
         self.last_output = dict()
         
+        self.postprocess = ComposePostProcess(postprocess) if postprocess is not None else None
+        if self.postprocess is not None:
+            print("Postprocessing is enabled.")
         self.evaluator: BaseMetric = METRICS.build(metric_cfg)
         self.checkpoints = None #checkpoints
         self.stop_testing = False
@@ -81,7 +85,10 @@ class TestLoop(BaseLoop):
         with autocast(enabled=self.fp16):
             outputs = self.runner.model(batch_inputs, data_samples, mode='predict')
         self.last_output = outputs
-        self.evaluator.process_sample(data_samples[0], data_batch=data_batch)
+        data_samples_0 = data_samples[0]
+        if self.postprocess is not None:
+            data_samples_0 = self.postprocess(data_samples_0)
+        self.evaluator.process_sample(data_samples_0, data_batch=data_batch)
         
         self.runner.call_hook(
             'after_test_iter',
