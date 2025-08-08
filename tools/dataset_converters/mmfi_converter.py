@@ -191,11 +191,11 @@ class MMFiDatasetConverter:
         for bf in bin_files:
             num = int(bf.stem.replace('frame',''))
             raw = bf.read_bytes()
-            pts = np.frombuffer(raw, dtype=np.float32).copy().reshape(-1,5)
+            pts = np.frombuffer(raw, dtype=np.float64).copy().reshape(-1,5)
             pts_list.append(pts)
             idx.append(idx[-1] + pts.shape[0])
             frame_idx.append(num)
-        pcd_data = np.concatenate(pts_list,axis=0) if pts_list else np.zeros((0,5),dtype=np.float32)
+        pcd_data = np.concatenate(pts_list,axis=0) if pts_list else np.zeros((0,5),dtype=np.float64)
         pcd_idx  = np.array(idx,dtype=np.int64)
         # Swap snr and vel columns. NOTE: MMFi stated that the order is x, y, z, vel, snr, but the data seems to be reversed in vel and snr.
         if pcd_data.size > 0:
@@ -217,7 +217,7 @@ class MMFiDatasetConverter:
         seq_dir = self.input_root / scene / subject / action
         skel = np.load(seq_dir / 'ground_truth.npy')
         fname = f"{scene}_{subject}_{action}.h5"
-
+        print(f"Processing {fname} for {split} split...")
         record = {
                 'scene': scene,
                 'subject': subject,
@@ -289,7 +289,7 @@ class MMFiDatasetConverter:
         if not self.unify_coordinate:
             return skel_array_2d if not flatten else skel_array_2d.reshape(skel_array_2d.shape[0], -1)
         skel_array = skel_array_2d.copy()
-        skel_array[:, :, 0] = -skel_array_2d[:, :, 0].copy()
+        skel_array[:, :, 0] = skel_array_2d[:, :, 0].copy()
         skel_array[:, :, 1] = skel_array_2d[:, :, 2].copy()
         skel_array[:, :, 2] = -skel_array_2d[:, :, 1].copy()
         if flatten:
