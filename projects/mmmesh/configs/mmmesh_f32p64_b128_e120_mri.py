@@ -75,12 +75,6 @@ model = dict(
         type="SimpleKpFusionHead",
         channels=[128, 128, len(keypoints_involved)*3],
     ),
-    train_cfg=dict(
-        warmup_frames=0,
-    ),
-    test_cfg=dict(
-        serial=False,
-    )
 )
 
 train_pipeline = [
@@ -256,5 +250,4 @@ test_dataloader = dict(
 test_cfg = dict(
     type='TestLoop',
     metric_cfg=metric,
-    checkpoints=[10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 110, 120],
 )

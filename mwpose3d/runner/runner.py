@@ -212,7 +212,8 @@ class Runner:
     def load_checkpoint(self, filename: str):
         self.model.load_state_dict(torch.load(filename, 
                                               map_location=torch.device(get_device()),
-                                              weights_only=True))
+                                              weights_only=True,
+                                              ),strict=False)
     
     @property
     def hooks(self) -> List[Hook]:

@@ -37,7 +37,7 @@ class RadHARCNNBiLSTM(BaseSkeletonEstimModel):
                  voxelize_reduce: bool = True,
                  keypoints_involved: List[int] = list(range(0, 21)),
                  criterion: Literal['MSELoss', 'CrossEntropyLoss', 'sdtw'] = 'sdtw',
-                 train_cfg: dict = dict(splits=1),
+                 train_cfg: dict = dict(splits=2),
                  test_cfg: dict = dict(cache_feats=True, splits=1),
                  ):
         super().__init__()
@@ -127,7 +127,7 @@ class RadHARCNNBiLSTM(BaseSkeletonEstimModel):
         return feats, coords, sizes
         
     def loss(self, batch_inputs, data_samples):
-        tensor, _, _ = tuple(self._forward(batch_inputs, data_samples).values())
+        tensor = tuple(self._forward(batch_inputs, data_samples).values())[0]
         gt = torch.stack([data_sample.gt for data_sample in data_samples], dim=0)
         if not isinstance(self.criterion, list):
             criterion = self.criterion
@@ -142,7 +142,7 @@ class RadHARCNNBiLSTM(BaseSkeletonEstimModel):
     
     def predict(self, batch_inputs, data_samples):
         output = self._forward(batch_inputs, data_samples)
-        tensor, hn, cn = tuple(output.values())
+        tensor = tuple(output.values())[0]
         for b, data_sample in enumerate(data_samples):
             data_sample.pred = tensor[b]
             data_sample.pred = data_sample.pred[-1, :]
@@ -152,20 +152,19 @@ class RadHARCNNBiLSTM(BaseSkeletonEstimModel):
 
     def _forward(self, batch_inputs: dict, data_samples: List[SkeletonDataSample]):
         points_seq = batch_inputs['points']
-        only_recent = batch_inputs.get('only_need_recent_frame', False)
-
-        if only_recent:
-            # process only the most recent frame
+        T = len(points_seq)
+        B = len(points_seq[0])
+        if not self.training \
+            and self.test_cfg.get('cache_feats', False)\
+            and 'cached_feats' in batch_inputs:
+            cached_feats = batch_inputs.get('cached_feats')
             last_pts = points_seq[-1]
             feats, coords, _ = self.voxelize(last_pts)
-            T = 1
-            B = len(last_pts)
             spatial = self.middle_encoder(feats, coords, B)
             seq_feats = self.backbone(spatial)[-1].view(B, -1).unsqueeze(1)
+            seq_feats = torch.cat((cached_feats, seq_feats), dim=1)
             
         else:
-            T = len(points_seq)
-            B = len(points_seq[0])
             split = self.train_cfg.get('splits', 1) if self.training else self.test_cfg.get('splits', 1)
             base_size, r = divmod(T, split)
             sizes = [base_size + (1 if i < r else 0) for i in range(split)]
@@ -185,14 +184,9 @@ class RadHARCNNBiLSTM(BaseSkeletonEstimModel):
                 seq_feats_list.append(seq_feats)
                 idx += sz
             seq_feats = torch.cat(seq_feats_list, dim=1)
-
-        h0 = batch_inputs.get('h0', self.h0)
-        c0 = batch_inputs.get('c0', self.c0)
-
-        h0, c0 = batch_inputs.get('h0', None), batch_inputs.get('c0', None)
-        h0 = h0 if h0 is not None else self.h0
-        c0 = c0 if c0 is not None else self.c0
-
+        # print(seq_feats[:, :, 0].flatten())
+        h0 = batch_inputs.get('h0', self.h0.expand(-1, B, -1).contiguous())
+        c0 = batch_inputs.get('c0', self.c0.expand(-1, B, -1).contiguous())
         lstm_out, (hn, cn) = self.lstm(seq_feats, (h0, c0))
         flat = lstm_out.reshape(B * T, -1)
         logits = self.joints_head(flat)
@@ -200,7 +194,8 @@ class RadHARCNNBiLSTM(BaseSkeletonEstimModel):
         return dict(
             tensor=logits,
             hn=hn,
-            cn=cn
+            cn=cn,
+            prev_feats=seq_feats,  # for caching
         )
 
     def pack_input(self, data_batch_dict: dict):
@@ -225,18 +220,20 @@ class RadHARCNNBiLSTM(BaseSkeletonEstimModel):
             data_sample_list = [SkeletonDataSample(gt=skel_frame_tensor) for skel_frame_tensor in skel_frame_tensors]
         except KeyError:
             data_sample_list = [SkeletonDataSample(gt=None) for _ in range(B)]
-
-        data_batch_dict["points"] = points
-        if 'previous_output' in data_batch_dict and \
-            (not data_batch_dict.get('starting_flag', [False])[0]) and \
-            self.test_cfg.get('serial', False):
-            prev = data_batch_dict.pop('previous_output')
-            hn, cn = prev.get('hn'), prev.get('cn')
-            if hn is not None and cn is not None:
-                data_batch_dict['h0'] = hn
-                data_batch_dict['c0'] = cn
-                data_batch_dict['only_need_recent_frame'] = True
-        elif self.learnable_init_state:
-            data_batch_dict['h0'] = torch.zeros((self.lstm_cfg['num_layers'] * (2 if self.lstm_cfg.get('bidirectional', False) else 1), B, self.lstm_cfg['hidden_size']), dtype=torch.float32, device=get_device())
-            data_batch_dict['c0'] = torch.zeros((self.lstm_cfg['num_layers'] * (2 if self.lstm_cfg.get('bidirectional', False) else 1), B, self.lstm_cfg['hidden_size']), dtype=torch.float32, device=get_device())
-        return data_batch_dict, data_sample_list
+        
+        batch_inputs = dict(
+            points=points,
+        )
+        if 'previous_output' in data_batch_dict \
+            and len(data_batch_dict['previous_output']) > 0 \
+            and self.test_cfg.get('cache_feats', False) \
+            and (not data_batch_dict.get('starting_flag', [False])[0]):
+            prev_feat = data_batch_dict.pop('previous_output')["prev_feats"][:, 1:, ...]
+            batch_inputs = dict(
+                batch_inputs,
+                cached_feats=prev_feat,
+            )
+        if not self.learnable_init_state:
+            batch_inputs['h0'] = torch.zeros((self.lstm_cfg['num_layers'] * (2 if self.lstm_cfg.get('bidirectional', False) else 1), B, self.lstm_cfg['hidden_size']), dtype=torch.float32, device=get_device())
+            batch_inputs['c0'] = torch.zeros((self.lstm_cfg['num_layers'] * (2 if self.lstm_cfg.get('bidirectional', False) else 1), B, self.lstm_cfg['hidden_size']), dtype=torch.float32, device=get_device())
+        return batch_inputs, data_sample_list

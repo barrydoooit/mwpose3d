@@ -20,7 +20,7 @@ point_cloud_size = 64
 past_frames = 6
 seq_frames = 5
 num_frames = past_frames + seq_frames
-backup_frames = 1
+backup_frames = 6
 total_frames = num_frames + backup_frames
 radar_input_c = 5
 seq_tag = False
@@ -222,7 +222,7 @@ train_cfg = dict(
     type='MMDiffTwoStageEpochBasedTrainLoop',
     pretrain_max_epochs=0,
     train_max_epochs=100,
-    val_interval=25,
+    val_interval=10,
     phase_cfg = dict(
         phase1=dict(
             amp=False,
@@ -276,7 +276,12 @@ test_cfg = dict(
     type='TestLoop',
     metric_cfg=metric
 )
-test_mode = 'coarse'
+test_mode = 'fine'
 custom_hooks = [
+        dict(
+        type='LatencyProfilingHook',
+        subject_modules=[],
+        include_full_forward=True,
+    ),
     dict(type='MMDiffPipelineHook'),
 ]

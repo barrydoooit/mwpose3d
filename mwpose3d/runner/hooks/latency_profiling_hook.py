@@ -17,12 +17,14 @@ class LatencyProfilingHook(Hook):
                  subject_modules: List[str] = [],
                  on: bool = False,
                  include_full_forward=True,
+                 warmup_num: Optional[int] = 50,
                  sample_num: Optional[int] = None,
                  out_file: Optional[str] = None):
         self.subject_modules = subject_modules
         self.include_full_forward = include_full_forward # profile also the complete forward pass of the model
         self.out_file = Path(out_file) if out_file else None
         self.on = on 
+        self.warmup_num = warmup_num if warmup_num is not None else 0
         self.sample_num = sample_num
         # ---Containers---
         self.records = {} # {module_name: {'cpu': [...], 'gpu': [...]}}
@@ -102,6 +104,10 @@ class LatencyProfilingHook(Hook):
         if not self.on:
             return
         self.summary.clear()
+        if self.warmup_num > 0:
+            for name, rec in self.records.items():
+                rec['cpu'] = rec['cpu'][self.warmup_num:]
+                rec['gpu'] = rec['gpu'][self.warmup_num:] if rec['gpu'] else None
         for name, rec in self.records.items():
             count = len(rec['cpu'])
             total_cpu = sum(rec['cpu'])

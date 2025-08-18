@@ -50,18 +50,24 @@ class SequenceClip(BaseTransform):
 @OnlineEnabled
 @TRANSFORMS.register_module()
 class StackPointCloudFrames(BaseTransform):
-    def __init__(self, stack_size: int, inject_index: bool = False):
+    def __init__(self, stack_size: int, *, inject_index: bool = False, keep_structure: bool = False, ):
         super().__init__()
         self.stack_size = stack_size
         self.inject_index = inject_index
+        self.keep_structure = keep_structure
     
     def transform(self, input: dict):
+        if self.stack_size <= 1:
+            return input
         pcd_frames: List[np.ndarray] = input['pcd_frames']
         original_length = len(pcd_frames)
         stacked_pcd_frames: List[np.ndarray] = []
         for i in range(self.stack_size - 1, len(pcd_frames)):
             window = pcd_frames[i - self.stack_size + 1:i + 1] 
-            pts = np.concatenate(window, axis=0)  # shape = (sum N_j, 3)
+            if not self.keep_structure:
+                pts = np.concatenate(window, axis=0)  # shape = (sum N_j, 3)
+            else:
+                pts = np.stack(window, axis=0)
 
             if self.inject_index:
                 lengths = [f.shape[0] for f in window]

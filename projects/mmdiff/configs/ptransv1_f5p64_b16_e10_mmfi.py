@@ -277,5 +277,10 @@ test_cfg = dict(
 )
 test_mode = 'coarse'
 custom_hooks = [
+    dict(
+        type='LatencyProfilingHook',
+        subject_modules=[],
+        include_full_forward=True,
+    ),
     dict(type='MMDiffPipelineHook'),
 ]

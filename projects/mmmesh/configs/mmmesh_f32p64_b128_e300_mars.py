@@ -75,12 +75,6 @@ model = dict(
         type="SimpleKpFusionHead",
         channels=[128, 128, len(keypoints_involved)*3],
     ),
-    train_cfg=dict(
-        warmup_frames=0,
-    ),
-    test_cfg=dict(
-        serial=False,
-    )
 )
 
 train_pipeline = [
