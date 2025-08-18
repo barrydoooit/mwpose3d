@@ -15,23 +15,23 @@ vis_cfg = dict(
 
 instructions = dict(
     on_init=[
-        *[dict(content=f"Capture Starts in {X} seconds.", duration=1, repeats=1) for X in range(3, 0, -1)]
+        *[dict(content=f"Capture Starts in {X} seconds.", duration=1, repeats=1) for X in range(5, 0, -1)]
     ], 
     on_start=[
-        *[step for _ in range(2) for step in [dict(content="Anchor Motions: Rise your RIGHT arm UPWARDS", duration=2, repeats=1),
-        dict(content="Anchor Motions: Put down your RIGHT arm", duration=2, repeats=1),
-        dict(content="Anchor Motions: Rise your LEFT arm UPWARDS", duration=2, repeats=1),
-        dict(content="Anchor Motions: Put down your LEFT arm", duration=2, repeats=1)]],
+        # *[step for _ in range(2) for step in [dict(content="Anchor Motions: Rise your RIGHT arm UPWARDS", duration=2, repeats=1),
+        # dict(content="Anchor Motions: Put down your RIGHT arm", duration=2, repeats=1),
+        # dict(content="Anchor Motions: Rise your LEFT arm UPWARDS", duration=2, repeats=1),
+        # dict(content="Anchor Motions: Put down your LEFT arm", duration=2, repeats=1)]],
         dict(content="Capture in progress...", duration=1, repeats=1)
     ],
     on_stop=[
-        *[dict(content=f"Capture Stopped. Waiting for next capture to start ({X}s)", duration=1, repeats=1) for X in range(15, 3, -1)]
+        *[dict(content=f"Capture Stopped. Waiting for next capture to start ({X}s)", duration=1, repeats=1) for X in range(10, 3, -1)]
     ]
 )
 
 buffer_cfg = dict(
     dump_dir='apps/impl/dataset_collection/traces/pointcloud',
-    buffer_size=5000
+    buffer_size=2500
 )
 
 kinect_cfg = dict(

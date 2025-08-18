@@ -5,6 +5,7 @@ from typing import Optional, Union, TYPE_CHECKING
 import logging
 
 from apps.impl.dataset_collection.metadata_input_dialog import InputPopupDialog
+from mwpose3d.utils.typing_utils import ConfigType
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s %(threadName)-10s %(levelname)-8s %(name)s: %(message)s",
@@ -37,8 +38,9 @@ class HPEDatasetCollectionApp(BaseMWOnlineApp):
                  vis_cfg: dict,
                  instructions: dict,
                  buffer_cfg: dict,
-                 kinect_cfg: dict):
-        super().__init__(reader_cfg, vis_cfg)
+                 kinect_cfg: dict,
+                 cfg: ConfigType = None):
+        super().__init__(reader_cfg, vis_cfg, cfg)
         self.app = QApplication(sys.argv)
         # Thread for displaying text instructions
         self.instruction_worker, self.instruction_thread = InstructionWorker.build_with_thread(**instructions)
@@ -81,7 +83,8 @@ class HPEDatasetCollectionApp(BaseMWOnlineApp):
             vis_cfg=cfg['vis_cfg'],
             instructions=cfg.get('instructions', {}),
             buffer_cfg  =cfg['buffer_cfg'], 
-            kinect_cfg=cfg['kinect_cfg']
+            kinect_cfg=cfg['kinect_cfg'],
+            cfg=cfg
         )
 
 class _LoopController(QObject):
