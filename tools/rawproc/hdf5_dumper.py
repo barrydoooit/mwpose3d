@@ -90,7 +90,9 @@ class ToHdf5:
             mmwave_path=f'{file_key}.h5',
             skeleton_path=f'{file_key}.h5',
         )
-
+        meta_data = self.alligned_episode.pcd_meta
+        if meta_data is not None:
+            new_info_entry = dict(new_info_entry, **meta_data)
         for info in info_all:
             if info['id'] == file_key:
                 info.clear()

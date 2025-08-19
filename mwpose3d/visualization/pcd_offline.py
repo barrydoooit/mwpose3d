@@ -361,6 +361,9 @@ class PointCloudOfflineVisualizerSK(PointCloudOfflineVisualizer):
         super().update_display()
         if self.current_frame < len(self._skel_cache):
             skel_flat = self._skel_cache[self.current_frame]
+            if len(skel_flat) % 3 != 0:
+                skel_flat = skel_flat[:len(skel_flat) - (len(skel_flat) % 3)]
+            
             joints = np.array(skel_flat).reshape(-1, 3)
             self._skel_scatter.setData(pos=joints)
         else:

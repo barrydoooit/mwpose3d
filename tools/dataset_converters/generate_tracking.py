@@ -4,7 +4,7 @@ import h5py
 from mmengine.config import Config
 import numpy as np
 import sys
-from PySide2.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication
 from tqdm import tqdm
 import logging
 logger = logging.getLogger(__name__)
@@ -33,6 +33,8 @@ class TrackingRecordGenerator:
         self.data_prefix = dict(data_prefix, skel='skeleton')
         self.splits = splits
         self.vis_mode = vis_mode
+        if self.vis_mode:
+            self.app = QApplication(sys.argv)
         logger.warning("This tool is still under development. " \
         "It is functional but has not been equipped with generallly configurable options. " \
         "Please use it with caution and modify the expected preprocssing pipeline INLINE.")
@@ -74,7 +76,7 @@ class TrackingRecordGenerator:
                         ),
                         dict(
                             type='mwpose3d.PointCloudRangeFilter',
-                            point_cloud_range=[-10, -10, -2, 10, 10, 1],
+                            point_cloud_range=[-2, 2, -1.5, 2, 5, 1.5],
                             empty_frame_op='error',
                             backup_frames=0,
                             min_num_frames=1,
@@ -112,10 +114,10 @@ class TrackingRecordGenerator:
         current_track_file = None
         current_tracker_type = None
         collected_flats: list[np.ndarray] = []
-
+        
         pcd_prefix = self.data_prefix['pcd']
         pcd_path_key = f'{pcd_prefix}_path'
-
+        
         def _flush_sequence():
             nonlocal current_track_file, current_tracker_type, collected_flats
             if current_track_file is None or current_tracker_type is None:
@@ -135,8 +137,9 @@ class TrackingRecordGenerator:
                     ds[i] = flat
                 ds.attrs['columns'] = np.array(["x", "y", "z"], dtype='S')
             collected_flats = []
-
+        
         loader_iter = iter(dataloader)
+        
         with tqdm(total=len(dataloader), desc="Generating tracking records") as pbar:
             while True:
                 # ---- catch exceptions from the iterator itself ----
@@ -222,7 +225,8 @@ class TrackingRecordGenerator:
                     tracked_locations = tracker.consume(point_array=pcd_frame)
                 yield tracked_locations
         total = len(dataloader) if hasattr(dataloader, '__len__') else None
-        app = QApplication(sys.argv)
+        
+        print("Visualizing tracking records...")
         visualizer = PointCloudOfflineVisualizerSK(
             point_clouds=pcd_generator(),
             skeletons=skel_generator(),
@@ -232,4 +236,4 @@ class TrackingRecordGenerator:
             tracking_mode='dot'
         )
         visualizer.show()
-        app.exec_()
+        self.app.exec_()

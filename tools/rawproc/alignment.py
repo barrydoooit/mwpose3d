@@ -12,13 +12,15 @@ class AlignTraces:
     def __init__(self,
                  episode: 'Episode',
                  use_interp_skel: bool = True,
-                 skeleton_ts_type: Literal['real_ts', 'unix_ms'] = 'unix_ms' # real_ts is calculated in calibrator as start unix_ms + timestamp
+                 skeleton_ts_type: Literal['real_ts', 'unix_ms'] = 'unix_ms', # real_ts is calculated in calibrator as start unix_ms + timestamp
+                 skeleton_ts_offset_ms: int = 60, # default value for kinect-based collection
                  ): 
         self.use_interp_skel = use_interp_skel
         self.episode = episode
         self.skeleton_ts_type = skeleton_ts_type
         self.output_pcd_df = None
         self.output_skel_df = None
+        self.skeleton_ts_offset_ms = skeleton_ts_offset_ms
         
     def align(self):
         if self.use_interp_skel:
@@ -37,7 +39,7 @@ class AlignTraces:
         df_pcd = self.episode.pcd_df
         
         aligned_skels = []
-        
+        df_skel[self.skeleton_ts_type] += self.skeleton_ts_offset_ms
         unique_radar_ts = np.sort(df_pcd['ts'].unique())
         used_idx = np.full(len(df_skel), False)
         for pcd_ts in unique_radar_ts:
