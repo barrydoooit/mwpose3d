@@ -10,11 +10,11 @@ class BaseTransform:
         else:
             self.exec = self.transform
     
-    def transform(self, input):
+    def transform(self, *args, **kwargs):
         raise NotImplementedError
 
-    def transform_online(self, input):
-        return self.transform(input)
+    def transform_online(self, *args, **kwargs):
+        return self.transform(*args, **kwargs)
     
     def __call__(self, *args, **kwargs):
         return self.exec(*args, **kwargs)

@@ -13,12 +13,13 @@ train_info = 'info_train.pkl'
 val_info = 'info_test.pkl'
 test_info = 'info_test.pkl'
 
-keypoints_involved=[0, 1, 2, 4, 5, 6, 7, 8, 9, 10]
+keypoints_involved=[0, 1, 2, 4, 5, 6, 8, 9, 10]
 
 num_frames = 32
 backup_frames = 5
 total_frames = num_frames + backup_frames
-point_cloud_size = 64
+point_cloud_size = 24
+y_offset = 0 # -2.0
 model = dict(
     type="MmMeshPredictor",
     point_cloud_size=point_cloud_size,
@@ -49,8 +50,8 @@ model = dict(
         type="AnchorModule",
         anchor_cfg=dict(
             grouping_nsample=8,
-            xyz_range=[-0.3, -0.3, -0.9, 0.3, 0.3, 1.5],
-            xyz_interval=[0.3, 0.3, 0.3]
+            xyz_range=[-0.6, -0.3, -0.9, 0.6, 0.3, 1.5],
+            xyz_interval=[0.6, 0.3, 0.3]
         ),
         anchor_pointnet_cfg=dict(
             channels=[24+4+3, 32, 48, 64],
@@ -106,28 +107,28 @@ train_pipeline = [
     ),
     dict(
         type='SkeletonCoordinateTransform',
-        tran_xyz=(0, -2, -0.072)
+        tran_xyz=(0, y_offset, -0.072)
     ),
     dict(
         type='PointCloudCoordinateTransform',
-        tran_xyz=(0, -2, 0)
+        tran_xyz=(0, y_offset, 0)
     ),
     dict(
         type='LoadTrackingRecords',
         tracker_name='RKFTracker',
         anchor_frame='firstlastthenfirstnext',
         ignore_axis=[2],
-        translate=(0, -2, 0),
+        translate=(0, y_offset, 0),
     ),
     dict(
         type='RelativeCoordtoTrackingCentroid',
-        discretize_resolution=(0.075, 0.075, 1)
+        discretize_resolution=(0.05, 0.05, 1)
     ),
     dict(
         type='RandomTransform',
-        transform_prob=0.8,
-        sigma_xyz=(0.1, 0.1, 0.1),
-        max_d_xyz=(0.2, 0.2, 0.2)
+        transform_prob=0.5,
+        sigma_xyz=(0.02, 0.02, 0.05),
+        max_d_xyz=(0.1, 0.1, 0.2)
     ),
     dict(
         type='PointDuplicator',
@@ -149,7 +150,7 @@ train_pipeline = [
 
 train_dataloader = dict(
     batch_size=256,
-    num_workers=32,
+    num_workers=16,
     shuffle=True,
     drop_last=True,
     dataset=dict(
@@ -165,7 +166,7 @@ train_dataloader = dict(
 
 optimizer_cfg = dict(
     type='AdamW',
-    lr = 0.0002,
+    lr = 0.00025,
     weight_decay=0.01
 )
 
@@ -199,18 +200,19 @@ val_pipeline = [
     ),
     dict(
         type='SkeletonCoordinateTransform',
-        tran_xyz=(0, -2, -0.072)
+        tran_xyz=(0, y_offset, -0.072)
     ),
     dict(
         type='PointCloudCoordinateTransform',
-        tran_xyz=(0, -2, 0)
+        tran_xyz=(0, y_offset, 0)
     ),
     dict(
         type='LoadTrackingRecords',
         tracker_name='RKFTracker',
         anchor_frame='firstlastthenfirstnext',
         ignore_axis=[2],
-        translate=(0, -2, 0),
+        translate=(0, y_offset, 0),
+        tracker_cfg='./configs/apps/trackers/rkf.py'
     ),
     dict(
         type='RelativeCoordtoTrackingCentroid',
@@ -248,6 +250,22 @@ val_dataloader = dict(
         allow_pad_sequence=False
     )
 )
+
+postprocess = [
+    dict(
+        type='SkeletonBackToOriginalCoord',
+    ),
+    dict(
+        type='SavGolayFilter',
+        window_length=7,
+        polyorder=2,
+        deriv=0,
+        delta=0.05,      # 1 / 20 Hz
+        mode='reflect',
+        time_axis=0
+    )
+]
+
 metric=dict(
     type='SimpleGTPredAnalyzer',
     keypoints_involved=keypoints_involved,
@@ -274,5 +292,16 @@ test_dataloader = dict(
 
 test_cfg = dict(
     type='TestLoop',
-    metric_cfg=metric,
+    metric_cfg=dict(
+        metric,
+        visualizer_cfg={
+            "keypoints_involved": keypoints_involved,          # same list you pass to analyzer
+            "keypoint_for_stats": [5, 6],     # e.g., every other joint to reduce clutter
+            "error_type": "abs_error",                # or "square_error"
+            "window_size": 100,                       # frames in sliding window
+            "follow": True,                           # auto-follow latest frame
+            "max_points_per_frame": 60000,        # max points to visualize per frame
+        }
+    ),
+    postprocess=postprocess,
 )

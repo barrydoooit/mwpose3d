@@ -1,11 +1,15 @@
 from collections import deque
 import numpy as np
 import torch
+
+from mwpose3d.datasets.transforms.base import OnlineEnabled
 from .base import BasePostProcessing
 from .base import POSTPROCESSING
 from mwcore.utils.smoothing.savgol_filter import savgol_filter, SavGolayConfig, SavGolayPadding
 
 
+
+@OnlineEnabled
 @POSTPROCESSING.register_module()
 class SavGolayFilter(BasePostProcessing):
     def __init__(self, 
@@ -15,8 +19,9 @@ class SavGolayFilter(BasePostProcessing):
                  delta: float = 1.0,
                  mode: SavGolayPadding = 'reflect',
                  cval: float = 0.0,
-                 time_axis: int = 0):
-        super().__init__(online_mode=False)  # still fine
+                 time_axis: int = 0,
+                 online_mode: bool = False):
+        super().__init__(online_mode)  # still fine
 
         self.config = SavGolayConfig(
             window_length=window_length,
@@ -41,7 +46,7 @@ class SavGolayFilter(BasePostProcessing):
             axis=self.time_axis
         )
 
-    def transform(self, datasample):
+    def transform(self, data_batch_dict, datasample):
         orig = datasample.pred
         is_torch = isinstance(orig, torch.Tensor)
         device = orig.device if is_torch else None
@@ -58,7 +63,7 @@ class SavGolayFilter(BasePostProcessing):
             # Not enough history for a causal SG window -> return the input
             print(f"Buffer length {len(self._buffer)} < window length {self._W}, returning original data.")
             datasample.pred = orig
-            return datasample
+            return data_batch_dict, datasample
         # ────────────────────────────────────────────────────────────────────────
         # Stack buffered frames along time_axis (length == self._W)
         x_win = self._stack_buffer()
@@ -79,5 +84,5 @@ class SavGolayFilter(BasePostProcessing):
         else:
             datasample.pred = y_now.astype(dtype, copy=False)
 
-        return datasample
+        return data_batch_dict, datasample
 

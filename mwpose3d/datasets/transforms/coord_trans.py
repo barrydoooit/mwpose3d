@@ -1,6 +1,8 @@
 from typing import Tuple
 
 import numpy as np
+
+from .utils import compose_into, make_row_affine
 from .base import BaseTransform, OnlineEnabled
 from mwpose3d.registry import TRANSFORMS
 
@@ -145,7 +147,6 @@ class SkeletonCoordinateTransform(BaseTransform):
 
     def _build_rotation_matrix(self, angles_rad: np.ndarray) -> np.ndarray:
         rx, ry, rz = angles_rad
-        # X, then Y, then Z rotations
         Rx = np.array([[1, 0, 0],
                        [0, np.cos(rx), -np.sin(rx)],
                        [0, np.sin(rx),  np.cos(rx)]], dtype=np.float32)
@@ -158,18 +159,18 @@ class SkeletonCoordinateTransform(BaseTransform):
         return Rz @ Ry @ Rx
 
     def _transform_frame(self, frame: np.ndarray) -> np.ndarray:
-        # split coords vs extras
         n3 = (len(frame) // 3) * 3
         joints = frame[:n3].reshape(-1, 3)
-        # rotate + translate
         joints = joints.dot(self.R.T) + self.t
-        # re–flatten and append any tail (e.g. confidences)
         return np.concatenate([joints.ravel(), frame[n3:]])
 
     def transform(self, input: dict) -> dict:
         input['skel_frames'] = tuple(
             self._transform_frame(f) for f in input['skel_frames']
         )
+        # Accumulate only for skeleton
+        A = make_row_affine(self.R, self.t)
+        compose_into(input, 'T_skel', A)
         return input
 
 @OnlineEnabled
@@ -185,7 +186,6 @@ class PointCloudCoordinateTransform(BaseTransform):
 
     def _build_rotation_matrix(self, angles_rad: np.ndarray) -> np.ndarray:
         rx, ry, rz = angles_rad
-        # X, then Y, then Z rotations
         Rx = np.array([[1, 0, 0],
                        [0, np.cos(rx), -np.sin(rx)],
                        [0, np.sin(rx),  np.cos(rx)]], dtype=np.float32)
@@ -198,20 +198,14 @@ class PointCloudCoordinateTransform(BaseTransform):
         return Rz @ Ry @ Rx
     
     def _transform_frame(self, frame: np.ndarray) -> np.ndarray:
-        # frame shape: (N, C), where first three columns are (x,y,z)
-        # rotate + translate
-        pts = frame[:, :3]
-        pts = pts.dot(self.R.T) + self.t
-        # If additional values exist in the row, preserve them.
-        if frame.shape[1] > 3:
-            extra = frame[:, 3:]
-            transformed_frame = np.hstack([pts, extra])
-        else:
-            transformed_frame = pts
-        return transformed_frame
+        pts = frame[:, :3].dot(self.R.T) + self.t
+        return np.hstack([pts, frame[:, 3:]]) if frame.shape[1] > 3 else pts
     
     def transform(self, input: dict) -> dict:
         input['pcd_frames'] = tuple(
             self._transform_frame(f) for f in input['pcd_frames']
         )
+        # Accumulate only for point clouds
+        A = make_row_affine(self.R, self.t)
+        compose_into(input, 'T_pcd', A)
         return input

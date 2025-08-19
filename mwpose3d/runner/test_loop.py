@@ -87,7 +87,7 @@ class TestLoop(BaseLoop):
         self.last_output = outputs
         data_samples_0 = data_samples[0]
         if self.postprocess is not None:
-            data_samples_0 = self.postprocess(data_samples_0)
+            data_batch, data_samples_0 = self.postprocess(data_batch, data_samples_0)
         self.evaluator.process_sample(data_samples_0, data_batch=data_batch)
         
         self.runner.call_hook(

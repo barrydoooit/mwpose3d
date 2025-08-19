@@ -1,4 +1,4 @@
-from typing import Callable, List, Optional, Sequence, Union
+from typing import Callable, List, Optional, Sequence, Tuple, Union
 from mwpose3d.datasets.skel_data_sample import SkeletonDataSample
 from mwpose3d.datasets.transforms.base import BaseTransform
 from mwpose3d.registry import TRANSFORMS as POSTPROCESSING
@@ -7,7 +7,7 @@ from mmengine.dataset import Compose
 
 @POSTPROCESSING.register_module()
 class BasePostProcessing(BaseTransform):
-    def transform(self, datasample: SkeletonDataSample) -> SkeletonDataSample:
+    def transform(self, data_batch_dict: dict, datasample: SkeletonDataSample) -> Tuple[dict, SkeletonDataSample]:
         raise NotImplementedError("Subclasses should implement this method.")
 
 class ComposePostProcess(Compose):
@@ -33,7 +33,7 @@ class ComposePostProcess(Compose):
                     f'postprocess must be a callable object or dict, '
                     f'but got {type(postprocess)}')
 
-    def __call__(self, data: dict) -> Optional[dict]:
+    def __call__(self, batch_data, datasample) -> tuple:
         """Call function to apply postprocesses sequentially.
 
         Args:
@@ -43,10 +43,10 @@ class ComposePostProcess(Compose):
            dict: Transformed data.
         """
         for t in self.postprocesses:
-            data = t(data)
-            if data is None:
-                return None
-        return data
+            batch_data, datasample = t(batch_data, datasample)
+            if batch_data is None or datasample is None:
+                break
+        return batch_data, datasample
 
     def __repr__(self):
         """Print ``self.postprocesses`` in sequence.

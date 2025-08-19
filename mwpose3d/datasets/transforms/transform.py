@@ -1,6 +1,7 @@
 from typing import Literal, Tuple
 
 import numpy as np
+from .utils import compose_into, make_row_affine
 import mwpose3d.utils.kinect_toolkits as kntk
 from .base import BaseTransform
 from mwpose3d.registry import TRANSFORMS
@@ -23,22 +24,28 @@ class RandomTransform(BaseTransform):
         pcd_frames: Tuple[np.ndarray] = input['pcd_frames']
         skel_frames: Tuple[np.ndarray] = input['skel_frames']
 
-        to_transform = np.random.rand() < self.transform_prob
-        if not to_transform:
+        if np.random.rand() >= self.transform_prob:
             return input
         
         global_shift = np.array([
-            max(-self.max_d_xyz[0], min(self.max_d_xyz[0], np.random.normal(0, self.sigma_xyz[0]))),
-            max(-self.max_d_xyz[1], min(self.max_d_xyz[1], np.random.normal(0, self.sigma_xyz[1]))),
-            max(-self.max_d_xyz[2], min(self.max_d_xyz[2], np.random.normal(0, self.sigma_xyz[2])))
-        ])
-        for frame in pcd_frames:
-            frame[:, :3] += global_shift
-        
-        for frame in skel_frames:
-            keypoints = frame[:len(frame) // 3 * 3].reshape(-1, 3)
-            keypoints += global_shift
-            frame[:len(frame) // 3 * 3] = keypoints.flatten()
+            np.clip(np.random.normal(0, self.sigma_xyz[0]), -self.max_d_xyz[0], self.max_d_xyz[0]),
+            np.clip(np.random.normal(0, self.sigma_xyz[1]), -self.max_d_xyz[1], self.max_d_xyz[1]),
+            np.clip(np.random.normal(0, self.sigma_xyz[2]), -self.max_d_xyz[2], self.max_d_xyz[2]),
+        ], dtype=np.float32)
+
+        input['pcd_frames'] = tuple(
+            np.hstack([f[:, :3] + global_shift, f[:, 3:]]) if f.shape[1] > 3 else (f[:, :3] + global_shift)
+            for f in pcd_frames
+        )
+        input['skel_frames'] = tuple(
+            np.concatenate([(f[: (len(f)//3)*3].reshape(-1, 3) + global_shift).ravel(), f[(len(f)//3)*3:]])
+            for f in skel_frames
+        )
+
+        # Accumulate transforms
+        A = make_row_affine(R=None, t=global_shift)
+        compose_into(input, 'T_pcd',  A)
+        compose_into(input, 'T_skel', A)
         return input
 
 @TRANSFORMS.register_module()

@@ -8,8 +8,11 @@ from mmengine.dataset import Compose
 from mmengine.config import Config
 from mmengine.hooks import Hook
 from mmengine.runner import Priority, get_priority
+from mwpose3d.datasets.skel_data_sample import SkeletonDataSample
 from mwpose3d.datasets.transforms import BaseTransform, is_online_enabled
+from mwpose3d.evaluation.postprocessing.base import BasePostProcessing, ComposePostProcess
 from mwpose3d.registry import MODELS, TRANSFORMS, HOOKS
+from mwpose3d.evaluation.postprocessing import POSTPROCESSING
 import logging
 
 from mwpose3d.runner.runner import ConfigType
@@ -20,7 +23,7 @@ if TYPE_CHECKING:
 
 
 
-class ComposeOnline(Compose):
+class ComposePreprocessOnline(Compose):
     def __init__(self, transforms: Optional[Sequence[Union[dict, Callable]]]):
         self.transforms: List[Callable] = []
 
@@ -41,13 +44,38 @@ class ComposeOnline(Compose):
                 raise TypeError(
                     f'transform must be a callable object or dict, '
                     f'but got {type(transform)}')
-    
+
+class ComposePostprocessOnline(ComposePostProcess):
+    def __init__(self, postprocesses: Optional[Sequence[Union[dict, Callable]]]):
+        self.postprocesses: List[Callable] = []
+
+        if postprocesses is None:
+            postprocesses = []
+
+        for postprocess in postprocesses:
+            # `Compose` can be built with config dict with type and
+            # corresponding arguments.
+            if isinstance(postprocess, dict):
+                if not is_online_enabled(postprocess['type']): continue
+                postprocess = POSTPROCESSING.build(postprocess)
+                if not callable(postprocess):
+                    raise TypeError(f'postprocess should be a callable object, '
+                                    f'but got {type(postprocess)}')
+                self.postprocesses.append(postprocess)
+            elif callable(postprocess):
+                self.postprocesses.append(postprocess)
+            else:
+                raise TypeError(
+                    f'postprocess must be a callable object or dict, '
+                    f'but got {type(postprocess)}')
+            
 class InferenceEngine:
     def __init__(self,
                  model: dict,
-                 pipeline: List[dict],
+                 preprocess_pipeline: List[dict],
                  load_from: str,
                  keypoints_involved: List[int],
+                 post_process_pipeline: Optional[List[dict]] = None,
                  cfg: Optional[ConfigType] = None,
                  custom_hooks: Optional[List[dict]] = None,
                  frame_buffer_size: int = 10
@@ -62,7 +90,8 @@ class InferenceEngine:
 
         self.model: torch.nn.Module = MODELS.build(model)
         self.model.to(get_device())
-        self.pipeline: list['BaseTransform'] = ComposeOnline(pipeline)
+        self.preprocess_pipeline: list['BaseTransform'] = ComposePreprocessOnline(preprocess_pipeline)
+        self.post_process_pipeline: list['BasePostProcessing'] = ComposePostprocessOnline(post_process_pipeline) if post_process_pipeline is not None else []
         self.model.load_state_dict(torch.load(load_from, map_location=torch.device(get_device())))
         self.model.eval()
         self.keypoints_involved = keypoints_involved
@@ -125,7 +154,7 @@ class InferenceEngine:
         input_dict = {
             'pcd_frames': tuple(self.active_frames),
             }
-        input = self.pipeline(input_dict)
+        input = self.preprocess_pipeline(input_dict)
         input['pcd_frames'] = tuple([
             np.expand_dims(pcd_frame, axis=0) for pcd_frame in input['pcd_frames']
         ]) # make a batch dimension
@@ -140,16 +169,25 @@ class InferenceEngine:
             batch_inputs, data_samples = self.model.pack_input(data_batch_dict)
             with torch.no_grad():
                 output = self.model(batch_inputs, data_samples, mode='predict')
-            return data_samples[0].pred.cpu().numpy() if len(data_samples) > 0 else None
+            data_samples_0 = data_samples[0]
+            data_batch_dict, data_samples_0 = self._postprocess(data_batch_dict, data_samples_0)
+            return data_samples_0.pred.cpu().numpy() if len(data_samples) > 0 else None
         except RuntimeError as e:
             logger.warning(f"Inference Interupted: {e}")
             return None
 
+    def _postprocess(self, data_batch_dict: dict, datasample: 'SkeletonDataSample') -> Tuple[dict,  'SkeletonDataSample']:
+        if len(self.post_process_pipeline) == 0:
+            return data_batch_dict, datasample
+        data_batch_dict, datasample = self.post_process_pipeline(data_batch_dict, datasample)
+        return data_batch_dict, datasample
+        
+        return data_batch_dict, datasample
     @classmethod
     def from_cfg(cls, config: dict):
         return cls(
             model=config['model'],
-            pipeline=config['test_pipeline'],
+            preprocess_pipeline=config['test_pipeline'],
             load_from=config['load_from'],
             keypoints_involved=config['keypoints_involved'],
             custom_hooks=config.get('custom_hooks', None),
