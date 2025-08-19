@@ -14,9 +14,10 @@ from mwpose3d.registry import TRANSFORMS
 class SequenceClip(BaseTransform):
     def __init__(self,
                  mode: Literal['random', 'first', 'last'],
-                 sequence_length: int
+                 sequence_length: int,
+                 online_mode: bool = False
                  ):
-        super().__init__()
+        super().__init__(online_mode)
         self.mode = mode
         assert self.mode in ['random', 'first', 'last']
         self.sequence_length = sequence_length
@@ -24,8 +25,8 @@ class SequenceClip(BaseTransform):
     def transform(self, input: dict):
         pcd_frames: List[np.ndarray] = input['pcd_frames']
         original_length = len(pcd_frames)
-        assert original_length >= self.sequence_length
-        
+        assert original_length >= self.sequence_length, f"Input point cloud sequence length {original_length} is less than the required {self.sequence_length}."
+
         if self.mode == 'random':
             selected_frame_indices = np.random.randint(0, original_length, self.sequence_length)
         elif self.mode == 'first':

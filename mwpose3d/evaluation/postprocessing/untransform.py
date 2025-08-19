@@ -20,6 +20,21 @@ class SkeletonBackToOriginalCoord(BasePostProcessing):
     def __init__(self, online_mode: bool = False):
         super().__init__(online_mode)
 
+    @staticmethod
+    def _extract_Q_t_row(T):
+        """
+        For row vectors, we want p' = p @ Q + t.
+        Handle either:
+        - top-right translation:  t = T[:3, 3]
+        - bottom-left translation: t = T[3, :3]
+        """
+        Q = T[:3, :3]  # this is the linear part used with row vectors in your code
+        if np.any(T[3, :3] != 0):    # bottom-left convention
+            t = T[3, :3]
+        else:                        # top-right convention (your current T_skel)
+            t = T[:3, 3]
+        return Q, t
+    
     @contextmanager
     def _numpy_views(self, datasample, fields=('pred', 'gt')):
         """Yield NumPy views of the given fields, then write back in original type."""
@@ -48,43 +63,58 @@ class SkeletonBackToOriginalCoord(BasePostProcessing):
                     setattr(datasample, f, new)
 
     @staticmethod
-    def _apply_inv_inplace(arr: np.ndarray, T_inv: np.ndarray) -> np.ndarray:
+    def _apply_inv_inplace(arr: np.ndarray, Q: np.ndarray, t: np.ndarray) -> np.ndarray:
         """
-        Apply [x y z 1] @ T_inv to the first 3 coords.
-        Supports flat (3K[+tail]) or (K, >=3). Returns the same array (modified).
+        Inverse of p' = p @ Q + t  ->  p = (p' - t) @ Q^{-1}
+        Works for 1D 3K[+tail], 2D (N,3K), (N,3), (N,>=3), and 3D (N,K,3).
         """
         if arr is None:
             return arr
-        A = T_inv.astype(arr.dtype, copy=False)
+        Qinv = np.linalg.inv(Q).astype(np.float32, copy=False)
+        t = t.astype(np.float32, copy=False)
+
+        def do_pts(pts):
+            return (pts.astype(np.float32, copy=False) - t) @ Qinv
 
         if arr.ndim == 1:
             K = arr.size // 3
-            if K == 0:
+            if K:
+                arr[:3*K] = do_pts(arr[:3*K].reshape(-1, 3)).reshape(-1).astype(arr.dtype, copy=False)
+            return arr
+
+        if arr.ndim == 2:
+            N, C = arr.shape
+            if C == 3:
+                arr[:, :3] = do_pts(arr[:, :3]).astype(arr.dtype, copy=False)
                 return arr
-            pts = arr[:3*K].reshape(-1, 3)
-            ones = np.ones((K, 1), dtype=arr.dtype)
-            arr[:3*K] = (np.hstack([pts, ones]) @ A)[:, :3].reshape(-1)
+            if C % 3 == 0:
+                arr[:, :C] = do_pts(arr[:, :C].reshape(-1, 3)).reshape(N, C).astype(arr.dtype, copy=False)
+                return arr
+            # first 3 are xyz; keep extras
+            arr[:, :3] = do_pts(arr[:, :3]).astype(arr.dtype, copy=False)
             return arr
 
-        if arr.ndim == 2 and arr.shape[1] >= 3:
-            K = arr.shape[0]
-            ones = np.ones((K, 1), dtype=arr.dtype)
-            arr[:, :3] = (np.hstack([arr[:, :3], ones]) @ A)[:, :3]
+        if arr.ndim == 3 and arr.shape[-1] == 3:
+            N, K, _ = arr.shape
+            arr[:] = do_pts(arr.reshape(-1, 3)).reshape(N, K, 3).astype(arr.dtype, copy=False)
             return arr
 
-        return arr
+        return arr  # unknown layout
+
 
     def transform(self, data_batch_dict, datasample):
         T_skel = data_batch_dict.get('T_skel', None)
         if T_skel is None:
+            print("Warning: T_skel is None, skipping untransform.")
             return data_batch_dict, datasample
-        T_skel = T_skel[0]
-        T_inv = invert_row_affine(np.asarray(T_skel, dtype=np.float32))
+        while not isinstance(T_skel, np.ndarray):
+            T_skel = T_skel[0]
+        # T_inv = invert_row_affine(np.asarray(T_skel, dtype=np.float32))
+        Q, t = self._extract_Q_t_row(T_skel)
 
         with self._numpy_views(datasample, fields=('pred', 'gt')) as a:
             if a.get('pred') is not None:
-                a['pred'] = self._apply_inv_inplace(a['pred'], T_inv)
+                a['pred'] = self._apply_inv_inplace(a['pred'], Q, t)
             if a.get('gt') is not None:
-                a['gt'] = self._apply_inv_inplace(a['gt'], T_inv)
-
+                a['gt'] = self._apply_inv_inplace(a['gt'], Q, t)
         return data_batch_dict, datasample

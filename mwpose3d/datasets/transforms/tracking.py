@@ -48,10 +48,10 @@ class LoadTrackingRecords(BaseTransform):
     @property
     def tracker(self) -> "BaseTracker":
         if self._tracker is None:
-            self._tracker = self.build_tracker()
+            self._tracker = self._build_tracker()
         return self._tracker
     
-    def build_tracker(self) -> "BaseTracker":
+    def _build_tracker(self) -> "BaseTracker":
         cfg = deepcopy(self.tracker_cfg)
         cfg['radar_cfg'] = dict(cfg.get('radar_cfg', {}), sensor_height=0.0, sensor_tilt=0.0)
         self._tracker = TRACKERS.build(cfg)
@@ -60,6 +60,8 @@ class LoadTrackingRecords(BaseTransform):
     def tracker_consume(self, pcd_frame: np.ndarray) -> Optional[np.ndarray]:
         if pcd_frame.shape[1] < 5:
             pcd_frame = np.pad(pcd_frame[:, :3], ((0, 0), (0, 2)), mode='constant')
+        if pcd_frame.shape[1] > 5:
+            pcd_frame = pcd_frame[:, :5]
         if hasattr(self.tracker, 'sort_results'):
             tracked_locations = self.tracker.consume(point_array=pcd_frame, sort_metric='snr')
         else:
@@ -89,7 +91,7 @@ class LoadTrackingRecords(BaseTransform):
 
         # Reset state & (re)create tracker at the start of a sequence
         if input.get('starting_flag', False) or self._tracker is None:
-            self._build_tracker()
+            self._tracker = self._build_tracker()
             self._last_centroid = None
             for frame in pcd_frames[:-1]:
                 result = self.tracker_consume(frame)
@@ -242,7 +244,5 @@ class RelativeCoordtoTrackingCentroid(BaseTransform):
         # Accumulate for whichever modalities are in the dict
         A = make_row_affine(R=None, t=t)
         compose_into(input, 'T_pcd',  A)
-        if 'skel_frames' in input:
-            compose_into(input, 'T_skel', A)
-
+        compose_into(input, 'T_skel', A)
         return input

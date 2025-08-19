@@ -33,7 +33,7 @@ class ComposePreprocessOnline(Compose):
         for transform in transforms:
             if isinstance(transform, dict):
                 if not is_online_enabled(transform['type']): continue
-                transform = TRANSFORMS.build(transform)
+                transform = TRANSFORMS.build(dict(transform, online_mode=True))
                 if not callable(transform):
                     raise TypeError(f'transform should be a callable object, '
                                     f'but got {type(transform)}')
@@ -57,7 +57,7 @@ class ComposePostprocessOnline(ComposePostProcess):
             # corresponding arguments.
             if isinstance(postprocess, dict):
                 if not is_online_enabled(postprocess['type']): continue
-                postprocess = POSTPROCESSING.build(postprocess)
+                postprocess = POSTPROCESSING.build(dict(postprocess, online_mode=True))
                 if not callable(postprocess):
                     raise TypeError(f'postprocess should be a callable object, '
                                     f'but got {type(postprocess)}')
@@ -75,10 +75,10 @@ class InferenceEngine:
                  preprocess_pipeline: List[dict],
                  load_from: str,
                  keypoints_involved: List[int],
-                 post_process_pipeline: Optional[List[dict]] = None,
+                 frame_buffer_size: int,
+                 postprocess_pipeline: Optional[List[dict]] = None,
                  cfg: Optional[ConfigType] = None,
                  custom_hooks: Optional[List[dict]] = None,
-                 frame_buffer_size: int = 10
                  ):    
         if cfg is not None:
             if isinstance(cfg, Config):
@@ -91,7 +91,7 @@ class InferenceEngine:
         self.model: torch.nn.Module = MODELS.build(model)
         self.model.to(get_device())
         self.preprocess_pipeline: list['BaseTransform'] = ComposePreprocessOnline(preprocess_pipeline)
-        self.post_process_pipeline: list['BasePostProcessing'] = ComposePostprocessOnline(post_process_pipeline) if post_process_pipeline is not None else []
+        self.postprocess_pipeline: list['BasePostProcessing'] = ComposePostprocessOnline(postprocess_pipeline) if postprocess_pipeline is not None else []
         self.model.load_state_dict(torch.load(load_from, map_location=torch.device(get_device())))
         self.model.eval()
         self.keypoints_involved = keypoints_involved
@@ -170,24 +170,23 @@ class InferenceEngine:
             with torch.no_grad():
                 output = self.model(batch_inputs, data_samples, mode='predict')
             data_samples_0 = data_samples[0]
-            data_batch_dict, data_samples_0 = self._postprocess(data_batch_dict, data_samples_0)
+            batch_inputs, data_samples_0 = self._postprocess(batch_inputs, data_samples_0)
             return data_samples_0.pred.cpu().numpy() if len(data_samples) > 0 else None
         except RuntimeError as e:
             logger.warning(f"Inference Interupted: {e}")
             return None
 
     def _postprocess(self, data_batch_dict: dict, datasample: 'SkeletonDataSample') -> Tuple[dict,  'SkeletonDataSample']:
-        if len(self.post_process_pipeline) == 0:
-            return data_batch_dict, datasample
-        data_batch_dict, datasample = self.post_process_pipeline(data_batch_dict, datasample)
+        data_batch_dict, datasample = self.postprocess_pipeline(data_batch_dict, datasample)
         return data_batch_dict, datasample
-        
-        return data_batch_dict, datasample
+
     @classmethod
     def from_cfg(cls, config: dict):
         return cls(
             model=config['model'],
+            frame_buffer_size=config['num_frames'],
             preprocess_pipeline=config['test_pipeline'],
+            postprocess_pipeline=config['postprocess'],
             load_from=config['load_from'],
             keypoints_involved=config['keypoints_involved'],
             custom_hooks=config.get('custom_hooks', None),

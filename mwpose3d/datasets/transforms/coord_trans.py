@@ -135,6 +135,7 @@ class Kinect2TICoordinateTransform(BaseTransform):
         input['pcd_frames'] = pcd_frames[:-num_recent_frames] + tuple(transformed_recent_frames)
         return input
 
+@OnlineEnabled
 @TRANSFORMS.register_module()
 class SkeletonCoordinateTransform(BaseTransform):
     def __init__(self,
@@ -165,9 +166,10 @@ class SkeletonCoordinateTransform(BaseTransform):
         return np.concatenate([joints.ravel(), frame[n3:]])
 
     def transform(self, input: dict) -> dict:
-        input['skel_frames'] = tuple(
-            self._transform_frame(f) for f in input['skel_frames']
-        )
+        if input.get('skel_frames', None) is not None:
+            input['skel_frames'] = tuple(
+                self._transform_frame(f) for f in input['skel_frames']
+            )
         # Accumulate only for skeleton
         A = make_row_affine(self.R, self.t)
         compose_into(input, 'T_skel', A)

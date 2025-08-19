@@ -255,15 +255,15 @@ postprocess = [
     dict(
         type='SkeletonBackToOriginalCoord',
     ),
-    dict(
-        type='SavGolayFilter',
-        window_length=7,
-        polyorder=2,
-        deriv=0,
-        delta=0.05,      # 1 / 20 Hz
-        mode='reflect',
-        time_axis=0
-    )
+    # dict(
+    #     type='SavGolayFilter',
+    #     window_length=7,
+    #     polyorder=2,
+    #     deriv=0,
+    #     delta=0.05,      # 1 / 20 Hz
+    #     mode='reflect',
+    #     time_axis=0
+    # )
 ]
 
 metric=dict(
@@ -294,14 +294,14 @@ test_cfg = dict(
     type='TestLoop',
     metric_cfg=dict(
         metric,
-        visualizer_cfg={
-            "keypoints_involved": keypoints_involved,          # same list you pass to analyzer
-            "keypoint_for_stats": [5, 6],     # e.g., every other joint to reduce clutter
-            "error_type": "abs_error",                # or "square_error"
-            "window_size": 100,                       # frames in sliding window
-            "follow": True,                           # auto-follow latest frame
-            "max_points_per_frame": 60000,        # max points to visualize per frame
-        }
+        # visualizer_cfg={
+        #     "keypoints_involved": keypoints_involved,          # same list you pass to analyzer
+        #     "keypoint_for_stats": [5, 6],     # e.g., every other joint to reduce clutter
+        #     "error_type": "abs_error",                # or "square_error"
+        #     "window_size": 100,                       # frames in sliding window
+        #     "follow": True,                           # auto-follow latest frame
+        #     "max_points_per_frame": 60000,        # max points to visualize per frame
+        # }
     ),
     postprocess=postprocess,
 )

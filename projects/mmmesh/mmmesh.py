@@ -126,7 +126,6 @@ class MmMeshPredictor(BaseSkeletonEstimModel):
         except KeyError:
             data_sample_list = [SkeletonDataSample(gt=None) for _ in range(batch_size)]
 
-        batch_inputs = dict()
         if not self.global_module.grnn.learnable_init_state:
             h0_g = torch.zeros((self.global_module.grnn.num_layers, batch_size, self.global_module.grnn.hidden_size), dtype=torch.float32, device=get_device())
             c0_g = torch.zeros((self.global_module.grnn.num_layers, batch_size, self.global_module.grnn.hidden_size), dtype=torch.float32, device=get_device())
@@ -140,7 +139,7 @@ class MmMeshPredictor(BaseSkeletonEstimModel):
             h0_a, c0_a = None, None
         
         batch_inputs = dict(
-            batch_inputs,
+            data_batch_dict,
             final_pcd_tensor=final_pcd_tensor,
             h0_g=h0_g,
             c0_g=c0_g,

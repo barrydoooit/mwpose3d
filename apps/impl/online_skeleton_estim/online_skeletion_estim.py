@@ -9,6 +9,8 @@ from mwcore.visualization import OnlinePointCloudVisualizer
 from mwpose3d.runner.inference_engine import InferenceEngine
 from mmengine.config import Config
 from PySide6.QtCore import Qt, QCoreApplication
+
+from mwpose3d.utils.typing_utils import ConfigType
 QCoreApplication.setAttribute(Qt.AA_UseDesktopOpenGL)
 from PySide6.QtWidgets import QApplication
 from PySide6.QtCore import Qt
@@ -22,8 +24,9 @@ class OnlineSkeletionEstimationApp(BaseMWOnlineApp):
                  reader_cfg: dict,
                  hpe_model_cfg: Union[Path, str, dict],
                  vis_cfg: dict,
-                 load_from: Optional[Union[Path, str]] = None):
-        super().__init__(reader_cfg, vis_cfg)
+                 load_from: Optional[Union[Path, str]] = None,
+                 cfg: ConfigType = None):
+        super().__init__(reader_cfg, vis_cfg, cfg)
         self.hpe_model_cfg = self._load_hpe_cfg(hpe_model_cfg, load_from)
     
     @staticmethod
@@ -77,4 +80,4 @@ class OnlineSkeletionEstimationApp(BaseMWOnlineApp):
         hpe_model_cfg = cfg.get('hpe_model_cfg')
         vis_cfg = cfg.get('vis_cfg')
         load_from = cfg.get('load_from')
-        return cls(reader_cfg, hpe_model_cfg, vis_cfg, load_from)
+        return cls(reader_cfg, hpe_model_cfg, vis_cfg, load_from, cfg)
