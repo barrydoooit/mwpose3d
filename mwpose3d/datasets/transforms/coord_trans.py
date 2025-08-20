@@ -170,9 +170,11 @@ class SkeletonCoordinateTransform(BaseTransform):
             input['skel_frames'] = tuple(
                 self._transform_frame(f) for f in input['skel_frames']
             )
-        # Accumulate only for skeleton
+            sequence_length = len(input['skel_frames'])
+        else:
+            sequence_length = len(input['pcd_frames'])
         A = make_row_affine(self.R, self.t)
-        compose_into(input, 'T_skel', A)
+        compose_into(input, 'T_skel', A, n=sequence_length)
         return input
 
 @OnlineEnabled
@@ -207,7 +209,6 @@ class PointCloudCoordinateTransform(BaseTransform):
         input['pcd_frames'] = tuple(
             self._transform_frame(f) for f in input['pcd_frames']
         )
-        # Accumulate only for point clouds
         A = make_row_affine(self.R, self.t)
-        compose_into(input, 'T_pcd', A)
+        compose_into(input, 'T_pcd', A, n=len(input['pcd_frames']))
         return input

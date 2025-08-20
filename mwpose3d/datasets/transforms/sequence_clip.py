@@ -44,6 +44,10 @@ class SequenceClip(BaseTransform):
             assert original_length == len(skel_frames)
             skel_frames = [skel_frames[i] for i in selected_frame_indices]
             input['skel_frames'] = skel_frames
+        if 'T_skel' in input:
+            input['T_skel'] = [input['T_skel'][i] for i in selected_frame_indices]
+        if 'T_pcd' in input:
+            input['T_pcd'] = [input['T_pcd'][i] for i in selected_frame_indices]
         return input
 
 

@@ -1,3 +1,4 @@
+from collections import deque
 from copy import deepcopy
 from enum import Enum
 from pathlib import Path
@@ -14,6 +15,7 @@ from mwcore.tracking.api import BaseTracker
 from mwcore.registry import TRACKERS
 
 
+
 @OnlineEnabled
 @TRANSFORMS.register_module()
 class LoadTrackingRecords(BaseTransform):
@@ -21,14 +23,27 @@ class LoadTrackingRecords(BaseTransform):
         FIRSTLAST = 'firstlast'
         FIRSTNEXT = 'firstnext'
         FIRSTLASTTHENFIRSTNEXT = 'firstlastthenfirstnext'
+        NEARESTPERFRAME = 'nearestperframe'  # NEW
+
     def __init__(self, 
                  tracker_name: str,
-                 anchor_frame: Literal['firstlast', 'firstnext', 'firstlastthenfirstnext'] = 'firstlast',
+                 anchor_frame: Literal[
+                     'firstlast',
+                     'firstnext',
+                     'firstlastthenfirstnext',
+                     'nearestperframe'                    # NEW
+                 ] = 'firstlast',
                  ignore_axis: List[int] = [2],
                  translate: Tuple[float, float, float] = (0.0, 0.0, 0.0),
                  rotation: Tuple[float, float, float] = (0.0, 0.0, 0.0),
                  online_mode: bool = False,
-                 tracker_cfg: Union[dict, str, Path] = None):
+                 tracker_cfg: Union[dict, str, Path] = None,
+                 centroid_queue_len: Optional[int] = None):
+        """
+        Args:
+            centroid_queue_len: only used in NEARESTPERFRAME + online mode.
+                The online result will be a tuple of length `centroid_queue_len`.
+        """
         super().__init__(online_mode)
         self.tracker_name = tracker_name
         self.anchor_frame_type = self.AnchorFrameType(anchor_frame)
@@ -36,6 +51,9 @@ class LoadTrackingRecords(BaseTransform):
         self.translate = np.array(translate, dtype=np.float32)
         self.rotation = np.array(rotation, dtype=np.float32)
         self.transform_matrix = self.make_transform_matrix()
+
+        self.centroid_queue_len = int(centroid_queue_len)
+        self._centroid_queue: Optional[deque] = None
 
         if self.online_mode:
             assert tracker_cfg is not None, "tracker_cfg must be provided in online mode"
@@ -56,6 +74,50 @@ class LoadTrackingRecords(BaseTransform):
         cfg['radar_cfg'] = dict(cfg.get('radar_cfg', {}), sensor_height=0.0, sensor_tilt=0.0)
         self._tracker = TRACKERS.build(cfg)
         return self._tracker
+
+    def _coerce_first_xyz(self, arr_like: np.ndarray) -> np.ndarray:
+        a = np.asarray(arr_like, dtype=np.float32)
+        if a.size < 3:
+            raise ValueError("Centroid array has fewer than 3 elements.")
+        if a.ndim == 1:
+            c = a[:3]
+        else:
+            c = a.reshape(-1)[:3]
+        return c.astype(np.float32, copy=False)
+
+    def _postprocess_centroid(self, centroid: np.ndarray) -> np.ndarray:
+        c = centroid.astype(np.float32, copy=True)
+        for axis in self.ignore_axis:
+            if 0 <= axis < 3:
+                c[axis] = 0.0
+        if self.transform_matrix is not None:
+            c = (self.transform_matrix @ np.append(c, 1.0))[:3].astype(np.float32)
+        return c
+
+    def _nearest_centroid(self, ds: h5py.Dataset, target_idx: int) -> np.ndarray:
+        """Previous-first-then-next search around target_idx in [0, n-1]."""
+        n = len(ds)
+        if n == 0:
+            raise ValueError("Empty tracking dataset.")
+
+        def non_empty(j: int) -> bool:
+            a = np.asarray(ds[j])
+            return a.size > 0
+
+        # clamp the search seeds to valid bounds
+        start_back = min(max(target_idx, 0), n - 1)
+        for i in range(start_back, -1, -1):
+            if non_empty(i):
+                return self._coerce_first_xyz(ds[i])
+
+        start_fwd = min(max(target_idx + 1, 0), n)  # could be n (meaning no forward frames)
+        for i in range(start_fwd, n):
+            if non_empty(i):
+                return self._coerce_first_xyz(ds[i])
+
+        raise ValueError("No non-empty frame found in either direction.")
+
+    # -----------------------------------
 
     def tracker_consume(self, pcd_frame: np.ndarray) -> Optional[np.ndarray]:
         if pcd_frame.shape[1] < 5:
@@ -78,8 +140,15 @@ class LoadTrackingRecords(BaseTransform):
         
     def transform_online(self, input: dict) -> dict:
         """
-        - If current frame has no result, reuse last non-empty centroid.
-        - If no previous centroid exists, raise RuntimeError.
+        - Existing modes (FIRSTLAST/FIRSTNEXT/FIRSTLASTTHENFIRSTNEXT): unchanged behavior,
+          returning a single 3D centroid in `track_centroid`.
+        - NEW: NEARESTPERFRAME
+          Maintain a sliding window (deque) of length `centroid_queue_len` with one centroid per frame.
+          For each new frame:
+            * If tracker yields a centroid, append it.
+            * Else, duplicate the last appended centroid.
+          If the window is not yet full after processing the provided frames, raise RuntimeError.
+          The result is set to `track_centroid` as a tuple of centroids (len == centroid_queue_len).
         """
         if not self.online_mode:
             raise RuntimeError("transform_online called while online_mode=False")
@@ -93,11 +162,66 @@ class LoadTrackingRecords(BaseTransform):
         if input.get('starting_flag', False) or self._tracker is None:
             self._tracker = self._build_tracker()
             self._last_centroid = None
-            for frame in pcd_frames[:-1]:
-                result = self.tracker_consume(frame)
-                if result is not None:
-                    self._last_centroid = result.copy()
+            # NEW: reset centroid queue
+            self._centroid_queue = deque(maxlen=self.centroid_queue_len)
+
+            if self.anchor_frame_type == self.AnchorFrameType.NEARESTPERFRAME:
+                # Prime the queue using all provided frames (chronological).
+                for frame in (pcd_frames if isinstance(pcd_frames, (list, tuple)) else [pcd_frames]):
+                    c = self.tracker_consume(frame if not isinstance(frame, (list, tuple)) else frame[-1])
+                    if c is None:
+                        # duplicate last if exists; otherwise we can't fill yet
+                        if len(self._centroid_queue) > 0:
+                            self._centroid_queue.append(self._centroid_queue[-1].copy())
+                        # If queue empty, skip (we'll fail the "not fulfilled" check below)
+                    else:
+                        c = self._postprocess_centroid(c.astype(np.float32, copy=False))
+                        self._centroid_queue.append(c)
+                        self._last_centroid = c.copy()
+
+                if len(self._centroid_queue) < self.centroid_queue_len:
+                    raise RuntimeError(
+                        f"Centroid queue not fulfilled at start "
+                        f"({len(self._centroid_queue)}/{self.centroid_queue_len}).")
+                input['track_centroid'] = tuple(self._centroid_queue)
+                return input
+            else:
+                # Old modes: consume all but the last to update internal tracker state
+                for frame in pcd_frames[:-1]:
+                    result = self.tracker_consume(frame)
+                    if result is not None:
+                        self._last_centroid = result.copy()
         
+        # After possible reset above, proceed per mode
+        if self.anchor_frame_type == self.AnchorFrameType.NEARESTPERFRAME:
+            # treat only the newest frame here (sliding window update)
+            if isinstance(pcd_frames[-1], (list, tuple)):
+                current_pcd_frame = pcd_frames[-1][-1]
+            else:
+                current_pcd_frame = pcd_frames[-1]
+
+            c = self.tracker_consume(current_pcd_frame)
+            if c is None:
+                if self._centroid_queue is None or len(self._centroid_queue) == 0:
+                    raise RuntimeError("No centroid available to duplicate; queue empty.")
+                # duplicate last
+                self._centroid_queue.append(self._centroid_queue[-1].copy())
+            else:
+                c = self._postprocess_centroid(c.astype(np.float32, copy=False))
+                if self._centroid_queue is None:
+                    self._centroid_queue = deque(maxlen=self.centroid_queue_len)
+                self._centroid_queue.append(c)
+                self._last_centroid = c.copy()
+
+            if len(self._centroid_queue) < self.centroid_queue_len:
+                raise RuntimeError(
+                    f"Centroid queue not fulfilled "
+                    f"({len(self._centroid_queue)}/{self.centroid_queue_len}).")
+
+            input['track_centroid'] = tuple(self._centroid_queue)
+            return input
+
+        # ------- original (single-centroid) online path for the 3 legacy modes -------
         if isinstance(pcd_frames[-1], (list, tuple)):
             current_pcd_frame = pcd_frames[-1][-1]
         else:
@@ -124,17 +248,17 @@ class LoadTrackingRecords(BaseTransform):
         return input
     
     def make_transform_matrix(self) -> np.ndarray:
-        """Create a transformation matrix for translation and rotation."""
+        """Create a transformation matrix for translation and rotation (Z-only rotation here)."""
         translation_matrix = np.eye(4, dtype=np.float32)
         translation_matrix[:3, 3] = self.translate
         
         rotation_matrix = np.eye(4, dtype=np.float32)
-        # Assuming rotation is in radians and in the order of (x, y, z)
+        # Assuming rotation is in radians and in the order of (x, y, z) but only Z is applied here.
         rotation_matrix[:3, :3] = np.array([
             [np.cos(self.rotation[2]), -np.sin(self.rotation[2]), 0],
-            [np.sin(self.rotation[2]), np.cos(self.rotation[2]), 0],
-            [0, 0, 1]
-        ])
+            [np.sin(self.rotation[2]),  np.cos(self.rotation[2]), 0],
+            [0,                         0,                        1]
+        ], dtype=np.float32)
         
         return translation_matrix @ rotation_matrix
     
@@ -194,55 +318,101 @@ class LoadTrackingRecords(BaseTransform):
         with h5py.File(tracking_file, 'r') as h5f:
             grp = h5f[self.tracker_name]
             ds = grp['track_records']
+            if self.anchor_frame_type == self.AnchorFrameType.NEARESTPERFRAME:
+                # Resolve pcd_frames and compute per-frame mapping
+                pcd_frames = input.get('pcd_frames', None)
+                num_frames = len(pcd_frames) if isinstance(pcd_frames, (list, tuple)) else 1
+
+                centroids: List[np.ndarray] = []
+                for j in range(num_frames):
+                    # Map j-th pcd frame to dataset index (chronological window ending at local_idx)
+                    target_idx = local_idx - (num_frames - 1 - j)
+                    c = self._nearest_centroid(ds, target_idx)
+                    c = self._postprocess_centroid(self._coerce_first_xyz(c))
+                    centroids.append(c.astype(np.float32))
+
+                input['track_centroid'] = tuple(centroids)
+                return input
+
             track_centroid = self.get_solid_track_centroid(ds, local_idx)
         
         for axis in self.ignore_axis:
             track_centroid[axis] = 0
         if self.transform_matrix is not None:
             track_centroid = np.dot(self.transform_matrix, np.append(track_centroid, 1))[:3]
-        input['track_centroid'] = track_centroid
+        input['track_centroid'] = track_centroid.astype(np.float32)
         return input
-
 
 @OnlineEnabled
 @TRANSFORMS.register_module()
 class RelativeCoordtoTrackingCentroid(BaseTransform):
     def __init__(self,
-                 discretize_resolution: Optional[Union[int, Tuple[float]]] = None,
-                 online_mode: bool = False
-                 ):
+                 discretize_resolution: Optional[Union[int, Tuple[float, float, float]]] = None,
+                 online_mode: bool = False):
         super().__init__(online_mode)
-        self.discretize_resolution = (tuple([discretize_resolution] * 3)
-            if isinstance(discretize_resolution, (int, float)) else discretize_resolution) \
-            if discretize_resolution is not None else None
-        
+        if discretize_resolution is None:
+            self.discretize_resolution = None
+        elif isinstance(discretize_resolution, (int, float)):
+            self.discretize_resolution = (float(discretize_resolution),) * 3
+        else:
+            assert len(discretize_resolution) == 3
+            self.discretize_resolution = tuple(float(x) for x in discretize_resolution)
+
+    def _discretize(self, v: np.ndarray) -> np.ndarray:
+        if self.discretize_resolution is None:
+            return v
+        out = v.astype(np.float32).copy()
+        for axis, res in enumerate(self.discretize_resolution):
+            out[axis] = np.round(out[axis] / res) * res
+        return out
+
+    def _apply_t_to_skel_frame(self, f: np.ndarray, t: np.ndarray) -> np.ndarray:
+        n3 = (len(f) // 3) * 3
+        head = f[:n3].reshape(-1, 3) + t
+        if n3 < len(f):
+            return np.concatenate([head.ravel(), f[n3:]])
+        return head.ravel()
+
     def transform(self, input: dict):
-        track_centroid: np.ndarray = input['track_centroid'].astype(np.float32)
-        if self.discretize_resolution is not None:
-            for axis, resolution in enumerate(self.discretize_resolution):
-                track_centroid[axis] = np.round(track_centroid[axis] / resolution) * resolution
-        
-        # Translation by -centroid
-        t = -track_centroid[:3].astype(np.float32)
-
-        # Point clouds
         pcd_frames: Tuple[np.ndarray] = input['pcd_frames']
-        input['pcd_frames'] = tuple(
-            np.hstack([f[:, :3] + t, f[:, 3:]]) if f.shape[1] > 3 else (f[:, :3] + t)
-            for f in pcd_frames
-        )
+        n_pcd = len(pcd_frames)
+        skel_frames: Optional[Tuple[np.ndarray]] = input.get('skel_frames', None)
+        n_skel = n_pcd if skel_frames is None else len(skel_frames)
 
-        # Skeletons (if present)
-        if 'skel_frames' in input and input['skel_frames'] is not None:
-            skel_frames: Tuple[np.ndarray] = input['skel_frames']
+        cent = input['track_centroid']
+        per_frame = isinstance(cent, (tuple, list))
+
+        # Build per-frame translations (3,) for PCD and (optionally) SKEL
+        if per_frame:
+            if len(cent) != n_pcd:
+                raise ValueError(f"track_centroid tuple length {len(cent)} must match num PCD frames {n_pcd}.")
+            t_list = []
+            for i in range(n_pcd):
+                c = self._discretize(np.asarray(cent[i], dtype=np.float32))
+                t_list.append((-c[:3]).astype(np.float32))
+            t_list = tuple(t_list)
+        else:
+            c = self._discretize(np.asarray(cent, dtype=np.float32))
+            t_shared = (-c[:3]).astype(np.float32)
+            t_list  = [t_shared for _ in range(n_pcd)]
+
+        new_pcd = []
+        for i, f in enumerate(pcd_frames):
+            t = t_list[i]
+            pts = f[:, :3] + t
+            new_pcd.append(np.hstack([pts, f[:, 3:]]) if f.shape[1] > 3 else pts)
+        input['pcd_frames'] = tuple(new_pcd)
+        
+        if skel_frames is not None:
             input['skel_frames'] = tuple(
-                (f.reshape(-1, 3)[:, :3] + t).reshape(-1)  # keep any extra tail? if exists, concat it:
-                if (len(f) % 3) == 0 else np.concatenate([(f[: (len(f)//3)*3].reshape(-1,3) + t).ravel(), f[(len(f)//3)*3:]])
-                for f in skel_frames
+                self._apply_t_to_skel_frame(skel_frames[i], t_list[i])
+                for i in range(n_skel)
             )
 
-        # Accumulate for whichever modalities are in the dict
-        A = make_row_affine(R=None, t=t)
-        compose_into(input, 'T_pcd',  A)
-        compose_into(input, 'T_skel', A)
+        # Accumulate per-frame As
+        A_pcd = tuple(make_row_affine(R=None, t=t) for t in t_list)
+        compose_into(input, 'T_pcd', A_pcd, n=n_pcd)
+        A_skel = tuple(make_row_affine(R=None, t=t) for t in t_list)
+        compose_into(input, 'T_skel', A_skel, n=n_skel)
+
         return input

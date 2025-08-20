@@ -24,8 +24,8 @@ class RandomTransform(BaseTransform):
         pcd_frames: Tuple[np.ndarray] = input['pcd_frames']
         skel_frames: Tuple[np.ndarray] = input['skel_frames']
 
-        if np.random.rand() >= self.transform_prob:
-            return input
+        # if np.random.rand() >= self.transform_prob:
+        #     return input
         
         global_shift = np.array([
             np.clip(np.random.normal(0, self.sigma_xyz[0]), -self.max_d_xyz[0], self.max_d_xyz[0]),
@@ -42,10 +42,10 @@ class RandomTransform(BaseTransform):
             for f in skel_frames
         )
 
-        # Accumulate transforms
+        # Accumulate: same A for all frames in each modality
         A = make_row_affine(R=None, t=global_shift)
-        compose_into(input, 'T_pcd',  A)
-        compose_into(input, 'T_skel', A)
+        compose_into(input, 'T_pcd',  A, n=len(input['pcd_frames']))
+        compose_into(input, 'T_skel', A, n=len(input['skel_frames']))
         return input
 
 @TRANSFORMS.register_module()

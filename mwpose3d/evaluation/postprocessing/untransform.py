@@ -3,7 +3,6 @@ import numpy as np
 import torch
 
 from mwpose3d.datasets.transforms.base import OnlineEnabled
-from mwpose3d.datasets.transforms.utils import invert_row_affine
 from .base import BasePostProcessing
 from .base import POSTPROCESSING
 
@@ -109,7 +108,6 @@ class SkeletonBackToOriginalCoord(BasePostProcessing):
             return data_batch_dict, datasample
         while not isinstance(T_skel, np.ndarray):
             T_skel = T_skel[0]
-        # T_inv = invert_row_affine(np.asarray(T_skel, dtype=np.float32))
         Q, t = self._extract_Q_t_row(T_skel)
 
         with self._numpy_views(datasample, fields=('pred', 'gt')) as a:
