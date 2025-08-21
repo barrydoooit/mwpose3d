@@ -52,7 +52,8 @@ class LoadTrackingRecords(BaseTransform):
         self.rotation = np.array(rotation, dtype=np.float32)
         self.transform_matrix = self.make_transform_matrix()
 
-        self.centroid_queue_len = int(centroid_queue_len)
+        if self.anchor_frame_type == self.AnchorFrameType.NEARESTPERFRAME:
+            self.centroid_queue_len = int(centroid_queue_len)
         self._centroid_queue: Optional[deque] = None
 
         if self.online_mode:
@@ -162,10 +163,9 @@ class LoadTrackingRecords(BaseTransform):
         if input.get('starting_flag', False) or self._tracker is None:
             self._tracker = self._build_tracker()
             self._last_centroid = None
-            # NEW: reset centroid queue
-            self._centroid_queue = deque(maxlen=self.centroid_queue_len)
-
+           
             if self.anchor_frame_type == self.AnchorFrameType.NEARESTPERFRAME:
+                self._centroid_queue = deque(maxlen=self.centroid_queue_len)
                 # Prime the queue using all provided frames (chronological).
                 for frame in (pcd_frames if isinstance(pcd_frames, (list, tuple)) else [pcd_frames]):
                     c = self.tracker_consume(frame if not isinstance(frame, (list, tuple)) else frame[-1])
