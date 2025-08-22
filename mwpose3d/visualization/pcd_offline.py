@@ -361,6 +361,9 @@ class PointCloudOfflineVisualizerSK(PointCloudOfflineVisualizer):
         super().update_display()
         if self.current_frame < len(self._skel_cache):
             skel_flat = self._skel_cache[self.current_frame]
+            if skel_flat is None or len(skel_flat) == 0:
+                self._skel_scatter.setData(pos=np.zeros((0, 3)))
+                return
             if len(skel_flat) % 3 != 0:
                 skel_flat = skel_flat[:len(skel_flat) - (len(skel_flat) % 3)]
             

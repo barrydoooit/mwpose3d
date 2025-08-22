@@ -37,6 +37,7 @@ class LoadTrackingRecords(BaseTransform):
                  translate: Tuple[float, float, float] = (0.0, 0.0, 0.0),
                  rotation: Tuple[float, float, float] = (0.0, 0.0, 0.0),
                  online_mode: bool = False,
+                 online_noresult_response: Literal['error', 'empty']='error',
                  tracker_cfg: Union[dict, str, Path] = None,
                  centroid_queue_len: Optional[int] = None):
         """
@@ -63,6 +64,7 @@ class LoadTrackingRecords(BaseTransform):
             self.tracker_cfg = tracker_cfg
             self._tracker = None
             self._last_centroid = None
+            self.online_noresult_response = online_noresult_response
     
     @property
     def tracker(self) -> "BaseTracker":
@@ -118,8 +120,6 @@ class LoadTrackingRecords(BaseTransform):
 
         raise ValueError("No non-empty frame found in either direction.")
 
-    # -----------------------------------
-
     def tracker_consume(self, pcd_frame: np.ndarray) -> Optional[np.ndarray]:
         if pcd_frame.shape[1] < 5:
             pcd_frame = np.pad(pcd_frame[:, :3], ((0, 0), (0, 2)), mode='constant')
@@ -141,15 +141,11 @@ class LoadTrackingRecords(BaseTransform):
         
     def transform_online(self, input: dict) -> dict:
         """
-        - Existing modes (FIRSTLAST/FIRSTNEXT/FIRSTLASTTHENFIRSTNEXT): unchanged behavior,
-          returning a single 3D centroid in `track_centroid`.
-        - NEW: NEARESTPERFRAME
           Maintain a sliding window (deque) of length `centroid_queue_len` with one centroid per frame.
           For each new frame:
             * If tracker yields a centroid, append it.
             * Else, duplicate the last appended centroid.
-          If the window is not yet full after processing the provided frames, raise RuntimeError.
-          The result is set to `track_centroid` as a tuple of centroids (len == centroid_queue_len).
+          If the window is not yet full after processing the provided frames, raise RuntimeError or append an empty centroid.
         """
         if not self.online_mode:
             raise RuntimeError("transform_online called while online_mode=False")
@@ -173,16 +169,20 @@ class LoadTrackingRecords(BaseTransform):
                         # duplicate last if exists; otherwise we can't fill yet
                         if len(self._centroid_queue) > 0:
                             self._centroid_queue.append(self._centroid_queue[-1].copy())
-                        # If queue empty, skip (we'll fail the "not fulfilled" check below)
+                        # If queue empty, skip
                     else:
                         c = self._postprocess_centroid(c.astype(np.float32, copy=False))
                         self._centroid_queue.append(c)
                         self._last_centroid = c.copy()
 
                 if len(self._centroid_queue) < self.centroid_queue_len:
-                    raise RuntimeError(
-                        f"Centroid queue not fulfilled at start "
-                        f"({len(self._centroid_queue)}/{self.centroid_queue_len}).")
+                    if self.online_noresult_response == 'error':
+                        raise RuntimeError(
+                            f"Centroid queue not fulfilled at start "
+                            f"({len(self._centroid_queue)}/{self.centroid_queue_len}).")
+                    elif self.online_noresult_response == 'empty':
+                        while len(self._centroid_queue) < self.centroid_queue_len:
+                            self._centroid_queue.insert(0, np.zeros((3,), dtype=np.float32))
                 input['track_centroid'] = tuple(self._centroid_queue)
                 return input
             else:

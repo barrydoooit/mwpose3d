@@ -11,7 +11,7 @@ if TYPE_CHECKING:
 class AlignTraces:
     def __init__(self,
                  episode: 'Episode',
-                 use_interp_skel: bool = True,
+                 use_interp_skel: bool = False,
                  skeleton_ts_type: Literal['real_ts', 'unix_ms'] = 'unix_ms', # real_ts is calculated in calibrator as start unix_ms + timestamp
                  skeleton_ts_offset_ms: int = 60, # default value for kinect-based collection
                  ): 
