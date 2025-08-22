@@ -4,27 +4,21 @@ _base_ = [
 custom_imports = dict(
     imports=['mwpose3d', 'projects.mmdiff'], allow_failed_imports=False)
 
-filtered = True
-if filtered:
-    suffix = '_filtered'
-else:
-    suffix = ''
-
 data_prefix = dict(
-    pcd=f'mmwave{suffix}',
-    skel=f'skeleton{suffix}'
+    pcd='mmwave_filtered',
+    skel='skeleton'
 )
-data_root = './data/mri'
-train_info = f'info_train{suffix}.pkl'
-val_info = f'info_val{suffix}.pkl'
-test_info = f'info_test{suffix}.pkl'
+data_root = './data/mmfi'
+train_info = 'info_subj_train.pkl'
+val_info = 'info_subj_val.pkl'
+test_info = 'info_subj_val.pkl'
 
-keypoints_involved=[i for i in range(0, 17) if i not in [1,2,3,4]]
+keypoints_involved=list(range(0, 17))
 num_joints = len(keypoints_involved)
 
 point_cloud_size = 64
 past_frames = 6
-seq_frames = 5
+seq_frames = 10
 num_frames = past_frames + seq_frames
 backup_frames = 1
 total_frames = num_frames + backup_frames
@@ -91,9 +85,20 @@ model = dict(
 train_pipeline = [
     dict(
         type='LoadMultiFrameFromH5',
-        load_pcd_dim=radar_input_c,
-        num_frames=seq_frames, # NOTE: This is for phase 1. Phase 2 will use num_frames
+        load_pcd_dim=5,
+        num_frames=seq_frames,
         backup_frames=backup_frames,
+        empty_frame_op='prev',
+    ),
+    dict(
+        type='RandomFrameDrop',
+        drop_prob=0.05,
+        max_drop=1,
+    ),
+    dict(
+        type='SequenceClip',
+        mode='last',
+        sequence_length=seq_frames
     ),
     dict(
         type='SkeletonKeypointFilter',
@@ -101,16 +106,11 @@ train_pipeline = [
     ),
     dict(
         type='SkeletonCoordinateTransform',
-        tran_xyz=(0, -2.38, 0)
+        tran_xyz=(0, -3.15, 0)
     ),
     dict(
         type='PointCloudCoordinateTransform',
-        tran_xyz=(0, -2.38, 0),
-    ),
-    dict(
-        type='RandomFrameDrop',
-        drop_prob=0.05,
-        max_drop=1,
+        tran_xyz=(0, -3.15, 0),
     ),
     dict(
         type='RandomTransform',
@@ -120,12 +120,7 @@ train_pipeline = [
     ),
     dict(
         type='PointDuplicator',
-        target_num_points=point_cloud_size,
-    ),
-    dict(
-        type='SequenceClip',
-        mode='last',
-        sequence_length=seq_frames # NOTE: This is for phase 1. Phase 2 will use num_frames
+        target_num_points=point_cloud_size
     ),
     dict(
         type='PointSortAndClip',
@@ -136,8 +131,8 @@ train_pipeline = [
     dict(
         type='NormalizePointAttr',
         attr_indices=(3, 4,),
-        means=(0.0, 28.98583),
-        stds=(0.45029, 35.79703)
+        means=(-0.00047, 16.56169),
+        stds=(0.79512, 3.88067)
     ),
 ]
 
@@ -159,9 +154,15 @@ train_dataloader = dict(
 val_pipeline = [
     dict(
         type='LoadMultiFrameFromH5',
-        load_pcd_dim=radar_input_c,
-        num_frames=seq_frames, # NOTE: This is for phase 1. Phase 2 will use num_frames
+        load_pcd_dim=5,
+        num_frames=seq_frames,
         backup_frames=backup_frames,
+        empty_frame_op='prev',
+    ),
+    dict(
+        type='SequenceClip',
+        mode='last',
+        sequence_length=seq_frames
     ),
     dict(
         type='SkeletonKeypointFilter',
@@ -169,20 +170,15 @@ val_pipeline = [
     ),
     dict(
         type='SkeletonCoordinateTransform',
-        tran_xyz=(0, -2.38, 0)
+        tran_xyz=(0, -3.15, 0)
     ),
     dict(
         type='PointCloudCoordinateTransform',
-        tran_xyz=(0, -2.38, 0),
+        tran_xyz=(0, -3.15, 0),
     ),
     dict(
         type='PointDuplicator',
-        target_num_points=point_cloud_size,
-    ),
-    dict(
-        type='SequenceClip',
-        mode='last',
-        sequence_length=seq_frames # NOTE: This is for phase 1. Phase 2 will use num_frames
+        target_num_points=point_cloud_size
     ),
     dict(
         type='PointSortAndClip',
@@ -193,8 +189,8 @@ val_pipeline = [
     dict(
         type='NormalizePointAttr',
         attr_indices=(3, 4,),
-        means=(0.0, 28.98583),
-        stds=(0.45029, 35.79703)
+        means=(-0.00047, 16.56169),
+        stds=(0.79512, 3.88067)
     ),
 ]
 
@@ -282,4 +278,10 @@ test_cfg = dict(
 test_mode = 'coarse'
 custom_hooks = [
     dict(type='MMDiffPipelineHook'),
+    # dict(
+    #     type='LatencyProfilingHook',
+    #     out_file="/home/orin/Projects/mwpose3d/exp_data/latency/orin15/ptransv1_f1p64_b16_e10_mmfi.json",
+    #     subject_modules=[],
+    #     include_full_forward=True,
+    # )
 ]

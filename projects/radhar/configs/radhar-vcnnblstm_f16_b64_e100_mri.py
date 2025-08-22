@@ -4,14 +4,20 @@ _base_ = [
 custom_imports = dict(
     imports=['mwpose3d', 'projects.radhar'], allow_failed_imports=False)
 
+filtered = True
+if filtered:
+    suffix = '_filtered'
+else:
+    suffix = ''
+
 data_prefix = dict(
-    pcd='mmwave',
-    skel='skeleton'
+    pcd=f'mmwave{suffix}',
+    skel=f'skeleton{suffix}'
 )
 data_root = './data/mri'
-train_info = 'info_train.pkl'
-val_info = 'info_val.pkl'
-test_info = 'info_test.pkl'
+train_info = f'info_train{suffix}.pkl'
+val_info = f'info_val{suffix}.pkl'
+test_info = f'info_test{suffix}.pkl'
 
 keypoints_involved=[i for i in range(0, 17) if i not in [1,2,3,4]]
 
