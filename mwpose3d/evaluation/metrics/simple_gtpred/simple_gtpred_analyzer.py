@@ -2,6 +2,8 @@ import json
 from pathlib import Path
 from typing import Optional
 import torch
+
+from mwpose3d.evaluation.metrics.simple_gtpred.simple_gtpred_visualizer import SimpleGTPredVisualizerQT
 try:
     from .simple_gtpred_visualizer import SimpleGTPredVisualizer
 except Exception as e:
@@ -31,7 +33,7 @@ class SimpleGTPredAnalyzer(BaseMetric):
                  out_file: Optional[str] = None,
                  visualizer_cfg: Optional[dict] = None):
         self.keypoints_involved = keypoints_involved
-        self.visuzalize = visualizer_cfg is not None
+        self.visualize = visualizer_cfg is not None
         self.report = []
         self.gt_data = []
         self.pred_data = []
@@ -43,18 +45,22 @@ class SimpleGTPredAnalyzer(BaseMetric):
             if not self.out_file.parent.exists():
                 self.out_file.parent.mkdir(parents=True, exist_ok=True)
 
-        if self.visuzalize:
-            raise NotImplementedError("Visualizer is not correctly maintained, as the pcd data structure is heterogeneous from different models.")
+        if self.visualize:
             self._make_visualizer(visualizer_cfg)
         else:
             self.visualizer = None
             
     def _make_visualizer(self, visualizer_cfg):
-        self.visualizer = SimpleGTPredVisualizer(
-            keypoints_involved=visualizer_cfg.get("keypoints_involved", self.keypoints_involved),
-            keypoint_for_stats=visualizer_cfg.get("keypoint_for_stats", self.keypoints_involved),
-            error_type=visualizer_cfg.get("error_type", "abs_error")
-        )
+        # Sensible defaults
+        cfg = {
+            "keypoints_involved": visualizer_cfg.get("keypoints_involved", self.keypoints_involved),
+            "keypoint_for_stats": visualizer_cfg.get("keypoint_for_stats", self.keypoints_involved),
+            "error_type": visualizer_cfg.get("error_type", "abs_error"),
+            "window_size": visualizer_cfg.get("window_size", 100),
+            "max_points_per_frame": visualizer_cfg.get("max_points_per_frame", 50000),
+            "follow": visualizer_cfg.get("follow", True),
+        }
+        self.visualizer = SimpleGTPredVisualizerQT(**cfg)
         
     def process_sample(self, data_sample, data_batch):
         gt = data_sample.gt
@@ -76,10 +82,43 @@ class SimpleGTPredAnalyzer(BaseMetric):
         self.gt_data.append(gt)
         self.pred_data.append(pred)
         
-        if self.visuzalize:
-            pcd = data_batch.get("final_pcd_tensor")[:, -2:, ...]
-            self.pcd_data.append(pcd)
-            self.visualizer.update(gt, pred, pcd, frame_report)
+        if self.visualize:
+            pcd = None
+            # common names someone might use
+            for k in ("final_pcd_tensor", "pcd", "points", "point_cloud"):
+                if k in data_batch:
+                    pcd = data_batch[k]
+                    break
+            # If available, keep only the last 2 temporal slices to make motion visible but fast
+            if isinstance(pcd, torch.Tensor):
+                try:
+                    # Accept [1,F,N,C], [F,N,C], or [N,C]
+                    if pcd.dim() == 4:
+                        pcd_vis = pcd[:, -min(2, pcd.shape[1]):, ...]
+                    elif pcd.dim() == 3:
+                        pcd_vis = pcd[-min(2, pcd.shape[0]):, ...].unsqueeze(0)
+                    elif pcd.dim() == 2:
+                        pcd_vis = pcd.unsqueeze(0).unsqueeze(0)
+                    else:
+                        pcd_vis = None
+                except Exception:
+                    pcd_vis = None
+            else:
+                pcd_vis = None
+
+            if pcd_vis is not None:
+                self.pcd_data.append(pcd_vis.detach().cpu())
+            else:
+                self.pcd_data.append(None)
+
+            # Live, per-frame update & event pump (no blocking mainloop)
+            self.visualizer.update(
+                gt_tensor=self.gt_data[-1],
+                pred_tensor=self.pred_data[-1],
+                pc_tensor=self.pcd_data[-1],
+                frame_report=frame_report
+            )
+            self.visualizer.idle() 
     
     def evaluate(self, show=True):
         joint_errors = {}
@@ -114,7 +153,7 @@ class SimpleGTPredAnalyzer(BaseMetric):
         for joint, metrics in summary.items():
             print(f"{joint:03}: MAE = {metrics['mae']:.4f}, RMSE = {metrics['rmse']:.4f}, MSE = {metrics['mse']:.4f}")
         print(f"avg: MAE = {average_mae:.4f}, RMSE = {average_rmse:.4f}, MSE = {average_mse:.4f}")
-        if self.visuzalize:
+        if self.visualize:
             self.visualizer.finalize(self.gt_data, self.pred_data, self.report, pc_data=self.pcd_data)
         
         if self.out_file is not None:
@@ -126,3 +165,6 @@ class SimpleGTPredAnalyzer(BaseMetric):
         self.report = []
         self.gt_data = []
         self.pred_data = []
+        self.pcd_data = []
+        if self.visualizer is not None:
+            self.visualizer.reset()
