@@ -29,12 +29,14 @@ class TrackingRecordGeneratorV2:
         dataset: str,
         hpe_cfg_f: Union[str, Path],
         *,
+        use_transform_matrix: bool = False,
         data_prefix: Dict[str, str] = dict(pcd="mmwave"),
         splits: List[str] = ("train", "val", "test"),
         dataloader_key: str = "val_dataloader",
     ) -> None:
         self.dataset = dataset
         self.hpe_cfg_f = str(hpe_cfg_f)
+        self.use_transform_matrix = use_transform_matrix
         self.data_prefix = dict(data_prefix, skel="skeleton")
         self.splits = list(splits)
         self.dataloader_key = dataloader_key
@@ -224,6 +226,8 @@ class TrackingRecordGeneratorV2:
                 if hasattr(t, "tracker_name"):
                     self._ltr_tracker_name = getattr(t, "tracker_name")
                 t.online_noresult_response = 'empty'
+                if not self.use_transform_matrix and hasattr(t, "transform_matrix"):
+                    t.transform_matrix = None
                 break
 
     def visualize(
