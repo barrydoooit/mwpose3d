@@ -55,8 +55,8 @@ class SequenceClip(BaseTransform):
 @OnlineEnabled
 @TRANSFORMS.register_module()
 class StackPointCloudFrames(BaseTransform):
-    def __init__(self, stack_size: int, *, inject_index: bool = False, keep_structure: bool = False, ):
-        super().__init__()
+    def __init__(self, stack_size: int, *, inject_index: bool = False, keep_structure: bool = False, online_mode: bool = False):
+        super().__init__(online_mode)
         self.stack_size = stack_size
         self.inject_index = inject_index
         self.keep_structure = keep_structure

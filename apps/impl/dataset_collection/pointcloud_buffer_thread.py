@@ -1,5 +1,6 @@
 from contextlib import contextmanager
 import json
+import os
 from pathlib import Path
 import threading
 from typing import Deque, Optional, Union
@@ -91,33 +92,45 @@ class PointCloudBuffer:
         with self.lock() as container:
             frames = list(container)
         meta_data = self._meta_data.copy()
-        self.clear()
 
-        json_path = Path(json_file)
-        if json_path.is_dir():
+        if not frames:
+            return None
+
+        jf = Path(json_file)
+        is_dir_like = (not jf.suffix) or (jf.exists() and jf.is_dir())
+
+        if is_dir_like:
+            given_dir = jf
             first_ts = frames[0].timestamp
             last_ts = frames[-1].timestamp
             first_time_str = time.strftime('%Y%m%d_%H%M%S', time.localtime(first_ts / 1000))
-            last_time_str = time.strftime('%H%M%S', time.localtime(last_ts / 1000))
-            json_path = json_path / f"{first_time_str}-{last_time_str}_f{len(frames)}.json"
+            last_time_str  = time.strftime('%H%M%S',        time.localtime(last_ts  / 1000))
+            out_path = given_dir / f"{first_time_str}-{last_time_str}_f{len(frames)}.json"
+        else:
+            out_path = jf
+            given_dir = out_path.parent  # the directory that will hold the trace file
+        given_dir.mkdir(parents=True, exist_ok=True)
 
-        if not json_path.parent.exists():
-            json_path.parent.mkdir(parents=True, exist_ok=True)
-        
         data = {
             "frame_keys": ['seq', 'ts', 'points'],
             "point_keys": ['x', 'y', 'z', 'vel', 'snr'],
             "frames": [frame.serialize(compact=True) for frame in frames],
         }
-        with open(json_path, 'w') as f:
+        tmp_path = out_path.with_suffix(out_path.suffix + ".tmp")
+        with open(tmp_path, 'w', encoding='utf-8') as f:
             json.dump(data, f)
-
-        if len(meta_data) > 0:
-            meta_path = json_path.with_suffix('.meta.json')
-            with open(meta_path, 'w') as f:
+        os.replace(tmp_path, out_path)
+        if meta_data:
+            meta_dir = given_dir.parent / 'meta'
+            meta_dir.mkdir(parents=True, exist_ok=True)
+            meta_path = meta_dir / out_path.with_suffix('.meta.json').name
+            tmp_meta = meta_path.with_suffix(meta_path.suffix + ".tmp")
+            with open(tmp_meta, 'w', encoding='utf-8') as f:
                 json.dump(meta_data, f)
-        
-        return str(json_path)
+            os.replace(tmp_meta, meta_path)
+        self.clear()
+        print(str(out_path))
+        return str(out_path)
     
 class PointCloudBufferingWorker(QObject):
     bufferFull = Signal()

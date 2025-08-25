@@ -90,8 +90,8 @@ class InferenceEngine:
 
         self.model: torch.nn.Module = MODELS.build(model)
         self.model.to(get_device())
-        self.preprocess_pipeline: list['BaseTransform'] = ComposePreprocessOnline(preprocess_pipeline)
-        self.postprocess_pipeline: list['BasePostProcessing'] = ComposePostprocessOnline(postprocess_pipeline) if postprocess_pipeline is not None else []
+        self.preprocess_pipeline: ComposePreprocessOnline = ComposePreprocessOnline(preprocess_pipeline)
+        self.postprocess_pipeline: Optional[ComposePostprocessOnline] = ComposePostprocessOnline(postprocess_pipeline) if postprocess_pipeline is not None else None
         self.model.load_state_dict(torch.load(load_from, map_location=torch.device(get_device())))
         self.model.eval()
         self.keypoints_involved = keypoints_involved
@@ -177,6 +177,8 @@ class InferenceEngine:
             return None
 
     def _postprocess(self, data_batch_dict: dict, datasample: 'SkeletonDataSample') -> Tuple[dict,  'SkeletonDataSample']:
+        if self.postprocess_pipeline is None:
+            return data_batch_dict, datasample
         data_batch_dict, datasample = self.postprocess_pipeline(data_batch_dict, datasample)
         return data_batch_dict, datasample
 
@@ -184,9 +186,9 @@ class InferenceEngine:
     def from_cfg(cls, config: dict):
         return cls(
             model=config['model'],
-            frame_buffer_size=config['num_frames'],
+            frame_buffer_size=config['total_frames'],
             preprocess_pipeline=config['test_pipeline'],
-            postprocess_pipeline=config['postprocess'],
+            postprocess_pipeline=config.get('postprocess', None),
             load_from=config['load_from'],
             keypoints_involved=config['keypoints_involved'],
             custom_hooks=config.get('custom_hooks', None),

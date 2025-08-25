@@ -29,15 +29,17 @@ instructions = dict(
     ]
 )
 
+# data_root = 'apps/impl/dataset_collection/traces'
+data_root = 'apps/impl/dataset_collection/traces/downview'
 buffer_cfg = dict(
-    dump_dir='apps/impl/dataset_collection/traces/pointcloud',
-    buffer_size=2500
+    dump_dir=f'{data_root}/pointcloud',
+    buffer_size=5000
 )
 
 kinect_cfg = dict(
     kinect_mgr_cfg=dict(
         exe_path='apps/impl/dataset_collection/DumpKinectSkeleton/bin/Release/DumpKinectSkeleton.exe',
-        output_dir='apps/impl/dataset_collection/traces/kinect',
+        output_dir=f'{data_root}/kinect',
         mode=['capture'],
     )
 )
