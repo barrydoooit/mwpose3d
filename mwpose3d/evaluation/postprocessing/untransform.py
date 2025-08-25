@@ -102,17 +102,124 @@ class SkeletonBackToOriginalCoord(BasePostProcessing):
 
 
     def transform(self, data_batch_dict, datasample):
+        import numpy as np
+
+        def extract_Q_t_row(M: np.ndarray):
+            # row-vector convention: [x y z 1] @ M
+            Q = M[:3, :3]
+            t = M[:3, 3]
+            return Q, t
+
+        def canonize_T_skel(T_skel):
+            """
+            Returns per_batch_T: List[List[np.ndarray]]
+            - len(per_batch_T) == B
+            - len(per_batch_T[b]) == T
+            - per_batch_T[b][t] is 4x4 np.ndarray
+            Accepts:
+            - List[Tuple[np.ndarray]]  -> [T][B]
+            - Tuple[np.ndarray] (B==1) -> [T]
+            """
+            # Case: Tuple[np.ndarray] -> batch=1
+            if isinstance(T_skel, tuple) and all(isinstance(x, np.ndarray) for x in T_skel):
+                return [list(T_skel)]  # B=1
+
+            # Case: List[Tuple[np.ndarray]] -> frame-major
+            if isinstance(T_skel, list) and len(T_skel) > 0 and isinstance(T_skel[0], tuple):
+                T = len(T_skel)
+                B = len(T_skel[0])
+                per_batch = [[] for _ in range(B)]
+                for t in range(T):
+                    assert len(T_skel[t]) == B, "Inconsistent batch size across frames in T_skel"
+                    for b in range(B):
+                        per_batch[b].append(np.asarray(T_skel[t][b], dtype=np.float32))
+                return per_batch
+
+            # Fallback: already a single 4x4 (treat as B=1, T=1)
+            if isinstance(T_skel, np.ndarray) and T_skel.shape == (4, 4):
+                return [[T_skel]]
+
+            # If still nested, peel once and retry
+            if isinstance(T_skel, (list, tuple)) and len(T_skel) > 0:
+                return canonize_T_skel(T_skel[0])
+
+            raise TypeError(f"Unexpected T_skel structure: {type(T_skel)}")
+
+        def apply_inv_per_frame(arr, per_batch_T):
+            if arr is None:
+                return None
+            arr = np.asarray(arr)
+
+            B = len(per_batch_T)
+            T = len(per_batch_T[0])
+            Qinv = [[np.linalg.inv(extract_Q_t_row(M)[0]).astype(np.float32) for M in per_batch_T[b]] for b in range(B)]
+            tvec = [[extract_Q_t_row(M)[1].astype(np.float32) for M in per_batch_T[b]] for b in range(B)]
+
+            def untransform_pts(pts, Qinv_, t_):
+                # pts: (N,3)
+                return (pts - t_) @ Qinv_
+
+            # (B, T, C)
+            if arr.ndim == 3:
+                assert arr.shape[0] == B, f"B mismatch: data {arr.shape[0]} vs T_skel {B}"
+                assert arr.shape[1] == T, f"T mismatch: data {arr.shape[1]} vs T_skel {T}"
+                C = arr.shape[2]
+                assert C % 3 == 0, "Channel dim must be multiple of 3"
+                K = C // 3
+                out = arr.copy()
+                for b in range(B):
+                    for i in range(T):
+                        pts = out[b, i, :3*K].reshape(-1, 3)
+                        pts = untransform_pts(pts, Qinv[b][i], tvec[b][i])
+                        out[b, i, :3*K] = pts.reshape(-1)
+                return out
+
+            # (T, C) -> assume B=1
+            if arr.ndim == 2 and arr.shape[0] == T:
+                C = arr.shape[1]
+                assert C % 3 == 0, "Channel dim must be multiple of 3"
+                K = C // 3
+                out = arr.copy()
+                for i in range(T):
+                    pts = out[i, :3*K].reshape(-1, 3)
+                    pts = untransform_pts(pts, Qinv[0][i], tvec[0][i])
+                    out[i, :3*K] = pts.reshape(-1)
+                return out
+
+            # (B, C) -> T==1 per batch
+            if arr.ndim == 2 and arr.shape[0] == B and T == 1:
+                C = arr.shape[1]
+                assert C % 3 == 0, "Channel dim must be multiple of 3"
+                K = C // 3
+                out = arr.copy()
+                for b in range(B):
+                    pts = out[b, :3*K].reshape(-1, 3)
+                    pts = untransform_pts(pts, Qinv[b][0], tvec[b][0])
+                    out[b, :3*K] = pts.reshape(-1)
+                return out
+
+            # (C,) -> single vector; use last frame of batch 0
+            if arr.ndim == 1 and (arr.size % 3 == 0):
+                K = arr.size // 3
+                out = arr.copy()
+                pts = out[:3*K].reshape(-1, 3)
+                pts = untransform_pts(pts, Qinv[0][-1], tvec[0][-1])
+                out[:3*K] = pts.reshape(-1)
+                return out
+
+            # Fallback: leave unchanged but warn
+            print(f"[SkeletonBackToOriginalCoord] Unhandled array shape {arr.shape}; leaving unchanged.")
+            return arr
+
         T_skel = data_batch_dict.get('T_skel', None)
         if T_skel is None:
             print("Warning: T_skel is None, skipping untransform.")
             return data_batch_dict, datasample
-        while not isinstance(T_skel, np.ndarray):
-            T_skel = T_skel[0]
-        Q, t = self._extract_Q_t_row(T_skel)
+
+        per_batch_T = canonize_T_skel(T_skel)
 
         with self._numpy_views(datasample, fields=('pred', 'gt')) as a:
-            if a.get('pred') is not None:
-                a['pred'] = self._apply_inv_inplace(a['pred'], Q, t)
-            if a.get('gt') is not None:
-                a['gt'] = self._apply_inv_inplace(a['gt'], Q, t)
+            a['pred'] = apply_inv_per_frame(a.get('pred'), per_batch_T)
+            a['gt']   = apply_inv_per_frame(a.get('gt'), per_batch_T)
+
         return data_batch_dict, datasample
