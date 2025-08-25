@@ -80,7 +80,7 @@ class ToHdf5:
         
         file_key = self.alligned_episode.episode_name
         frame_count = self.alligned_episode.pcd_df['seq'].nunique()
-        assert frame_count == self.alligned_episode.episode_length
+        assert frame_count == self.alligned_episode.episode_length, f"Frame count mismatch: {frame_count} vs {self.alligned_episode.episode_length}"
         meta = self.alligned_episode.pcd_meta
         if meta is None: meta = {}
         new_info_entry = dict(

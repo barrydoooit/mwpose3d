@@ -23,7 +23,7 @@ class LoadTrackingRecords(BaseTransform):
         FIRSTLAST = 'firstlast'
         FIRSTNEXT = 'firstnext'
         FIRSTLASTTHENFIRSTNEXT = 'firstlastthenfirstnext'
-        NEARESTPERFRAME = 'nearestperframe'  # NEW
+        NEARESTPERFRAME = 'nearestperframe'
 
     def __init__(self, 
                  tracker_name: str,
@@ -31,7 +31,7 @@ class LoadTrackingRecords(BaseTransform):
                      'firstlast',
                      'firstnext',
                      'firstlastthenfirstnext',
-                     'nearestperframe'                    # NEW
+                     'nearestperframe'
                  ] = 'firstlast',
                  ignore_axis: List[int] = [2],
                  translate: Tuple[float, float, float] = (0.0, 0.0, 0.0),
@@ -381,7 +381,6 @@ class RelativeCoordtoTrackingCentroid(BaseTransform):
 
         cent = input['track_centroid']
         per_frame = isinstance(cent, (tuple, list))
-
         # Build per-frame translations (3,) for PCD and (optionally) SKEL
         if per_frame:
             if len(cent) != n_pcd:

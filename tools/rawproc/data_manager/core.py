@@ -1,3 +1,4 @@
+
 from copy import deepcopy
 import logging
 import tkinter as tk
@@ -7,7 +8,7 @@ import pickle
 import threading
 from abc import ABC, abstractmethod
 import traceback
-from typing import Dict, Optional, Protocol
+from typing import Dict, Optional, Protocol, List, Tuple
 
 import pandas as pd
 
@@ -21,7 +22,6 @@ sys.path.append(os.path.join(os.path.dirname(__file__), '../..'))
 from .widgets import CheckList, MultiColumnCheckList
 from ...rawproc.episode import Episode
 from ...rawproc.hdf5_dumper import ToHdf5
-
 
 
 class DataProcessorProtocol(Protocol):
@@ -52,57 +52,64 @@ class DataProcessorProtocol(Protocol):
     def handle_reload_raw(self, episodes: list): ...
     @abstractmethod
     def handle_data_align(self, episodes: list): ...
-    
+
+
 class DataProcessorGUI(tk.Tk):
+    """
+    Reimplemented GUI wiring to support:
+    - Shift-click multi-select in both episode lists.
+    - Mouse wheel scrolling on hover.
+    - Hide 'Calibrated' in both lists, and hide 'Aligned' in the bottom (Processed) list.
+    - Display per-episode _pcd_meta key/value pairs as columns in both lists (fill '-' for missing).
+    - Clickable headers to sort by any column (toggle on repeat; episode name is tie-breaker ascending).
+    """
     def __init__(self, processor: DataProcessorProtocol):
         super().__init__()
         self.title("Data Processing GUI")
-        self.geometry("800x600")
+        self.geometry("1000x700")
         self.processor = processor
-        
-        self._buttons = {}
-        
+
+        self._buttons: Dict[str, ttk.Button] = {}
+
         self.create_widgets()
         self.processor.load_processed_episodes()
         self.refresh_episode_lists()
         self.processor._gui_refresh_callabck = self.refresh_episode_lists
 
     def create_widgets(self):
-        # 主布局分为左右两栏
+        # Two-column layout
         main_frame = ttk.Frame(self)
         main_frame.pack(fill=tk.BOTH, expand=True)
 
-        # 左侧episode列表
+        # Left: episode lists
         list_frame = ttk.Frame(main_frame)
         list_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
 
-        op_columns = ["Calibrated", "Aligned"]
-        # 未处理列表
+        # We will provide columns dynamically in set_items (so pass no columns here)
         self.unprocessed_list = MultiColumnCheckList(
-            list_frame, "Unprocessed Episodes", self.toggle_buttons_state, op_columns)
+            list_frame, "Unprocessed Episodes", self.toggle_buttons_state
+        )
         self.unprocessed_list.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
 
-        # 已处理列表
         self.processed_list = MultiColumnCheckList(
-            list_frame, "Processed Episodes", self.toggle_buttons_state, op_columns)
+            list_frame, "Processed Episodes", self.toggle_buttons_state
+        )
         self.processed_list.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
 
-        # 右侧控制面板
+        # Right: control panel
         control_frame = ttk.Frame(main_frame)
         control_frame.pack(side=tk.RIGHT, fill=tk.Y, padx=5, pady=5)
 
-        # 信息后缀输入
         ttk.Label(control_frame, text="Info Suffix:").pack(anchor=tk.W)
         self.info_suffix_entry = ttk.Entry(control_frame)
         self.info_suffix_entry.pack(fill=tk.X, pady=5)
 
         self.create_control_buttons(control_frame)
-            
-        # 状态栏
+
+        # Status bar
         self.status_var = tk.StringVar()
-        ttk.Label(self, textvariable=self.status_var).pack(
-            side=tk.BOTTOM, fill=tk.X)
-        
+        ttk.Label(self, textvariable=self.status_var).pack(side=tk.BOTTOM, fill=tk.X)
+
     def create_control_buttons(self, master=None):
         button_configs = [
             ("Create Data", self.create_data),
@@ -111,11 +118,11 @@ class DataProcessorGUI(tk.Tk):
             ("Calibrate Time", self.calibrate_time),
             ("Remove Processed", self.remove_processed),
             ("Reload Raw", self.reload_raw),
-            ("Align Data", self.align_data)
+            ("Align Data", self.align_data),
         ]
         for text, cmd in button_configs:
             self.add_custom_button(master, text, cmd)
-    
+
     def add_custom_button(self, master: Optional[ttk.Frame], text: str, handler: callable):
         new_btn = ttk.Button(self if master is None else master, text=text, command=handler)
         new_btn.pack(fill=tk.X, pady=5)
@@ -124,118 +131,175 @@ class DataProcessorGUI(tk.Tk):
     def get_selected_episodes(self, lazy=True):
         if lazy:
             return tuple(
-                name for name in
-                self.unprocessed_list.checked_items + self.processed_list.checked_items
+                name for name in self.unprocessed_list.checked_items + self.processed_list.checked_items
             )
-        return {name: self.processor.get_episode(name) for name in self.unprocessed_list.checked_items + self.processed_list.checked_items}
-    
+        return {
+            name: self.processor.get_episode(name)
+            for name in self.unprocessed_list.checked_items + self.processed_list.checked_items
+        }
+
     def toggle_buttons_state(self, _=None):
-        has_selection = bool(
-            self.unprocessed_list.checked_items or 
-            self.processed_list.checked_items
-        )
+        has_selection = bool(self.unprocessed_list.checked_items or self.processed_list.checked_items)
         state = tk.NORMAL if has_selection else tk.DISABLED
         for btn in self._buttons.values():
             btn.config(state=state)
-    
+
     # ---- Event handles delegated to processor ----
     def create_data(self):
         episodes = self.get_selected_episodes(lazy=False)
         suffix = self.info_suffix_entry.get().strip()
         self.processor.handle_create_data(episodes, suffix)
-    
+
     def delete_raw(self):
         episode_names = self.get_selected_episodes(lazy=True)
         if len(episode_names) > 0:
             if messagebox.askyesno("Delete Raw Data", "Are you sure to delete raw data?"):
                 self.processor.handle_delete_raw(episode_names)
-    
+
     def allocate_to_info(self):
         episode_names = self.get_selected_episodes(lazy=True)
         suffix = self.info_suffix_entry.get().strip()
         self.processor.handle_allocate_to_info(episode_names, suffix)
-    
+
     def calibrate_time(self):
         episode_names = self.get_selected_episodes(lazy=True)
         if len(episode_names) > 0:
             self.processor.handle_calibrate_time(episode_names)
-    
+
     def remove_processed(self):
         episode_names = self.get_selected_episodes(lazy=True)
         also_data = messagebox.askyesno("Remove Processed Data", "Also remove processed data?")
         self.processor.handle_remove_processed(episode_names, also_data)
-    
+
     def reload_raw(self):
         episode_names = self.get_selected_episodes(lazy=True)
         self.processor.handle_reload_raw(episode_names)
-    
+
     def align_data(self):
         episode_names = self.get_selected_episodes(lazy=True)
         self.processor.handle_data_align(episode_names)
+
     # ---- ----
 
     def update_ui_state(self, enabled: bool):
         state = tk.NORMAL if enabled else tk.DISABLED
         for btn in self._buttons.values():
             btn.config(state=state)
-    
+
+    def _collect_meta(self, episode_names: List[str]) -> Tuple[pd.DataFrame, List[str]]:
+        """Return (meta_df, sorted_meta_keys) for provided episode names.
+
+        meta_df index is episode, columns are meta keys, values are strings or '-' for missing.
+
+        We read only _pcd_meta (fast) instead of loading full episode data.
+
+        """
+        meta_dir = self.processor.raw_dir / "meta"
+        meta_records = {}
+        all_keys = set()
+        for ep in episode_names:
+            meta = {}
+            try:
+                # Only load meta to avoid heavy loads.
+                ep_obj = Episode(ep)
+                ep_obj.load_pcd_meta(meta_dir)
+                if hasattr(ep_obj, "_pcd_meta") and isinstance(ep_obj._pcd_meta, dict):
+                    meta = ep_obj._pcd_meta
+            except Exception as e:
+                logger.warning(f"Failed to load meta for {ep}: {e}")
+            meta_records[ep] = meta
+            all_keys.update(meta.keys())
+
+        meta_df = pd.DataFrame.from_dict(meta_records, orient="index")
+        if len(all_keys) > 0:
+            meta_df = meta_df.reindex(columns=sorted(all_keys))
+        meta_df = meta_df.fillna("-")
+        return meta_df, sorted(all_keys)
+
     def refresh_episode_lists(self):
+        # Determine available episodes from raw pointclouds
         radar_dir = self.processor.raw_dir / "pointcloud"
         if radar_dir.exists():
-            radar_files: list[Path] = list(radar_dir.glob("*"))
+            radar_files = list(radar_dir.glob("*"))
             episode_names = {f.stem for f in radar_files if not f.is_dir()}
         else:
             episode_names = set()
-        
+
+        # Ensure status rows exist
         for ep in episode_names:
             if ep not in self.processor.status_df.index:
                 self.processor.status_df.loc[ep] = [False] * len(self.processor.status_df.columns)
+
         processed = sorted(self.processor.processed_episode_names)
         unprocessed = sorted(episode_names - self.processor.processed_episode_names)
-        
-        self.unprocessed_list.set_items(self.processor.status_df.loc[unprocessed])
-        self.processed_list.set_items(self.processor.status_df.loc[processed])
-    
+
+        # Build meta columns for all episodes
+        all_eps_sorted = sorted(list(episode_names))
+        meta_df_all, meta_keys_sorted = self._collect_meta(all_eps_sorted)
+
+        # Build display dataframes by merging status (ops) + meta
+        # NOTE: We hide 'Calibrated' everywhere and hide 'Aligned' for processed list.
+        # Keep booleans in the df; missing filled downstream in widget.
+        status_all = self.processor.status_df.reindex(all_eps_sorted).copy()
+        for col in ["Calibrated", "Aligned"]:
+            if col not in status_all.columns:
+                status_all[col] = False
+
+        display_all = pd.concat([status_all, meta_df_all], axis=1)
+
+        # Slice to subsets
+        unprocessed_df = display_all.reindex(unprocessed)
+        processed_df = display_all.reindex(processed)
+
+        # Columns to show
+        # Hide Calibrated in both; show Aligned only on unprocessed; meta columns appear on both.
+        unprocessed_cols: List[str] = list(meta_keys_sorted) + (["Aligned"] if "Aligned" in display_all.columns else [])
+        processed_cols: List[str] = list(meta_keys_sorted)  # no Calibrated, no Aligned
+
+        # Send to widgets
+        self.unprocessed_list.set_items(unprocessed_df, columns=unprocessed_cols)
+        self.processed_list.set_items(processed_df, columns=processed_cols)
+
     def show_status(self, message: str, error: bool = False):
         fg = "red" if error else "black"
         self.status_var.set(message)
         self.after(10000, lambda: self.status_var.set(""))
-    
+
 
 class DataProcessorDelegate(DataProcessorProtocol):
     def __init__(self, raw_dir: str, output_dir):
         self.raw_dir = Path(raw_dir)
         self.output_dir = Path(output_dir)
         self._processed_episode_names = set()
-        self._episodes = {}
+        self._episodes: Dict[str, Episode] = {}
         self._gui_refresh_callabck = None
         self._status_df = pd.DataFrame(columns=["Calibrated", "Aligned"], dtype=bool)
-        
+
     @property
     def status_df(self):
         return self._status_df
+
     @property
     def episodes(self):
         return self._episodes
+
     @property
     def processed_episode_names(self):
         return self._processed_episode_names
-    
+
     def load_processed_episodes(self):
         info_path = self.output_dir / "info_all.pkl"
         if info_path.exists():
             with open(info_path, "rb") as f:
-                self._processed_episode_names = {
-                    info["id"] for info in pickle.load(f)
-                }
+                self._processed_episode_names = {info["id"] for info in pickle.load(f)}
 
     def get_episode(self, name: str):
         if name in self.episodes:
             return self.episodes[name]
         episode = Episode(name)
-        episode.load_pcd(self.raw_dir / 'pointcloud')
-        episode.load_pcd_meta(self.raw_dir / 'meta')
-        episode.load_skeleton(self.raw_dir / 'kinect')
+        episode.load_pcd(self.raw_dir / "pointcloud")
+        episode.load_pcd_meta(self.raw_dir / "meta")
+        episode.load_skeleton(self.raw_dir / "kinect")
         self.episodes[name] = episode
         return episode
 
@@ -243,37 +307,36 @@ class DataProcessorDelegate(DataProcessorProtocol):
         assert isinstance(new_episode, Episode)
         self.episodes[name] = new_episode
         logger.info(f"Episode {name} updated.")
-    
+
     def gui_refresh_callback(self):
         if self._gui_refresh_callabck:
             self._gui_refresh_callabck()
-    
+
     def handle_create_data(self, episodes: list, suffix: str):
         def task():
-            
-                suffixes = ["all"]
-                if suffix:
-                    suffixes.append(suffix)
-                for name in episodes:
-                    try:
-                        episode = self.get_episode(name)
-                        hdf5_maker = ToHdf5(episode, self.output_dir)
-                        hdf5_maker.save(suffixes)
-                        self._processed_episode_names.add(name)
-                    except Exception as e:
-                        logger.error(f"Failed to create data: {e.with_traceback(traceback.format_exc())}")
-                self.gui_refresh_callback()
-            
+            suffixes = ["all"]
+            if suffix:
+                suffixes.append(suffix)
+            for name in episodes:
+                try:
+                    episode = self.get_episode(name)
+                    hdf5_maker = ToHdf5(episode, self.output_dir)
+                    hdf5_maker.save(suffixes)
+                    self._processed_episode_names.add(name)
+                except Exception as e:
+                    logger.error(f"Failed to create data: {e}")
+            self.gui_refresh_callback()
+
         threading.Thread(target=task, daemon=True).start()
-    
+
     def handle_delete_raw(self, episodes: list):
-        def task():       
+        def task():
             for name in episodes:
                 try:
                     paths = [
-                        self.raw_dir / 'pointcloud' / f"{name}.json",
-                        self.raw_dir / 'meta' / f"{name}.json",
-                        self.raw_dir / 'kinect' / f"{name}.csv"
+                        self.raw_dir / "pointcloud" / f"{name}.json",
+                        self.raw_dir / "meta" / f"{name}.json",
+                        self.raw_dir / "kinect" / f"{name}.csv",
                     ]
                     for p in paths:
                         if p.exists():
@@ -281,9 +344,9 @@ class DataProcessorDelegate(DataProcessorProtocol):
                 except Exception as e:
                     logger.error(f"Failed to delete raw data: {e}")
             self.gui_refresh_callback()
-            
+
         threading.Thread(target=task, daemon=True).start()
-    
+
     def handle_allocate_to_info(self, episodes: list, suffix: str):
         def task():
             try:
@@ -310,7 +373,9 @@ class DataProcessorDelegate(DataProcessorProtocol):
                         for infon in new_info:
                             infon: dict
                             if infon["id"] == key:
-                                logger.warning(f"Episode {name} already exists in info_{suffix}.pkl. Coverwriting.")
+                                logger.warning(
+                                    f"Episode {name} already exists in info_{suffix}.pkl. Coverwriting."
+                                )
                                 infon.clear()
                                 infon.update(_info)
                         else:
@@ -318,13 +383,14 @@ class DataProcessorDelegate(DataProcessorProtocol):
                             logger.info(f"Episode {name} added to info_{suffix}.pkl.")
 
                     except Exception as e:
-                        logger.error(f"Failed to allocate to info: {e}")            
+                        logger.error(f"Failed to allocate to info: {e}")
                 with open(new_info_path, "wb") as f:
                     pickle.dump(new_info, f)
             except Exception as e:
                 logger.error(f"Failed to allocate to info: {e}")
+
         threading.Thread(target=task, daemon=True).start()
-    
+
     def handle_calibrate_time(self, episodes: list):
         def task():
             for name in episodes:
@@ -338,15 +404,16 @@ class DataProcessorDelegate(DataProcessorProtocol):
                     logger.error(f"Failed to calibrate time: {e}")
                     traceback.print_exc()
             self.gui_refresh_callback()
+
         threading.Thread(target=task, daemon=True).start()
-    
+
     def handle_remove_processed(self, episodes, also_data):
         def task():
             try:
                 all_info_files = list(self.output_dir.glob("info_*.pkl"))
                 for name in episodes:
                     if also_data:
-                        paths = [self.output_dir / 'h5' / f"{name}.h5"]
+                        paths = [self.output_dir / "h5" / f"{name}.h5"]
                         for p in paths:
                             if p.exists():
                                 p.unlink()
@@ -357,28 +424,29 @@ class DataProcessorDelegate(DataProcessorProtocol):
                             info.pop(f"{name}.h5")
                         with open(info_file, "wb") as f:
                             pickle.dump(info, f)
-                    self._processed_episode_names.remove(name)
+                    self._processed_episode_names.discard(name)
                 self.gui_refresh_callback()
             except Exception as e:
                 logger.error(f"Failed to remove processed data: {e}")
-        
+
         threading.Thread(target=task, daemon=True).start()
-    
+
     def handle_reload_raw(self, episodes):
         def task():
             try:
                 for name in episodes:
                     episode = Episode(name)
-                    episode.load_pcd(self.raw_dir / 'pointcloud')
-                    episode.load_pcd_meta(self.raw_dir / 'meta')
-                    episode.load_skeleton(self.raw_dir / 'kinect')
+                    episode.load_pcd(self.raw_dir / "pointcloud")
+                    episode.load_pcd_meta(self.raw_dir / "meta")
+                    episode.load_skeleton(self.raw_dir / "kinect")
                     self.update_episode(name, episode)
                     self.status_df.loc[name] = [False] * len(self.status_df.columns)
                 self.gui_refresh_callback()
             except Exception as e:
                 logger.error(f"Failed to reload raw data: {e}")
+
         threading.Thread(target=task, daemon=True).start()
-    
+
     def handle_data_align(self, episodes):
         def task():
             try:
@@ -390,4 +458,5 @@ class DataProcessorDelegate(DataProcessorProtocol):
                 self.gui_refresh_callback()
             except Exception as e:
                 logger.error(f"Failed to align data: {e}")
+
         threading.Thread(target=task, daemon=True).start()
