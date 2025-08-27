@@ -130,9 +130,8 @@ class DataProcessorGUI(tk.Tk):
 
     def get_selected_episodes(self, lazy=True):
         if lazy:
-            return tuple(
-                name for name in self.unprocessed_list.checked_items + self.processed_list.checked_items
-            )
+            return tuple(dict.fromkeys(self.unprocessed_list.checked_items + self.processed_list.checked_items))
+
         return {
             name: self.processor.get_episode(name)
             for name in self.unprocessed_list.checked_items + self.processed_list.checked_items
@@ -458,5 +457,6 @@ class DataProcessorDelegate(DataProcessorProtocol):
                 self.gui_refresh_callback()
             except Exception as e:
                 logger.error(f"Failed to align data: {e}")
+                traceback.print_exc()
 
         threading.Thread(target=task, daemon=True).start()

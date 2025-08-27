@@ -106,8 +106,20 @@ class AlignTraces:
     def check_aligned_length(self):
         assert self.output_skel_df is not None, 'Skeleton data not aligned.'
         assert self.output_pcd_df is not None, 'PCD data not aligned.'
-        return len(self.output_skel_df) == self.output_pcd_df['ts'].nunique()
 
+        df = self.output_pcd_df
+        # One row per frame
+        frames = df[['seq', 'ts']].drop_duplicates()
+
+        # All collisions: timestamps used by >1 distinct seq
+        collisions = (frames.groupby('ts')['seq']
+                    .agg(lambda s: sorted(set(s)))
+                    .reset_index(name='seqs'))
+        collisions = collisions[collisions['seqs'].str.len() > 1]
+
+        print(collisions)
+        return len(self.output_skel_df) == self.output_pcd_df['ts'].nunique()
+    
     def make_episode(self, episode_name: str) -> 'Episode':
         assert self.check_aligned_length(), 'Alligned data length mismatch.'
         length = len(self.output_skel_df)

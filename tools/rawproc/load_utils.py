@@ -57,4 +57,23 @@ def load_raw_skeleton_csv_to_df(csv_path: Path, parse: bool = True) -> pd.DataFr
                         f'{kp_type_str}.y': kp.y,
                         f'{kp_type_str}.z': kp.z})
         rows.append(row)
+    if rows:
+        tmp_df = pd.DataFrame(rows)
+        x_cols = [c for c in tmp_df.columns if c.endswith('.x')]
+        y_cols = [c for c in tmp_df.columns if c.endswith('.y')]
+        z_cols = [c for c in tmp_df.columns if c.endswith('.z')]
+
+        def max_over(cols):
+            if not cols:
+                return None
+            return tmp_df[cols].apply(pd.to_numeric, errors='coerce').max().max()
+
+        max_x = max_over(x_cols)
+        max_y = max_over(y_cols)
+        max_z = max_over(z_cols)
+        overall_max = max(v for v in (max_x, max_y, max_z) if v is not None)
+
+        print(f"Max X: {max_x}, Max Y: {max_y}, Max Z: {max_z}, Overall max: {overall_max}")
+    else:
+        print("No skeleton rows to compute maxima.")
     return pd.DataFrame(rows)
