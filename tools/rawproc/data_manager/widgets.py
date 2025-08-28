@@ -159,6 +159,10 @@ class MultiColumnCheckList(ttk.LabelFrame):
         self.df = df.copy()
         # normalize dataframe values: fillna('-') for display columns; BUT keep original booleans
         self.df = self.df.copy()
+        # Drop any stale selections that are no longer present in this view
+        visible = set(self.df.index)
+        if self.checked_items:
+            self.checked_items = [ep for ep in self.checked_items if ep in visible]
         # Detect booleans BEFORE filling, then fill the rest with '-'
         self.bool_columns = {c for c in self.df.columns if str(self.df[c].dtype) in {"bool", "boolean"}}
         self.df = self.df.fillna("-")
