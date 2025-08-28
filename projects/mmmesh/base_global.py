@@ -90,7 +90,8 @@ class GlobalRNN(nn.Module):
         self.in_channel = in_channel
         self.hidden_size = hidden_size
         self.rnn = nn.LSTM(in_channel, hidden_size, num_layers, batch_first=batch_first, dropout=dropout, bidirectional=bidirectional)
-        self.fc1 = nn.Linear(fc_channels[0], fc_channels[1])
+        channel_multiplier = 2 if bidirectional else 1
+        self.fc1 = nn.Linear(fc_channels[0] * channel_multiplier, fc_channels[1])
         self.faf1 = nn.ReLU()
         self.fc2 = nn.Linear(fc_channels[1], fc_channels[2])
 

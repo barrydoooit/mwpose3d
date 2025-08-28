@@ -1,6 +1,6 @@
 import sys
 import warnings
-from typing import List, Literal, Tuple
+from typing import List, Literal, Tuple, Union
 import numpy as np
 import torch
 import torch.nn as nn
@@ -26,7 +26,7 @@ class MmMeshPredictor(BaseSkeletonEstimModel):
                  point_cloud_size: int = 32, 
                  frame_len: int = 1,
                  in_channels: int= 6,
-                 criterion: str = "MSELoss",
+                 criterion: Union[str, List[dict]] = [dict(type="MSELoss")],
                  train_cfg: dict = dict(),
                  test_cfg: dict = dict()
                  ):
@@ -38,11 +38,18 @@ class MmMeshPredictor(BaseSkeletonEstimModel):
         self.global_module = MODELS.build(global_module_cfg)
         self.anchor_module = MODELS.build(anchor_module_cfg)
         self.fusion_module = MODELS.build(fusion_module_cfg)
-        self.criterion = criterion
 
+        if criterion == "MSELoss":
+            self.criterion = [dict(type="MSELoss", weight=1.0)]
+        elif criterion == "sdtw":
+            self.criterion = [dict(type="MSELoss", weight=1.0), dict(type="SoftDTW", weight=0.01)]
+        else:
+            assert isinstance(criterion, list), "criterion must be a list of dicts"
+            self.criterion = criterion
+        self.losses = self._build_losses(self.criterion)
         self.train_cfg = train_cfg
         self.test_cfg = test_cfg
-
+    
     def _make_fusion_module(self):
         fusion_layers = []
         channels = self.fusion_module_cfg.get("channels")
@@ -50,21 +57,42 @@ class MmMeshPredictor(BaseSkeletonEstimModel):
             fusion_layers.append(nn.Linear(channels[i], channels[i+1]))
             if i != len(channels) - 2:
                 fusion_layers.append(nn.ReLU())
-        
+
+    def _build_losses(self, cfg_list):
+        losses = []
+        for spec in cfg_list:
+            t = spec["type"]
+            w = float(spec.get("weight", 1.0))
+
+            if t == "MSELoss":
+                crit = nn.MSELoss(reduction="mean")
+                def fn(pred, gt, crit=crit):
+                    return crit(pred, gt)
+                losses.append((t, w, fn))
+
+            elif t in ("SoftDTW", "sdtw"):
+                gamma = float(spec.get("gamma", 0.1))
+                def fn(pred, gt, gamma=gamma):
+                    B, T = pred.shape[0], pred.shape[1]
+                    pred2 = pred.reshape(B, T, -1)
+                    gt2   = gt.reshape(B, T, -1)
+                    sdtw = SoftDTW(use_cuda=pred.is_cuda, gamma=gamma, normalize=spec.get("normalize", False))
+                    val = sdtw(pred2, gt2)
+                    return val.mean()
+                losses.append((t, w, fn))
+            else:
+                raise ValueError("Only 'MSELoss' and 'SoftDTW' are supported.")
+        return losses
+
     def loss(self, batch_inputs, data_samples):
-        tensor, _, _, _, _ = tuple(self._forward(batch_inputs, data_samples).values())
+        # forward as you had it
+        tensor, _, _, _, _ = tuple(self._forward(batch_inputs, data_samples).values())  # (B, T, J)
         B, T, J = tensor.size()
-        gt = torch.stack([data_sample.gt[-T:, :] for data_sample in data_samples], dim=0)
-        if self.criterion == "MSELoss":
-            criterion = nn.MSELoss()#nn.L1Loss()
-            loss = criterion(tensor, gt)
-        elif self.criterion == "sdtw":
-            sdtw = SoftDTW(use_cuda=True, gamma=0.1)
-            mse_loss = nn.MSELoss()(tensor, gt)
-            tensor = tensor.reshape(B, T, -1)
-            gt = gt.reshape(B, T, -1)
-            loss = 0.01 * sdtw(tensor, gt).mean() + mse_loss
-        return loss
+        gt = torch.stack([ds.gt[-T:, :] for ds in data_samples], dim=0)  # (B, T, J)
+        total = tensor.new_tensor(0.0)
+        for name, weight, fn in self.losses:
+            total = total + weight * fn(tensor, gt)
+        return total
     
     def predict(self, batch_inputs, data_samples):
         output = self._forward(batch_inputs, data_samples)
