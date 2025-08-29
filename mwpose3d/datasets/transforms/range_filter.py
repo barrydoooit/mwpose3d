@@ -66,7 +66,7 @@ class PointCloudRangeFilter(BaseTransform):
             shifted_frames = [filtered_frames[i] for i in keep_indices]
             if len(shifted_frames) < self.min_num_frames:
                 raise ValueError(f"There are only {len(shifted_frames)} frames after filtering, but at least {self.min_num_frames} frames are required.")
-            apply_frame_selection(input, keep_indices, skip_keys={'pcd_frames'})
+            apply_frame_selection(input, keep_indices, len(shifted_frames), skip_keys={'pcd_frames'})
             return shifted_frames
         elif self.empty_frame_op == 'error':
             raise RuntimeError("Empty frame found. Current frame should be skipped.")

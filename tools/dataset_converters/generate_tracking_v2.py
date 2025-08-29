@@ -13,7 +13,9 @@ from tqdm import tqdm
 from mmengine.config import Config
 from mmengine.runner import Runner
 from mmengine.registry import DefaultScope
+from mmengine.dataset import Compose
 
+from mwpose3d.datasets.transforms.tracking import LoadTrackingRecords
 
 class TrackingRecordGeneratorV2:
     """
@@ -55,6 +57,9 @@ class TrackingRecordGeneratorV2:
 
         for split in self.splits:
             dl = self._make_dataloader(split)
+            dl_pipeline: Compose = dl.dataset.pipeline
+            tracking_loader: LoadTrackingRecords = dl_pipeline.transforms[-1]
+
             out_root = Path(self.dataset_root) / "tracking_records"
             out_root.mkdir(parents=True, exist_ok=True)
             self._ltr_tracker_name = self._ltr_cfg.get("tracker_name", "OnlineTracker")
@@ -106,9 +111,10 @@ class TrackingRecordGeneratorV2:
                         pcd_file_name = "unknown.h5"
 
                     starting_flag: bool = bool(data.get("starting_flag", [False])[0] if isinstance(data.get("starting_flag"), (list, tuple, np.ndarray)) else data.get("starting_flag", False))
-                    queue_tb3: List[Tuple[np.ndarray]] = data.get("track_centroid") # [T, B, 3]
+                    queue_tb3: List[Tuple[np.ndarray]] = tracking_loader._centroid_queue # [T, B, 3]
                     queue: List[np.ndarray] = [b[-1] for b in queue_tb3]
                     if starting_flag:
+                        print(len(queue), self.queue_len)
                         if len(collected) > 0:
                             collection_size_current_split.append(len(collected))
                         flush_sequence()
@@ -124,6 +130,7 @@ class TrackingRecordGeneratorV2:
                     pbar.update(1)
 
             collection_size_current_split.append(len(collected))
+            print(f"Collected {len(collected)} frames for split '{split}' in {len(collection_size_current_split)} sequences.")
             assert total + (self.queue_len - 1) * len(collection_size_current_split) == sum(collection_size_current_split), \
                 f"Expected {total + (self.queue_len - 1) * len(collection_size_current_split)} frames, but collected {sum(collection_size_current_split)} frames in total."
             # flush last sequence
@@ -208,7 +215,7 @@ class TrackingRecordGeneratorV2:
                 continue
             typ = t.get("type")
             if typ == "LoadMultiFrameFromH5" and "num_frames" in t:
-                return int(t["num_frames"])
+                return int(t["num_frames"]) + int(t.get("backup_frames", 0))
         return None
 
     def _patch_ltr_instance(self, dataset) -> None:

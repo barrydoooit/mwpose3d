@@ -39,7 +39,7 @@ class SequenceClip(BaseTransform):
         else:
             raise ValueError(f'Invalid mode {self.mode} for SequenceClip.')
 
-        apply_frame_selection(input, selected_frame_indices)
+        apply_frame_selection(input, selected_frame_indices, self.sequence_length)
         return input
 
 
@@ -60,7 +60,7 @@ class StackPointCloudFrames(BaseTransform):
         original_length = len(pcd_frames)
         stacked_pcd_frames: List[np.ndarray] = []
         keep_indices = list(range(self.stack_size - 1, original_length))
-        apply_frame_selection(input, keep_indices, skip_keys=[LoadMultiFrameFromH5.PCD_FRAMES])
+        apply_frame_selection(input, keep_indices, original_length - self.stack_size + 1, skip_keys=[LoadMultiFrameFromH5.PCD_FRAMES])
         for i in range(self.stack_size - 1, len(pcd_frames)):
             window = pcd_frames[i - self.stack_size + 1:i + 1] 
             if not self.keep_structure:
@@ -126,7 +126,6 @@ class DensityFilter(BaseTransform):
 
         if len(keep) < self.min_num_frames:
             raise ValueError(f"DensityFilter would keep {len(keep)} frames (< min_num_frames={self.min_num_frames}).")
-
-        apply_frame_selection(input, keep)
+        apply_frame_selection(input, keep, len(keep))
         return input
                  

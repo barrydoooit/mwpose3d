@@ -55,22 +55,25 @@ def compose_into(input_dict: dict, key: str, A_or_As: Union[np.ndarray, Sequence
 
 def apply_frame_selection(
         input_dict: dict,
-        keep_indices: Iterable[int],
+        keep_indices: Optional[Iterable[int]] = None,
+        target_seq_len: Optional[int] = None,
         *,
         skip_keys: set | None = None) -> dict:
     if skip_keys is None: skip_keys = set()
-    seq_len = len(input_dict[LoadMultiFrameFromH5.PCD_FRAMES])
-    keep = list(map(int, keep_indices))
-    if any(i < 0 or i >= seq_len for i in keep):
-        raise IndexError(f"Frame selection indices {keep} out of range [0, {seq_len})")
-    prev_remaining = input_dict.get('remaining_frames_idx', list(range(seq_len)))
-    input_dict['remaining_frames_idx'] = [prev_remaining[i] for i in keep]
+    if target_seq_len is None:
+        target_seq_len = len(input_dict[LoadMultiFrameFromH5.PCD_FRAMES])
+    if keep_indices is not None:
+        keep = list(map(int, keep_indices))
+        prev_remaining = input_dict.get('remaining_frames_idx', list(range(target_seq_len)))
+        input_dict['remaining_frames_idx'] = [prev_remaining[i] for i in keep]
+    else:
+        keep = input_dict.get('remaining_frames_idx', list(range(target_seq_len)))
     for key in KEYS_OF_SYNCABLE_SEQUENCES:
         if key in skip_keys: continue
         if key in input_dict:
             val = input_dict[key]
             L = len(val)
             if isinstance(val, (list, tuple)):
-                if L == seq_len or  (L >= seq_len and all(i < L for i in keep)):
+                if L >= target_seq_len and all(i < L for i in keep):
                     slices = [val[i] for i in keep]
                     input_dict[key] = tuple(slices) if isinstance(val, tuple) else slices

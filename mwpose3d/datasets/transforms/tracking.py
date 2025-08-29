@@ -176,7 +176,6 @@ class LoadTrackingRecords(BaseTransform):
                         c = self._postprocess_centroid(c.astype(np.float32, copy=False))
                         self._centroid_queue.append(c)
                         self._last_centroid = c.copy()
-
                 if len(self._centroid_queue) < self.centroid_queue_len:
                     if self.online_noresult_response == 'error':
                         raise RuntimeError(
@@ -186,8 +185,7 @@ class LoadTrackingRecords(BaseTransform):
                         while len(self._centroid_queue) < self.centroid_queue_len:
                             self._centroid_queue.insert(0, np.zeros((3,), dtype=np.float32))
                 input['track_centroid'] = tuple(self._centroid_queue)
-                apply_frame_selection(input, 
-                                      input.get('remaining_frames_idx', list(range(len(input[LoadMultiFrameFromH5.PCD_FRAMES])))))
+                apply_frame_selection(input)
                 return input
             else:
                 # Old modes: consume all but the last to update internal tracker state
@@ -223,6 +221,7 @@ class LoadTrackingRecords(BaseTransform):
                     f"({len(self._centroid_queue)}/{self.centroid_queue_len}).")
 
             input['track_centroid'] = tuple(self._centroid_queue)
+            apply_frame_selection(input)
             return input
 
         # ------- original (single-centroid) online path for the 3 legacy modes -------
@@ -345,8 +344,7 @@ class LoadTrackingRecords(BaseTransform):
         if self.transform_matrix is not None:
             track_centroid = np.dot(self.transform_matrix, np.append(track_centroid, 1))[:3]
         input['track_centroid'] = track_centroid.astype(np.float32)
-        apply_frame_selection(input, 
-                      input.get('remaining_frames_idx', list(range(len(input[LoadMultiFrameFromH5.PCD_FRAMES])))))
+        apply_frame_selection(input)
         return input
 
 @OnlineEnabled
