@@ -55,6 +55,7 @@ class LoadMultiFrameFromH5(BaseTransform):
     PCD_FRAMES = 'pcd_frames'
     SKEL_FRAMES = 'skel_frames'
     TARGET_NUM_FRAMES = 'target_num_frames'
+    REMAINING_FRAMES_IDX= 'remaining_frames_idx'
     
     def __init__(self,
                  load_pcd_dim: int,
@@ -111,7 +112,7 @@ class LoadMultiFrameFromH5(BaseTransform):
                 pcd_frames.append(pcd_frame)
             input[self.PCD_FRAMES] = tuple(pcd_frames)
         
-
+        input[self.REMAINING_FRAMES_IDX] = list(range(total))
         if not self.with_skeleton:
             return input
     

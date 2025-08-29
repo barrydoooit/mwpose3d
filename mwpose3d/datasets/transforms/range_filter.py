@@ -3,6 +3,8 @@ from typing import List, Literal, Tuple
 import h5py
 import numpy as np
 
+from mwpose3d.datasets.transforms.utils import apply_frame_selection
+
 from .base import BaseTransform, OnlineEnabled
 from mwpose3d.registry import TRANSFORMS
 
@@ -60,20 +62,11 @@ class PointCloudRangeFilter(BaseTransform):
                     raise ValueError("No previous non-empty frame found.")
             return filtered_frames
         elif self.empty_frame_op == 'shift':
-            shifted_frames = []
-            for idx, frame in enumerate(filtered_frames):
-                if idx in empty_frame_indices:
-                    continue
-                shifted_frames.append(frame)
+            keep_indices = [i for i in range(len(filtered_frames)) if i not in empty_frame_indices]
+            shifted_frames = [filtered_frames[i] for i in keep_indices]
             if len(shifted_frames) < self.min_num_frames:
                 raise ValueError(f"There are only {len(shifted_frames)} frames after filtering, but at least {self.min_num_frames} frames are required.")
-            if len(input['skel_frames']) > 1:
-                shifted_skel_frames = []
-                for idx in range(len(input['skel_frames'])):
-                    if idx in empty_frame_indices:
-                        continue
-                    shifted_skel_frames.append(input['skel_frames'][idx])
-                input['skel_frames'] = shifted_skel_frames
+            apply_frame_selection(input, keep_indices, skip_keys={'pcd_frames'})
             return shifted_frames
         elif self.empty_frame_op == 'error':
             raise RuntimeError("Empty frame found. Current frame should be skipped.")

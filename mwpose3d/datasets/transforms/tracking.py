@@ -8,8 +8,10 @@ import h5py
 import numpy as np
 from mmengine.config import Config
 
-from .utils import compose_into, make_row_affine
-from .base import BaseTransform, OnlineEnabled
+from mwpose3d.datasets.transforms.loading import LoadMultiFrameFromH5
+
+from .utils import apply_frame_selection, compose_into, make_row_affine
+from .base import KEYS_OF_SYNCABLE_SEQUENCES, BaseTransform, OnlineEnabled
 from mwpose3d.registry import TRANSFORMS
 from mwcore.tracking.api import BaseTracker
 from mwcore.registry import TRACKERS
@@ -184,6 +186,8 @@ class LoadTrackingRecords(BaseTransform):
                         while len(self._centroid_queue) < self.centroid_queue_len:
                             self._centroid_queue.insert(0, np.zeros((3,), dtype=np.float32))
                 input['track_centroid'] = tuple(self._centroid_queue)
+                apply_frame_selection(input, 
+                                      input.get('remaining_frames_idx', list(range(len(input[LoadMultiFrameFromH5.PCD_FRAMES])))))
                 return input
             else:
                 # Old modes: consume all but the last to update internal tracker state
@@ -341,6 +345,8 @@ class LoadTrackingRecords(BaseTransform):
         if self.transform_matrix is not None:
             track_centroid = np.dot(self.transform_matrix, np.append(track_centroid, 1))[:3]
         input['track_centroid'] = track_centroid.astype(np.float32)
+        apply_frame_selection(input, 
+                      input.get('remaining_frames_idx', list(range(len(input[LoadMultiFrameFromH5.PCD_FRAMES])))))
         return input
 
 @OnlineEnabled

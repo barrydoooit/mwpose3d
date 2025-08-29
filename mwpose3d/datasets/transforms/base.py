@@ -29,3 +29,11 @@ def is_online_enabled(cls_or_name):
     if isinstance(cls_or_name, str):
         return cls_or_name in WITH_ONLINE_FUNCTIONALITY
     return cls_or_name.__name__ in WITH_ONLINE_FUNCTIONALITY
+
+KEYS_OF_SYNCABLE_SEQUENCES = [
+    'pcd_frames',
+    'skel_frames',
+    'T_skel',
+    'T_pcd',
+    'track_centroid'
+]

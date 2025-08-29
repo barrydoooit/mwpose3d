@@ -5,9 +5,9 @@ from .skel_filter import SkeletonKeypointFilter, SkeletonCoordNormalization
 from .point_value_control import AddRangeDimension, NormalizePointAttr
 from .point_number_control import PointDuplicator, PointSortAndClip, PointPadding
 from .coord_trans import Kinect2TICoordinateTransform, SkeletonCoordinateTransform, PointCloudCoordinateTransform
-from .sequence_clip import SequenceClip, StackPointCloudFrames
+from .sequence_clip import SequenceClip, StackPointCloudFrames, DensityFilter
 from .transform import RandomTransform, SequenceReverse, RandomFrameDrop
-from .tracking import RelativeCoordtoTrackingCentroid
+from .tracking import LoadTrackingRecords, RelativeCoordtoTrackingCentroid
 
 __all__ = ['LoadSingleFrameFromH5', 'PointCloudRangeFilter', 'SkeletonKeypointFilter',                
            'SkeletonCoordNormalization',

@@ -1,6 +1,9 @@
 import numpy as np
 from typing import Iterable, Optional, Tuple, Union, Sequence
 
+from mwpose3d.datasets.transforms.base import KEYS_OF_SYNCABLE_SEQUENCES
+from mwpose3d.datasets.transforms.loading import LoadMultiFrameFromH5
+
 def make_row_affine(R: Optional[np.ndarray]=None, t: Optional[Iterable]=None, dtype=np.float32) -> np.ndarray:
     """
     Build a 4x4 homogeneous matrix M for row vectors so that:
@@ -49,3 +52,25 @@ def compose_into(input_dict: dict, key: str, A_or_As: Union[np.ndarray, Sequence
     As = _broadcast_As(A_or_As, n)
     T_old = input_dict[key]
     input_dict[key] = tuple(T_old[i] @ As[i] for i in range(n))
+
+def apply_frame_selection(
+        input_dict: dict,
+        keep_indices: Iterable[int],
+        *,
+        skip_keys: set | None = None) -> dict:
+    if skip_keys is None: skip_keys = set()
+    seq_len = len(input_dict[LoadMultiFrameFromH5.PCD_FRAMES])
+    keep = list(map(int, keep_indices))
+    if any(i < 0 or i >= seq_len for i in keep):
+        raise IndexError(f"Frame selection indices {keep} out of range [0, {seq_len})")
+    prev_remaining = input_dict.get('remaining_frames_idx', list(range(seq_len)))
+    input_dict['remaining_frames_idx'] = [prev_remaining[i] for i in keep]
+    for key in KEYS_OF_SYNCABLE_SEQUENCES:
+        if key in skip_keys: continue
+        if key in input_dict:
+            val = input_dict[key]
+            L = len(val)
+            if isinstance(val, (list, tuple)):
+                if L == seq_len or  (L >= seq_len and all(i < L for i in keep)):
+                    slices = [val[i] for i in keep]
+                    input_dict[key] = tuple(slices) if isinstance(val, tuple) else slices
