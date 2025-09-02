@@ -27,6 +27,7 @@ class PointCloudBuffer:
         self._frame_counter = 0   
 
         self._meta_data = dict()
+        self.refusing_new_frames = False
 
     @property
     def buffer_lock(self) -> threading.Lock:
@@ -142,6 +143,7 @@ class PointCloudBufferingWorker(QObject):
         super().__init__()
         self.buffer = PointCloudBuffer(max_buffer_size=buffer_size)
         self.dump_dir = Path(dump_dir)
+        self.refusing_new_frames = False
     
     @Slot(object, float)
     def enqueue(self, point_cloud: 'SimplePointCloud5D', timestamp: Optional[float] = None):
@@ -153,15 +155,19 @@ class PointCloudBufferingWorker(QObject):
     
     @Slot(dict)
     def enqueue_raw(self, data: dict):
+        if self.refusing_new_frames:
+            return
         point_cloud = SimplePointCloud5D.from_dict(data)
         timestamp = data.get('timestamp', None)
         self.enqueue(point_cloud, timestamp)
 
     @Slot(str)
     def dump_buffer(self, json_file: Optional[str] = None):
+        self.refusing_new_frames = True
         dump_path = self.dump_dir / json_file if json_file else self.dump_dir
         final_path = self.buffer.dump_to_json(dump_path)
         self.bufferDumped.emit(final_path)
+        self.refusing_new_frames = False
     
     @Slot(dict)
     def record_meta(self, meta_data: dict):

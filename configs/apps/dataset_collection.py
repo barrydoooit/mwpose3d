@@ -30,7 +30,7 @@ instructions = dict(
 )
 
 # data_root = 'apps/impl/dataset_collection/traces'
-data_root = 'apps/impl/dataset_collection/traces/downview'
+data_root = 'apps/impl/dataset_collection/traces/down15'
 buffer_cfg = dict(
     dump_dir=f'{data_root}/pointcloud',
     buffer_size=5000
