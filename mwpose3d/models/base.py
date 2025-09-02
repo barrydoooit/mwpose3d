@@ -8,9 +8,10 @@ import torch
 
 @MODELS.register_module()
 class BaseSkeletonEstimModel(torch.nn.Module):
-    def __init__(self):
+    def __init__(self, return_sequence: bool = False):
         super().__init__()
-    
+        self.return_sequence = return_sequence
+
     def forward(self, 
                 inputs: torch.Tensor,
                 data_samples: Optional[List[SkeletonDataSample]] = None,

@@ -197,6 +197,38 @@ class Runner:
         self.test_loop.run()
         print('Testing finished')
 
+    @property
+    def max_epochs(self):
+        """int: Total epochs to train model."""
+        if isinstance(self.train_loop, BaseLoop):
+            return self.train_loop.max_epochs
+        else:
+            return 0
+
+    @property
+    def max_iters(self):
+        """int: Total iterations to train model."""
+        if isinstance(self.train_loop, BaseLoop):
+            return self.train_loop.max_iters
+        else:
+            return 0
+
+    @property
+    def epoch(self):
+        """int: Current epoch."""
+        if isinstance(self.train_loop, BaseLoop):
+            return self.train_loop.epoch
+        else:
+            return 0
+
+    @property
+    def iter(self):
+        """int: Current iteration."""
+        if isinstance(self.train_loop, BaseLoop):
+            return self.train_loop.iter
+        else:
+            return 0
+        
     def setup_env(self, env_cfg: Dict) -> None: 
         if env_cfg.get('cudnn_benchmark', False):
             torch.backends.cudnn.benchmark = True

@@ -2,12 +2,13 @@ from collections import deque
 from copy import deepcopy
 from enum import Enum
 from pathlib import Path
-from typing import List, Literal, Optional, Tuple, Union
+from typing import Any, Dict, Callable, List, Literal, Optional, Tuple, Union
 
 import h5py
 import numpy as np
 from mmengine.config import Config
 
+from mwpose3d.datasets.transforms.inference import Inference
 from mwpose3d.datasets.transforms.loading import LoadMultiFrameFromH5
 
 from .utils import apply_frame_selection, compose_into, make_row_affine
@@ -41,7 +42,8 @@ class LoadTrackingRecords(BaseTransform):
                  online_mode: bool = False,
                  online_noresult_response: Literal['error', 'empty']='error',
                  tracker_cfg: Union[dict, str, Path] = None,
-                 centroid_queue_len: Optional[int] = None):
+                 centroid_queue_len: Optional[int] = None,
+                 point_cloud_clipping: Optional[dict] = None):
         """
         Args:
             centroid_queue_len: only used in NEARESTPERFRAME + online mode.
@@ -59,6 +61,10 @@ class LoadTrackingRecords(BaseTransform):
             self.centroid_queue_len = int(centroid_queue_len)
         self._centroid_queue: Optional[deque] = None
 
+        self.point_cloud_clipping_dimensions: Optional[Tuple[int]] = None if point_cloud_clipping is None \
+              else tuple(point_cloud_clipping.get('dimensions', None))
+        self.point_cloud_clipping_threshold: Optional[Tuple[Tuple[Optional[float]]]] = None if point_cloud_clipping is None \
+              else tuple(point_cloud_clipping.get('threshold', None))
         if self.online_mode:
             assert tracker_cfg is not None, "tracker_cfg must be provided in online mode"
             if isinstance(tracker_cfg, (str, Path)):
@@ -122,11 +128,25 @@ class LoadTrackingRecords(BaseTransform):
 
         raise ValueError("No non-empty frame found in either direction.")
 
+    def _clip_point_cloud(self, pcd: np.ndarray) -> np.ndarray:
+        if self.point_cloud_clipping_dimensions is not None and self.point_cloud_clipping_threshold is not None:
+            for dim, thresh in zip(self.point_cloud_clipping_dimensions, self.point_cloud_clipping_threshold):
+                if thresh is not None:
+                    if thresh[0] is None:
+                        pcd = pcd[pcd[:, dim] <= thresh[1]]
+                    elif thresh[1] is None:
+                        pcd = pcd[pcd[:, dim] >= thresh[0]]
+                    else:
+                        pcd = pcd[(pcd[:, dim] >= thresh[0]) & (pcd[:, dim] <= thresh[1])]
+        return pcd
+
     def tracker_consume(self, pcd_frame: np.ndarray) -> Optional[np.ndarray]:
         if pcd_frame.shape[1] < 5:
             pcd_frame = np.pad(pcd_frame[:, :3], ((0, 0), (0, 2)), mode='constant')
         if pcd_frame.shape[1] > 5:
             pcd_frame = pcd_frame[:, :5]
+        if self.point_cloud_clipping_dimensions is not None and self.point_cloud_clipping_threshold is not None:
+            pcd_frame = self._clip_point_cloud(pcd_frame)
         if hasattr(self.tracker, 'sort_results'):
             tracked_locations = self.tracker.consume(point_array=pcd_frame, sort_metric='snr')
         else:
@@ -347,6 +367,34 @@ class LoadTrackingRecords(BaseTransform):
         apply_frame_selection(input)
         return input
 
+@OnlineEnabled
+@TRANSFORMS.register_module()
+class TrackingCentroidCalibration(BaseTransform):
+    def __init__(self,
+                 method: str = "identity",
+                 method_cfg: Dict[str, Any] | None = None,
+                 online_mode: bool = False):
+        super().__init__(online_mode)
+        self.method_cfg = dict(method_cfg or {})
+
+        # Simple if/else assignment instead of registry
+        if method == "identity":
+            self.calib = self._calib_identity
+        else:
+            raise ValueError(f"Unknown calibration method '{method}'")
+        
+    def transform(self, input: Dict[str, Any]) -> Dict[str, Any]:
+        preds: Tuple[np.ndarray, ...] = input[Inference.PREDICTIONS_KEY]
+        input["track_centroid"] = self.calib(input, preds, self.method_cfg)
+        return input
+
+    # calibration implementations
+    @staticmethod
+    def _calib_identity(input: Dict[str, Any],
+                        preds: Tuple[np.ndarray, ...],
+                        method_cfg: Dict[str, Any]) -> Tuple[np.ndarray, ...]:
+        return preds
+        
 @OnlineEnabled
 @TRANSFORMS.register_module()
 class RelativeCoordtoTrackingCentroid(BaseTransform):

@@ -7,13 +7,15 @@ from .point_number_control import PointDuplicator, PointSortAndClip, PointPaddin
 from .coord_trans import Kinect2TICoordinateTransform, SkeletonCoordinateTransform, PointCloudCoordinateTransform
 from .sequence_clip import SequenceClip, StackPointCloudFrames, DensityFilter
 from .transform import RandomTransform, SequenceReverse, RandomFrameDrop
-from .tracking import LoadTrackingRecords, RelativeCoordtoTrackingCentroid
+from .tracking import LoadTrackingRecords, RelativeCoordtoTrackingCentroid, TrackingCentroidCalibration
+from .inference import Inference
 
-__all__ = ['LoadSingleFrameFromH5', 'PointCloudRangeFilter', 'SkeletonKeypointFilter',                
-           'SkeletonCoordNormalization',
-           'AddRangeDimension', 'PointDuplicator', 'PointPadding',
-           'Kinect2TICoordinateTransform', 'SequenceClip', 'SequenceReverse', 'RandomFrameDrop',
-           'RandomTransform', 'StackPointCloudFrames',
-           'SkeletonCoordinateTransform', 'PointCloudCoordinateTransform',
-           'PointSortAndClip', 'NormalizePointAttr',
-           'RelativeCoordtoTrackingCentroid']
+__all__ = [
+    'LoadSingleFrameFromH5', 'PointCloudRangeFilter', 'SkeletonKeypointFilter',
+    'SkeletonCoordNormalization', 'AddRangeDimension', 'PointDuplicator',
+    'PointPadding', 'Kinect2TICoordinateTransform', 'SequenceClip',
+    'SequenceReverse', 'RandomFrameDrop', 'RandomTransform',
+    'StackPointCloudFrames', 'DensityFilter', 'SkeletonCoordinateTransform',
+    'PointCloudCoordinateTransform', 'PointSortAndClip', 'NormalizePointAttr',
+    'LoadTrackingRecords', 'RelativeCoordtoTrackingCentroid', 'TrackingCentroidCalibration', 'Inference'
+]

@@ -1,5 +1,5 @@
 import copy
-from typing import Callable, List, Sequence, Tuple, TYPE_CHECKING, Union, Deque, Optional
+from typing import Any, Callable, List, Sequence, Tuple, TYPE_CHECKING, Union, Deque, Optional
 from collections import deque
 import numpy as np
 import torch
@@ -14,8 +14,8 @@ from mwpose3d.evaluation.postprocessing.base import BasePostProcessing, ComposeP
 from mwpose3d.registry import MODELS, TRANSFORMS, HOOKS
 from mwpose3d.evaluation.postprocessing import POSTPROCESSING
 import logging
+from mwpose3d.utils.typing_utils import ConfigType
 
-from mwpose3d.runner.runner import ConfigType
 logger = logging.getLogger(__name__)
 if TYPE_CHECKING:
     from mwpose3d.utils.pointcloud_toolkits import SimplePointCloud5D
@@ -70,6 +70,8 @@ class ComposePostprocessOnline(ComposePostProcess):
                     f'but got {type(postprocess)}')
             
 class InferenceEngine:
+    _current_engine: Optional['InferenceEngine'] = None
+
     def __init__(self,
                  model: dict,
                  preprocess_pipeline: List[dict],
@@ -79,7 +81,8 @@ class InferenceEngine:
                  postprocess_pipeline: Optional[List[dict]] = None,
                  cfg: Optional[ConfigType] = None,
                  custom_hooks: Optional[List[dict]] = None,
-                 ):    
+                 ): 
+        InferenceEngine._current_engine = self
         if cfg is not None:
             if isinstance(cfg, Config):
                 self.cfg = copy.deepcopy(cfg)
@@ -92,20 +95,49 @@ class InferenceEngine:
         self.model.to(get_device())
         self.preprocess_pipeline: ComposePreprocessOnline = ComposePreprocessOnline(preprocess_pipeline)
         self.postprocess_pipeline: Optional[ComposePostprocessOnline] = ComposePostprocessOnline(postprocess_pipeline) if postprocess_pipeline is not None else None
-        self.model.load_state_dict(torch.load(load_from, map_location=torch.device(get_device())))
+        if load_from is not None:
+            self.load_checkpoint(load_from)
+            self._loaded = True
+        else:
+            self._loaded = False
         self.model.eval()
         self.keypoints_involved = keypoints_involved
         self._custom_hooks: List[Hook] = []
         self.register_custom_hooks(custom_hooks)
 
         self.active_frames: Deque[np.ndarray] = deque(maxlen=frame_buffer_size)
+        self._pred_history: Deque[np.ndarray] = deque(maxlen=frame_buffer_size)
 
         # NOTE: While your hooks is usually implemented for the runner to train/test offline, runner.xxx must also be available in this class.
         self.call_custom_hook('before_test')
         self.call_custom_hook('before_test_epoch')
         self.call_custom_hook('before_test_model')
 
-    
+    @property
+    def loaded(self) -> bool:
+        return self._loaded
+
+    @classmethod
+    def get_current_instance(cls) -> Optional['InferenceEngine']:
+        return cls._current_engine
+
+    def get_pred_history(self, n_recent: Optional[int] = None) -> Tuple[np.ndarray]:
+        if n_recent is None:
+            n_recent = len(self._pred_history) # All
+        if n_recent <= 0 or len(self._pred_history) == 0:
+            return tuple()
+        n_recent = min(n_recent, len(self._pred_history))
+        return tuple(list(self._pred_history)[-n_recent:])
+
+    def add_pred(self, preds: Union[np.ndarray, Sequence[np.ndarray]]):
+        if isinstance(preds, np.ndarray):
+            self._pred_history.append(preds)
+        elif isinstance(preds, Sequence):
+            for pred in preds:
+                self._pred_history.append(pred)
+        else:
+            raise TypeError(f'preds must be np.ndarray or List[np.ndarray], but got {type(preds)}')
+
     def add_frame(self, point_cloud: np.ndarray):
         self.active_frames.append(point_cloud)
 
@@ -153,6 +185,7 @@ class InferenceEngine:
             return dict()
         input_dict = {
             'pcd_frames': tuple(self.active_frames),
+            'remaining_frames_idx': list(range(len(self.active_frames))),
             }
         input = self.preprocess_pipeline(input_dict)
         input['pcd_frames'] = tuple([
@@ -160,7 +193,18 @@ class InferenceEngine:
         ]) # make a batch dimension
         return input
     
-    def infer(self, point_cloud: Union['SimplePointCloud5D', np.ndarray]) -> Optional[np.ndarray]:
+    def infer_new_sequence(self, 
+                               point_cloud_sequence: Sequence[Union['SimplePointCloud5D', np.ndarray]],) -> Optional[Union[Tuple[np.ndarray], np.ndarray]]:
+        for point_cloud in point_cloud_sequence[:-1]:
+            point_cloud = point_cloud if isinstance(point_cloud, np.ndarray) \
+                else np.asarray(point_cloud.serialize(compact=True))
+            self.add_frame(point_cloud)
+
+        return self.infer(point_cloud_sequence[-1])
+
+    def infer(self, point_cloud: Union['SimplePointCloud5D', np.ndarray]) -> Optional[Union[Tuple[np.ndarray], np.ndarray]]:
+        if not self.loaded:
+            logger.warning("InferenceEngine not loaded with weights yet. Call load_checkpoint() or pass the checkpoint file from 'load_from' first.")
         try:
             data_batch_dict = self._preprocess(point_cloud)
             if len(data_batch_dict) == 0:
@@ -171,7 +215,11 @@ class InferenceEngine:
                 output = self.model(batch_inputs, data_samples, mode='predict')
             data_samples_0 = data_samples[0]
             batch_inputs, data_samples_0 = self._postprocess(batch_inputs, data_samples_0)
-            return data_samples_0.pred.cpu().numpy() if len(data_samples) > 0 else None
+            preds = data_samples_0.pred.cpu().numpy()
+            if preds.ndim == 2: # Sequence output
+                preds = tuple(preds[i] for i in range(preds.shape[0]))
+            self._pred_history.append(preds)
+
         except RuntimeError as e:
             logger.warning(f"Inference Interupted: {e}")
             return None
@@ -182,11 +230,22 @@ class InferenceEngine:
         data_batch_dict, datasample = self.postprocess_pipeline(data_batch_dict, datasample)
         return data_batch_dict, datasample
 
+    def load_checkpoint(self, checkpoint: Union[str, torch.nn.Module, dict], strict: bool = True):
+        if isinstance(checkpoint, str):
+            state_dict = torch.load(checkpoint, map_location=torch.device(get_device()))
+            self.model.load_state_dict(state_dict, strict=strict)
+        elif isinstance(checkpoint, dict):
+            self.model.load_state_dict(checkpoint, strict=strict)
+        elif isinstance(checkpoint, torch.nn.Module):
+            self.model.load_state_dict(checkpoint.state_dict(), strict=strict)
+        else:
+            raise TypeError(f'checkpoint must be a str, dict or torch.nn.Module, but got {type(checkpoint)}')
+        
     @classmethod
     def from_cfg(cls, config: dict):
         return cls(
             model=config['model'],
-            frame_buffer_size=config['total_frames'],
+            frame_buffer_size=config['total_frames'] * 2,
             preprocess_pipeline=config['test_pipeline'],
             postprocess_pipeline=config.get('postprocess', None),
             load_from=config['load_from'],

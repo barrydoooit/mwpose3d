@@ -28,9 +28,10 @@ class MmMeshPredictor(BaseSkeletonEstimModel):
                  in_channels: int= 6,
                  criterion: Union[str, List[dict]] = [dict(type="MSELoss")],
                  train_cfg: dict = dict(),
-                 test_cfg: dict = dict()
+                 test_cfg: dict = dict(),
+                 return_sequence: bool = False
                  ):
-        super().__init__()
+        super().__init__(return_sequence=return_sequence)
         self.point_cloud_size = point_cloud_size
         self.in_channels = in_channels
         self.frame_len = frame_len
@@ -99,9 +100,10 @@ class MmMeshPredictor(BaseSkeletonEstimModel):
         tensor, hn_g, cn_g, hn_a, cn_a = tuple(output.values())
         for b, data_sample in enumerate(data_samples):
             data_sample.pred = tensor[b]
-            data_sample.pred = data_sample.pred[-1, :]
-            if data_sample.gt is not None:
-                data_sample.gt = data_sample.gt[-1, :]
+            if not self.return_sequence:
+                data_sample.pred = data_sample.pred[-1, :]
+                if data_sample.gt is not None:
+                    data_sample.gt = data_sample.gt[-1, :]
         return output
 
     def _forward(self, batch_inputs, data_samples):
