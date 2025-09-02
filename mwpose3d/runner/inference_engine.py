@@ -10,6 +10,7 @@ from mmengine.hooks import Hook
 from mmengine.runner import Priority, get_priority
 from mwpose3d.datasets.skel_data_sample import SkeletonDataSample
 from mwpose3d.datasets.transforms import BaseTransform, is_online_enabled
+from mwpose3d.datasets.transforms.utils import apply_per_sample_transforms_serial
 from mwpose3d.evaluation.postprocessing.base import BasePostProcessing, ComposePostProcess
 from mwpose3d.registry import MODELS, TRANSFORMS, HOOKS
 from mwpose3d.evaluation.postprocessing import POSTPROCESSING
@@ -93,7 +94,7 @@ class InferenceEngine:
 
         self.model: torch.nn.Module = MODELS.build(model)
         self.model.to(get_device())
-        self.preprocess_pipeline: ComposePreprocessOnline = ComposePreprocessOnline(preprocess_pipeline)
+        self.preprocess_pipeline: ComposePreprocessOnline = ComposePreprocessOnline(preprocess_pipeline) if preprocess_pipeline is not None else None
         self.postprocess_pipeline: Optional[ComposePostprocessOnline] = ComposePostprocessOnline(postprocess_pipeline) if postprocess_pipeline is not None else None
         if load_from is not None:
             self.load_checkpoint(load_from)
@@ -104,14 +105,12 @@ class InferenceEngine:
         self.keypoints_involved = keypoints_involved
         self._custom_hooks: List[Hook] = []
         self.register_custom_hooks(custom_hooks)
-
-        self.active_frames: Deque[np.ndarray] = deque(maxlen=frame_buffer_size)
-        self._pred_history: Deque[np.ndarray] = deque(maxlen=frame_buffer_size)
+        self.active_frames: Deque[Any] = deque(maxlen=frame_buffer_size)
+        self._pred_history: Deque[Any] = deque(maxlen=frame_buffer_size)
 
         # NOTE: While your hooks is usually implemented for the runner to train/test offline, runner.xxx must also be available in this class.
         self.call_custom_hook('before_test')
         self.call_custom_hook('before_test_epoch')
-        self.call_custom_hook('before_test_model')
 
     @property
     def loaded(self) -> bool:
@@ -128,15 +127,6 @@ class InferenceEngine:
             return tuple()
         n_recent = min(n_recent, len(self._pred_history))
         return tuple(list(self._pred_history)[-n_recent:])
-
-    def add_pred(self, preds: Union[np.ndarray, Sequence[np.ndarray]]):
-        if isinstance(preds, np.ndarray):
-            self._pred_history.append(preds)
-        elif isinstance(preds, Sequence):
-            for pred in preds:
-                self._pred_history.append(pred)
-        else:
-            raise TypeError(f'preds must be np.ndarray or List[np.ndarray], but got {type(preds)}')
 
     def add_frame(self, point_cloud: np.ndarray):
         self.active_frames.append(point_cloud)
@@ -192,24 +182,15 @@ class InferenceEngine:
             np.expand_dims(pcd_frame, axis=0) for pcd_frame in input['pcd_frames']
         ]) # make a batch dimension
         return input
-    
-    def infer_new_sequence(self, 
-                               point_cloud_sequence: Sequence[Union['SimplePointCloud5D', np.ndarray]],) -> Optional[Union[Tuple[np.ndarray], np.ndarray]]:
-        for point_cloud in point_cloud_sequence[:-1]:
-            point_cloud = point_cloud if isinstance(point_cloud, np.ndarray) \
-                else np.asarray(point_cloud.serialize(compact=True))
-            self.add_frame(point_cloud)
-
-        return self.infer(point_cloud_sequence[-1])
 
     def infer(self, point_cloud: Union['SimplePointCloud5D', np.ndarray]) -> Optional[Union[Tuple[np.ndarray], np.ndarray]]:
+        self.call_custom_hook('before_test_iter')
         if not self.loaded:
             logger.warning("InferenceEngine not loaded with weights yet. Call load_checkpoint() or pass the checkpoint file from 'load_from' first.")
         try:
             data_batch_dict = self._preprocess(point_cloud)
             if len(data_batch_dict) == 0:
                 return None
-            
             batch_inputs, data_samples = self.model.pack_input(data_batch_dict)
             with torch.no_grad():
                 output = self.model(batch_inputs, data_samples, mode='predict')
@@ -218,11 +199,39 @@ class InferenceEngine:
             preds = data_samples_0.pred.cpu().numpy()
             if preds.ndim == 2: # Sequence output
                 preds = tuple(preds[i] for i in range(preds.shape[0]))
-            self._pred_history.append(preds)
-
+            if isinstance(preds, np.ndarray):
+                self._pred_history.append(preds)
+            elif isinstance(preds, tuple):
+                for pred in preds:
+                    self._pred_history.append(pred)
+            return preds
         except RuntimeError as e:
             logger.warning(f"Inference Interupted: {e}")
             return None
+
+    def infer_batched_dict(self, data_batch_dict: dict, inplace: bool = False) -> Optional[Union[Tuple[np.ndarray, ...], Tuple[Tuple[np.ndarray, ...], ...]]]:
+        self.call_custom_hook('before_test_iter')
+        if not self.loaded:
+            logger.warning("InferenceEngine not loaded with weights yet. Call load_checkpoint() or pass the checkpoint file from 'load_from' first.")
+        if not inplace:
+            data_batch_dict = copy.deepcopy(data_batch_dict)
+        if self.preprocess_pipeline is not None:
+            data_batch_dict = apply_per_sample_transforms_serial(data_batch_dict, self.preprocess_pipeline.transforms)
+        batch_inputs, data_samples = self.model.pack_input(data_batch_dict)
+        with torch.no_grad():
+            output = self.model(batch_inputs, data_samples, mode='predict')
+        batch_inputs, data_samples = self._postprocess(batch_inputs, data_samples)
+        preds = tuple([ds.pred.cpu().numpy() for ds in data_samples])
+        if preds[0].ndim == 2:
+            B, S = len(preds), preds[0].shape[0]
+            preds = tuple(tuple([preds[b][s] for b in range(B)]) for s in range(S))
+        else:
+            preds = tuple([(pred,) for pred in preds])
+        for pred in preds:
+            for p in pred:
+                self._pred_history.append(p)
+        return preds
+
 
     def _postprocess(self, data_batch_dict: dict, datasample: 'SkeletonDataSample') -> Tuple[dict,  'SkeletonDataSample']:
         if self.postprocess_pipeline is None:
@@ -245,7 +254,7 @@ class InferenceEngine:
     def from_cfg(cls, config: dict):
         return cls(
             model=config['model'],
-            frame_buffer_size=config['total_frames'] * 2,
+            frame_buffer_size=config['total_frames'],
             preprocess_pipeline=config['test_pipeline'],
             postprocess_pipeline=config.get('postprocess', None),
             load_from=config['load_from'],

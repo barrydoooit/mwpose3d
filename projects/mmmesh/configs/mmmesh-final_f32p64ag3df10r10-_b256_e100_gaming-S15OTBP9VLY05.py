@@ -54,35 +54,49 @@ TR_SkeletonCoordinateTransform = dict(type='SkeletonCoordinateTransform', rotate
 TR_PointCloudCoordinateTransform = dict(type='PointCloudCoordinateTransform', rotate_xyz=(x_tilt, 0, 0), tran_xyz=(0, y_offset, 0))
 TR_LoadTrackingRecords = dict(type='LoadTrackingRecords', tracker_name='RKFTracker', anchor_frame='nearestperframe', centroid_queue_len=num_frames,
         ignore_axis=[2], tracker_cfg='configs/apps/trackers/rkf.py',) # point_cloud_clipping=dict(dimensions=(2,), threshold=((None, -1),)))
-TR_RelativeCoordtoTrackingCentroid = dict(type='RelativeCoordtoTrackingCentroid', discretize_resolution=tracking_discretize_resolution)
 TR_PointDuplicator = dict(type='PointDuplicator', target_num_points=point_cloud_size)
 TR_PointSortAndClip = dict(type='PointSortAndClip', target_num_points=point_cloud_size, sort_dim=4, sort_order='desc')
-TR_NormalizeAttr = dict(type='NormalizeAttr', attr_indices=(3, 4,), means=(0.0430, 9.4746), stds=(1.3270, 9.2075))
+TR_NormalizePointAttr = dict(type='NormalizePointAttr', attr_indices=(3, 4,), means=(0.0430, 9.4746), stds=(1.3270, 9.2075))
+TR_RelativeCoordtoTrackingCentroid = dict(type='RelativeCoordtoTrackingCentroid', discretize_resolution=tracking_discretize_resolution)
+TR_TrackingCentroidCalibration = dict(type='TrackingCentroidCalibration', method="identity")
 
 PR_SkeletonBackToOriginalCoord = dict(type='SkeletonBackToOriginalCoord')
 PR_SavGolayFilter = dict(type='SavGolayFilter', window_length=7, polyorder=2, deriv=0, delta=0.055, mode='reflect', time_axis=0)
 
-inference_engine_pipeline = [
-    TR_LoadMultiFrameFromH5, TR_AddRangeDimension, TR_StackPointCloudFrames, TR_DensityFilter, TR_SequenceClip,
-    TR_SkeletonKeypointFilter, TR_SkeletonCoordinateTransform, TR_PointCloudCoordinateTransform, TR_LoadTrackingRecords,
-    TR_RelativeCoordtoTrackingCentroid, TR_PointDuplicator, TR_PointSortAndClip, TR_NormalizeAttr
+default_pipeline = [
+    TR_LoadMultiFrameFromH5,
+    TR_AddRangeDimension,
+    TR_StackPointCloudFrames,
+    TR_DensityFilter,
+    TR_SequenceClip,
+    TR_SkeletonKeypointFilter,
+    TR_SkeletonCoordinateTransform,
+    TR_PointCloudCoordinateTransform,
+    TR_PointDuplicator,
+    TR_PointSortAndClip,
+    TR_NormalizePointAttr,
+    TR_LoadTrackingRecords,
 ]
-inference_engine_postprocess_pipeline = [
-    PR_SkeletonBackToOriginalCoord, PR_SavGolayFilter
+calib_extra_pipeline = [
+    TR_TrackingCentroidCalibration
 ]
-inference_engine_start_checkpoint = None
+normal_extra_pipeline = [
+    TR_RelativeCoordtoTrackingCentroid
+]
 
-TR_Inference = dict(type='Inference', inference_engine=dict(model=dict(model, return_sequence=True), frame_buffer_size=total_frames, preprocess_pipeline=inference_engine_pipeline,
-            load_from=inference_engine_start_checkpoint, keypoints_involved=keypoints_involved, custom_hooks=None))
-TR_TrackingCentroidCalibration = dict(type='TrackingCentroidCalibration', method="identity")
+inference_engine_postprocess_pipeline = [
+    PR_SkeletonBackToOriginalCoord
+]
+inference_engine_start_checkpoint = 'checkpoints/s15otbp9vly05-df10r5.pth'
+inference_engine=dict(model=dict(model, return_sequence=True), 
+            total_frames=num_frames, test_pipeline=None, postprocess=inference_engine_postprocess_pipeline,
+            load_from=inference_engine_start_checkpoint, keypoints_involved=keypoints_involved, custom_hooks=None)
+
 
 TR_RandomTransform = dict(type='RandomTransform', transform_prob=0.5, sigma_xyz=(0.02, 0.02, 0.1), max_d_xyz=(0.1, 0.1, 0.4))
-
 train_pipeline = [
-    TR_LoadMultiFrameFromH5, TR_AddRangeDimension, TR_StackPointCloudFrames, TR_DensityFilter, TR_SequenceClip,
-    TR_SkeletonKeypointFilter, TR_SkeletonCoordinateTransform, TR_PointCloudCoordinateTransform, TR_LoadTrackingRecords,
-    TR_Inference, TR_TrackingCentroidCalibration, TR_RelativeCoordtoTrackingCentroid,
-    TR_RandomTransform, TR_PointDuplicator, TR_PointSortAndClip, TR_NormalizeAttr
+    *default_pipeline,
+    TR_RandomTransform
 ]
 
 train_dataloader = dict(
@@ -105,10 +119,7 @@ optimizer_cfg = dict(type='AdamW', lr=0.00025, weight_decay=0.01)
 train_cfg = dict(type='EpochBasedTrainLoop', max_epochs=100, val_interval=10)
 
 val_pipeline = [
-    TR_LoadMultiFrameFromH5, TR_AddRangeDimension, TR_StackPointCloudFrames, TR_DensityFilter, TR_SequenceClip,
-    TR_SkeletonKeypointFilter, TR_SkeletonCoordinateTransform, TR_PointCloudCoordinateTransform, TR_LoadTrackingRecords,
-    TR_Inference, TR_TrackingCentroidCalibration, TR_RelativeCoordtoTrackingCentroid,
-    TR_PointDuplicator, TR_PointSortAndClip, TR_NormalizeAttr
+    *default_pipeline,
 ]
 
 val_dataloader = dict(
@@ -172,8 +183,15 @@ test_cfg = dict(
 
 custom_hooks = [
     dict(
-        type='TransformChangeHookPerTrainEpoch',
-        method_spec='Inference.load_checkpoint_from_runner',
-        method_kwargs=dict(strict=True)
+        type='PreInferenceHook',
+        inference_engine=inference_engine,
+         extra_pipeline=calib_extra_pipeline,
+         earliest_activation_epoch=0,
+         dynamic_loading_start_epoch=50,
+         strict_loading=True
+    ),
+    dict(
+        type='ExtraTransformHook',
+        extra_pipeline=normal_extra_pipeline,
     )
 ]

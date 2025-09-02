@@ -3,6 +3,7 @@ from logging import config
 from pathlib import Path
 import os.path as osp
 import time
+import traceback
 from typing import Dict, List, Optional, Union
 import mmengine
 from mmengine.config import Config, ConfigDict
@@ -332,4 +333,5 @@ class Runner:
                 try:
                     getattr(hook, fn_name)(self, **kwargs)
                 except TypeError as e:
+                    print(traceback.format_exc())
                     raise TypeError(f'{e} in {hook}') from None

@@ -8,8 +8,8 @@ import h5py
 import numpy as np
 from mmengine.config import Config
 
-from mwpose3d.datasets.transforms.inference import Inference
 from mwpose3d.datasets.transforms.loading import LoadMultiFrameFromH5
+from mwpose3d.runner.hooks.pre_inference_hook import PreInferenceHook
 
 from .utils import apply_frame_selection, compose_into, make_row_affine
 from .base import KEYS_OF_SYNCABLE_SEQUENCES, BaseTransform, OnlineEnabled
@@ -384,11 +384,13 @@ class TrackingCentroidCalibration(BaseTransform):
             raise ValueError(f"Unknown calibration method '{method}'")
         
     def transform(self, input: Dict[str, Any]) -> Dict[str, Any]:
-        preds: Tuple[np.ndarray, ...] = input[Inference.PREDICTIONS_KEY]
+        try:
+            preds: Tuple[np.ndarray, ...] = input[PreInferenceHook.PREINFERENCE_RESULTS]
+        except KeyError:
+            return input
         input["track_centroid"] = self.calib(input, preds, self.method_cfg)
         return input
 
-    # calibration implementations
     @staticmethod
     def _calib_identity(input: Dict[str, Any],
                         preds: Tuple[np.ndarray, ...],

@@ -1,8 +1,10 @@
+import warnings
 import numpy as np
-from typing import Iterable, Optional, Tuple, Union, Sequence
+from typing import Any, Callable, Iterable, List, Mapping, Optional, Tuple, Union, Sequence
 
 from mwpose3d.datasets.transforms.base import KEYS_OF_SYNCABLE_SEQUENCES
 from mwpose3d.datasets.transforms.loading import LoadMultiFrameFromH5
+from mwpose3d.datasets.utils import pseudo_collate, pseudo_decollate, pseudo_recollate_into
 
 def make_row_affine(R: Optional[np.ndarray]=None, t: Optional[Iterable]=None, dtype=np.float32) -> np.ndarray:
     """
@@ -77,3 +79,71 @@ def apply_frame_selection(
                 if L >= target_seq_len and all(i < L for i in keep):
                     slices = [val[i] for i in keep]
                     input_dict[key] = tuple(slices) if isinstance(val, tuple) else slices
+
+def _apply_transforms(sample: Any, transforms: List[Callable[[Any], Any]]) -> Any:
+    for t in transforms:
+        sample = t(sample)
+    return sample
+
+def apply_per_sample_transforms_serial(big_batch: dict, transforms: List[Callable[[Any], Any]], inplace=True) -> Any:
+    samples = pseudo_decollate(big_batch)
+    samples = [_apply_transforms(s, transforms) for s in samples]
+    if not inplace:
+        return pseudo_collate(samples)
+    return pseudo_recollate_into(samples, big_batch)
+
+from concurrent.futures import ProcessPoolExecutor
+import math, os
+
+_GLOBAL_TRANSFORMS: List = []
+
+def _init_worker(transforms, suppress_import_warnings: bool = True):
+    """Initializer runs once per worker process."""
+    global _GLOBAL_TRANSFORMS
+    _GLOBAL_TRANSFORMS = transforms
+    if suppress_import_warnings:
+        warnings.filterwarnings("ignore", category=DeprecationWarning)
+    #for name in ("OpenGL", "OpenGL.acceleratesupport"):
+    #    logging.getLogger(name).setLevel(logging.ERROR)
+
+def _transform_worker(sample: Any) -> Any:
+    for t in _GLOBAL_TRANSFORMS:
+        sample = t(sample)
+    return sample
+
+def _share_cpu_tensors_inplace(samples):
+    try:
+        import torch
+    except Exception:
+        return
+    def _share(x):
+        if isinstance(x, torch.Tensor) and x.device.type == "cpu":
+            x.share_memory_()
+        elif isinstance(x, Mapping):
+            for v in x.values(): _share(v)
+        elif isinstance(x, Sequence) and not isinstance(x, (str, bytes)):
+            for v in x: _share(v)
+    for s in samples: _share(s)
+
+def _default_chunksize(n: int, workers: int) -> int:
+    return max(1, math.ceil(n / (8 * max(1, workers))))
+
+def _apply_parallel_with_executor(
+    big_batch: dict,
+    *,
+    executor,
+    inplace: bool,
+    chunksize: Optional[int] = None,
+    share_cpu_tensors: bool = False,
+) -> Any:
+    samples = pseudo_decollate(big_batch)
+    # Only meaningful for process-based pools:
+    if share_cpu_tensors and isinstance(executor, ProcessPoolExecutor):
+        _share_cpu_tensors_inplace(samples)
+
+    pool_size = getattr(executor, "_max_workers", os.cpu_count() or 1)
+    if chunksize is None:
+        chunksize = _default_chunksize(len(samples), pool_size)
+
+    results = list(executor.map(_transform_worker, samples, chunksize=chunksize))
+    return pseudo_recollate_into(results, big_batch) if inplace else pseudo_collate(results)
