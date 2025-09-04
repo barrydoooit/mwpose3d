@@ -1,6 +1,7 @@
 # tracking_record_generator_v2.py
 
 from __future__ import annotations
+from collections import deque
 import sys
 from copy import deepcopy
 from pathlib import Path
@@ -111,8 +112,8 @@ class TrackingRecordGeneratorV2:
                         pcd_file_name = "unknown.h5"
 
                     starting_flag: bool = bool(data.get("starting_flag", [False])[0] if isinstance(data.get("starting_flag"), (list, tuple, np.ndarray)) else data.get("starting_flag", False))
-                    queue_tb3: List[Tuple[np.ndarray]] = tracking_loader._centroid_queue # [T, B, 3]
-                    queue: List[np.ndarray] = [b[-1] for b in queue_tb3]
+                    queue_t3: deque = tracking_loader._centroid_queue # [T, 3]
+                    queue: List[np.ndarray] = list(queue_t3)
                     if starting_flag:
                         print(len(queue), self.queue_len)
                         if len(collected) > 0:
