@@ -1,428 +1,7 @@
 from __future__ import annotations
 import math
 import torch
-import tkinter as tk
-from matplotlib.figure import Figure
-from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
-import matplotlib.pyplot as plt  # for colormap
-import random
-
 from mwpose3d.utils.kinect_toolkits.kinectData import KeypointType, Connectivity
-
-
-class SimpleGTPredVisualizer:
-    """
-    Live Tk/Matplotlib visualizer for GT vs Pred and a sliding-window error plot.
-
-    - Call update(...) every frame.
-    - The window stays responsive because we call `idle()` (root.update_*) each frame.
-    - Error plot shows a sliding window (last `window_size` frames). Set follow=False
-      if you want to keep window static and only pan the progress bar to move focus.
-
-    Args:
-        keypoints_involved: list of keypoints to draw the skeleton.
-        keypoint_for_stats: list of keypoints to compute/display the error traces.
-        error_type: "abs_error" or "square_error".
-        window_size: number of recent frames to show in the error plot.
-        follow: if True, the xlim follows the latest frame (sliding window).
-        max_points_per_frame: limit point count for speed (random decimation).
-    """
-    def __init__(
-        self,
-        keypoints_involved,
-        keypoint_for_stats,
-        error_type="abs_error",
-        window_size=100,
-        follow=True,
-        max_points_per_frame=50000,
-    ):
-        # Normalize to KeypointType
-        self.keypoints_involved = [KeypointType(kp) for kp in keypoints_involved]
-        self.keypoint_for_stats = [KeypointType(kp) for kp in keypoint_for_stats]
-        self.error_type = error_type
-        self.window_size = max(10, int(window_size))
-        self.follow = bool(follow)
-        self.max_points_per_frame = max_points_per_frame
-
-        # --- Tk layout ---
-        self.root = tk.Tk()
-        self.root.title("3D Skeleton Visualization")
-
-        top_frame = tk.Frame(self.root)
-        top_frame.pack(side=tk.TOP, fill=tk.BOTH, expand=True)
-
-        frame_gt = tk.Frame(top_frame)
-        frame_pc = tk.Frame(top_frame)
-        frame_pred = tk.Frame(top_frame)
-        frame_gt.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-        frame_pc.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-        frame_pred.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-
-        # --- GT axis ---
-        self.fig_gt = Figure(figsize=(5, 5))
-        self.ax_gt = self.fig_gt.add_subplot(111, projection='3d')
-        self._setup_axes(self.ax_gt, "Ground Truth")
-        self.canvas_gt = FigureCanvasTkAgg(self.fig_gt, master=frame_gt)
-        self.canvas_gt.get_tk_widget().pack(fill=tk.BOTH, expand=True)
-
-        # --- PC axis ---
-        self.fig_pc = Figure(figsize=(5, 5))
-        self.ax_pc = self.fig_pc.add_subplot(111, projection='3d')
-        self._setup_axes(self.ax_pc, "Point Cloud")
-        self.canvas_pc = FigureCanvasTkAgg(self.fig_pc, master=frame_pc)
-        self.canvas_pc.get_tk_widget().pack(fill=tk.BOTH, expand=True)
-
-        # --- Pred axis ---
-        self.fig_pred = Figure(figsize=(5, 5))
-        self.ax_pred = self.fig_pred.add_subplot(111, projection='3d')
-        self._setup_axes(self.ax_pred, "Prediction")
-        self.canvas_pred = FigureCanvasTkAgg(self.fig_pred, master=frame_pred)
-        self.canvas_pred.get_tk_widget().pack(fill=tk.BOTH, expand=True)
-
-        # Build connectivity
-        self.connectivity_pairs = []
-        for kp in self.keypoints_involved:
-            if kp in Connectivity:
-                for connected in Connectivity[kp]:
-                    if connected in self.keypoints_involved:
-                        self.connectivity_pairs.append((kp, connected))
-
-        # Persistent artists
-        self.scatter_gt = self.ax_gt.scatter([], [], [], color='blue')
-        self.lines_gt = []
-        for pair in self.connectivity_pairs:
-            line, = self.ax_gt.plot([], [], [], color='blue', lw=1)
-            self.lines_gt.append((pair, line))
-
-        self.scatter_pred = self.ax_pred.scatter([], [], [], color='red')
-        self.lines_pred = []
-        for pair in self.connectivity_pairs:
-            line, = self.ax_pred.plot([], [], [], color='red', lw=1)
-            self.lines_pred.append((pair, line))
-
-        # --- Stats area ---
-        self.frame_stats = tk.Frame(self.root)
-        self.frame_stats.pack(side=tk.BOTTOM, fill=tk.BOTH, expand=True)
-
-        self.fig_stats = Figure(figsize=(10, 3))
-        self.ax_stats = self.fig_stats.add_subplot(111)
-        self.ax_stats.set_title(f"Error ({self.error_type})")
-        self.ax_stats.set_xlabel("Frame")
-        self.ax_stats.set_ylabel("Error")
-        self.fig_stats.subplots_adjust(right=0.75)
-        self.current_frame_line = self.ax_stats.axvline(x=0, color='red', lw=2, linestyle='--')
-
-        # Lines per KP
-        self.stats_lines = {}
-        self.stats_errors = {kp: [] for kp in self.keypoint_for_stats}
-        for stat_kp in self.keypoint_for_stats:
-            line, = self.ax_stats.plot([], [], label=stat_kp.name, lw=1)
-            self.stats_lines[stat_kp] = line
-
-        leg = self.ax_stats.legend(loc="center left", bbox_to_anchor=(1.0, 0.5))
-        for legline in leg.get_lines():
-            legline.set_linewidth(4)
-
-        self.canvas_stats = FigureCanvasTkAgg(self.fig_stats, self.frame_stats)
-        self.canvas_stats.get_tk_widget().pack(fill=tk.BOTH, expand=True)
-
-        # Progress slider
-        self.progress_bar = tk.Scale(
-            self.frame_stats,
-            from_=0,
-            to=0,
-            orient=tk.HORIZONTAL,
-            command=self._on_progress_change,
-            label="Frame"
-        )
-        self.progress_bar.pack(fill=tk.X)
-
-        # Streaming buffers
-        self.gt_data = []
-        self.pred_data = []
-        self.pc_data = []
-        self.report = []
-        self.num_frames = 0
-
-        # State
-        self._closed = False
-        self.root.protocol("WM_DELETE_WINDOW", self._on_close)
-
-    # ------------ Public control ------------
-
-    def idle(self):
-        """Pump the Tk event loop without blocking the training loop."""
-        if self._closed:
-            return
-        try:
-            self.root.update_idletasks()
-            self.root.update()
-        except tk.TclError:
-            self._closed = True
-
-    def reset(self):
-        self.gt_data.clear()
-        self.pred_data.clear()
-        self.pc_data.clear()
-        self.report.clear()
-        for kp in self.stats_errors:
-            self.stats_errors[kp].clear()
-        self.num_frames = 0
-        if not self._closed:
-            self._clear_axes()
-            self.idle()
-
-    # ------------ Drawing helpers ------------
-
-    def _on_close(self):
-        self._closed = True
-        try:
-            self.root.destroy()
-        except Exception:
-            pass
-
-    def _clear_axes(self):
-        # GT
-        self._setup_axes(self.ax_gt, "Ground Truth")
-        for _, ln in self.lines_gt:
-            ln.set_data([], [])
-            ln.set_3d_properties([])
-        self.scatter_gt._offsets3d = ([], [], [])
-        self.canvas_gt.draw_idle()
-        # Pred
-        self._setup_axes(self.ax_pred, "Prediction")
-        for _, ln in self.lines_pred:
-            ln.set_data([], [])
-            ln.set_3d_properties([])
-        self.scatter_pred._offsets3d = ([], [], [])
-        self.canvas_pred.draw_idle()
-        # PC
-        self.ax_pc.cla()
-        self._setup_axes(self.ax_pc, "Point Cloud")
-        self.canvas_pc.draw_idle()
-        # Stats
-        self.ax_stats.cla()
-        self.ax_stats.set_title(f"Error ({self.error_type})")
-        self.ax_stats.set_xlabel("Frame")
-        self.ax_stats.set_ylabel("Error")
-        self.current_frame_line = self.ax_stats.axvline(x=0, color='red', lw=2, linestyle='--')
-        self.stats_lines.clear()
-        for kp in self.keypoint_for_stats:
-            line, = self.ax_stats.plot([], [], label=kp.name, lw=1)
-            self.stats_lines[kp] = line
-        leg = self.ax_stats.legend(loc="center left", bbox_to_anchor=(1.0, 0.5))
-        for legline in leg.get_lines():
-            legline.set_linewidth(4)
-        self.canvas_stats.draw_idle()
-
-    def _setup_axes(self, ax, title):
-        ax.set_title(title)
-        ax.set_xlim(-1, 1)
-        ax.set_ylim(-1, 1)
-        ax.set_zlim(-1, 2)
-        ax.set_xlabel("X")
-        ax.set_ylabel("Y")
-        ax.set_zlabel("Z")
-
-    def _update_skeleton(self, tensor, scatter, lines):
-        coords = []
-        is_t = isinstance(tensor, torch.Tensor)
-        for idx, _ in enumerate(self.keypoints_involved):
-            x = tensor[idx*3].item() if is_t else tensor[idx*3]
-            y = tensor[idx*3+1].item() if is_t else tensor[idx*3+1]
-            z = tensor[idx*3+2].item() if is_t else tensor[idx*3+2]
-            coords.append((x, y, z))
-        xs = [p[0] for p in coords]
-        ys = [p[1] for p in coords]
-        zs = [p[2] for p in coords]
-        scatter._offsets3d = (xs, ys, zs)
-        # bones
-        for (pair, line) in lines:
-            idx1 = self.keypoints_involved.index(pair[0])
-            idx2 = self.keypoints_involved.index(pair[1])
-            s = coords[idx1]
-            t = coords[idx2]
-            line.set_data([s[0], t[0]], [s[1], t[1]])
-            line.set_3d_properties([s[2], t[2]])
-
-    def _decimate_points(self, xyz):
-        """xyz: Tensor [N,3] on CPU; randomly downsample to max_points_per_frame."""
-        if xyz is None:
-            return None
-        N = xyz.shape[0]
-        if self.max_points_per_frame is None or N <= self.max_points_per_frame:
-            return xyz
-        idx = torch.randperm(N)[: self.max_points_per_frame]
-        return xyz[idx]
-
-    def _draw_point_cloud(self, pc_tensor):
-        # Reset axis each frame to avoid overplot
-        self.ax_pc.cla()
-        self._setup_axes(self.ax_pc, "Point Cloud")
-        if pc_tensor is None:
-            self.canvas_pc.draw_idle()
-            return
-
-        # Accept [1,F,N,C], [F,N,C], [N,C]
-        is_t = isinstance(pc_tensor, torch.Tensor)
-        if not is_t:
-            self.canvas_pc.draw_idle()
-            return
-
-        pts = []
-        if pc_tensor.dim() == 4:          # [B,F,N,C]
-            B, F, N, C = pc_tensor.shape
-            F = min(F, 8)  # soft limit to keep drawing fast
-            # draw all frames with gradient from green->blue
-            cmap = plt.get_cmap("winter_r")
-            for f in range(F):
-                frame = pc_tensor[0, f]
-                xyz = frame[:, :3].to("cpu")
-                xyz = self._decimate_points(xyz)
-                color = cmap(f / max(1, F - 1))
-                self.ax_pc.scatter(xyz[:, 0], xyz[:, 1], xyz[:, 2], color=color, s=1)
-        elif pc_tensor.dim() == 3:        # [F,N,C]
-            F, N, C = pc_tensor.shape
-            F = min(F, 8)
-            cmap = plt.get_cmap("winter_r")
-            for f in range(F):
-                frame = pc_tensor[f]
-                xyz = frame[:, :3].to("cpu")
-                xyz = self._decimate_points(xyz)
-                color = cmap(f / max(1, F - 1))
-                self.ax_pc.scatter(xyz[:, 0], xyz[:, 1], xyz[:, 2], color=color, s=1)
-        elif pc_tensor.dim() == 2:        # [N,C]
-            xyz = pc_tensor[:, :3].to("cpu")
-            xyz = self._decimate_points(xyz)
-            self.ax_pc.scatter(xyz[:, 0], xyz[:, 1], xyz[:, 2], color="blue", s=1)
-
-        self.canvas_pc.draw_idle()
-
-    # ------------ Streaming update ------------
-
-    def update(self, gt_tensor, pred_tensor, pc_tensor=None, frame_report=None):
-        if self._closed:
-            return
-
-        # Update skeletons
-        self._update_skeleton(gt_tensor, self.scatter_gt, self.lines_gt)
-        self._update_skeleton(pred_tensor, self.scatter_pred, self.lines_pred)
-        self.canvas_gt.draw_idle()
-        self.canvas_pred.draw_idle()
-
-        # Update point cloud
-        self._draw_point_cloud(pc_tensor)
-
-        # Store (only small refs to keep memory under control)
-        self.gt_data.append(gt_tensor)
-        self.pred_data.append(pred_tensor)
-        self.pc_data.append(pc_tensor)
-        if frame_report is not None:
-            self.report.append(frame_report)
-
-        # Update stats buffers
-        if frame_report is not None:
-            for stat_kp in self.keypoint_for_stats:
-                # Prefer precomputed error if present
-                v = frame_report.get(stat_kp, None)
-                if v is not None and self.error_type in v:
-                    self.stats_errors[stat_kp].append(v[self.error_type])
-                    continue
-                # Otherwise compute
-                if stat_kp in self.keypoints_involved:
-                    idx = self.keypoints_involved.index(stat_kp)
-                    gt_joint = gt_tensor[idx*3: idx*3+3]
-                    pred_joint = pred_tensor[idx*3: idx*3+3]
-                    diff = gt_joint - pred_joint
-                    if self.error_type == "abs_error":
-                        err = torch.norm(diff, p=2).item()
-                    elif self.error_type == "square_error":
-                        err = torch.sum(diff * diff).item()
-                    else:
-                        err = torch.norm(diff, p=2).item()
-                else:
-                    err = 0.0
-                self.stats_errors[stat_kp].append(err)
-        else:
-            # Compute on the fly
-            for stat_kp in self.keypoint_for_stats:
-                if stat_kp in self.keypoints_involved:
-                    idx = self.keypoints_involved.index(stat_kp)
-                    gt_joint = gt_tensor[idx*3: idx*3+3]
-                    pred_joint = pred_tensor[idx*3: idx*3+3]
-                    diff = gt_joint - pred_joint
-                    if self.error_type == "abs_error":
-                        err = torch.norm(diff, p=2).item()
-                    elif self.error_type == "square_error":
-                        err = torch.sum(diff * diff).item()
-                    else:
-                        err = torch.norm(diff, p=2).item()
-                else:
-                    err = 0.0
-                self.stats_errors[stat_kp].append(err)
-
-        # Frame index & progress bar
-        self.num_frames = len(next(iter(self.stats_errors.values()))) if self.stats_errors else 0
-        self.progress_bar.config(to=max(0, self.num_frames - 1))
-        self.progress_bar.set(max(0, self.num_frames - 1))
-
-        # Redraw stats (sliding window)
-        right = max(0, self.num_frames - 1)
-        left = max(0, right - self.window_size + 1)
-        for kp in self.keypoint_for_stats:
-            y = self.stats_errors[kp]
-            x = list(range(len(y)))
-            # Subslice to window to reduce draw cost
-            xs = x[left:right+1]
-            ys = y[left:right+1]
-            self.stats_lines[kp].set_data(xs, ys)
-
-        # Autoscale to data in-window
-        self.ax_stats.relim()
-        self.ax_stats.autoscale_view()
-        if self.follow:
-            self.ax_stats.set_xlim(left, max(left + self.window_size - 1, right))
-        self.current_frame_line.set_xdata([right, right])
-        self.canvas_stats.draw_idle()
-
-    # ------------ Replay controls ------------
-
-    def _on_progress_change(self, value):
-        if self._closed:
-            return
-        frame_idx = int(float(value))
-        self._update_replay(frame_idx)
-        self.current_frame_line.set_xdata([frame_idx, frame_idx])
-        # Show a window around the chosen frame
-        half = self.window_size // 2
-        self.ax_stats.set_xlim(max(0, frame_idx - half), frame_idx + half)
-        self.canvas_stats.draw_idle()
-
-    def _update_replay(self, frame_idx):
-        if (0 <= frame_idx < len(self.gt_data) and 
-            frame_idx < len(self.pred_data) and 
-            frame_idx < len(self.pc_data)):
-            self._update_skeleton(self.gt_data[frame_idx], self.scatter_gt, self.lines_gt)
-            self._update_skeleton(self.pred_data[frame_idx], self.scatter_pred, self.lines_pred)
-            self._draw_point_cloud(self.pc_data[frame_idx])
-            self.canvas_gt.draw_idle()
-            self.canvas_pred.draw_idle()
-
-    # (keep API parity with previous)
-    def setup_replay(self, gt_data, pred_data, report, pc_data):
-        self.gt_data = gt_data
-        self.pred_data = pred_data
-        self.pc_data = pc_data
-        self.report = report
-
-    def finalize(self, *args, **kwargs):
-        """
-        Kept for backward-compatibility. No blocking call here anymore.
-        If you really want to block, you can call `while not vis._closed: vis.idle()`.
-        """
-        pass
-
-# simple_gtpred_visualizer.py
 
 import math
 from typing import Dict, List, Optional
@@ -518,7 +97,7 @@ class SimpleGTPredVisualizerQT:
         window_size: int = 100,
         follow: bool = True,
         max_points_per_frame: int = 50_000,
-        show_point_cloud: bool = False,
+        show_point_cloud: bool = True,
     ):
         # Normalize to KeypointType
         self.keypoints_involved = [KeypointType(kp) for kp in keypoints_involved]
@@ -551,6 +130,8 @@ class SimpleGTPredVisualizerQT:
 
         # GT
         self.view_gt = _SkeletonView("Ground Truth")
+        self.gt_bbox_item = gl.GLLinePlotItem(pos=np.zeros((0, 3), dtype=np.float32), color=(0.0, 1.0, 0.0, 1.0), width=2.5, mode='lines')
+        self.view_gt.view.addItem(self.gt_bbox_item)
         splitter.addWidget(self.view_gt.view)
 
         # PCD
@@ -562,10 +143,15 @@ class SimpleGTPredVisualizerQT:
         self.view_pc.addItem(grid_pc)
         self.pc_item = gl.GLScatterPlotItem(pos=np.zeros((0, 3), dtype=np.float32), size=1.5, color=(0.1, 0.6, 0.9, 0.9))
         self.view_pc.addItem(self.pc_item)
+        self.pc_bbox_item = gl.GLLinePlotItem(pos=np.zeros((0, 3), dtype=np.float32), color=(0.0, 1.0, 0.0, 1.0), width=2.5, mode='lines')
+        self.view_pc.addItem(self.pc_bbox_item)
+
         splitter.addWidget(self.view_pc)
 
         # Pred
         self.view_pred = _SkeletonView("Prediction")
+        self.pred_bbox_item = gl.GLLinePlotItem(pos=np.zeros((0, 3), dtype=np.float32), color=(0.0, 1.0, 0.0, 1.0), width=2.5, mode='lines')
+        self.view_pred.view.addItem(self.pred_bbox_item)
         splitter.addWidget(self.view_pred.view)
 
         # Bottom area: controls + error plot + full-width slider
@@ -651,6 +237,10 @@ class SimpleGTPredVisualizerQT:
         self.pred_data: List[torch.Tensor] = []
         self.pc_data: List[Optional[torch.Tensor]] = []
         self.report: List[Dict] = []
+        self.centroids: List[Optional[np.ndarray]] = []
+        self._bbox_half = 0.05
+        self._bbox_zmin = -1.0
+        self._bbox_zmax = 1.0
         self.stats_errors: Dict[KeypointType, List[float]] = {kp: [] for kp in self.keypoint_for_stats}
         self.num_frames: int = 0
 
@@ -687,20 +277,21 @@ class SimpleGTPredVisualizerQT:
         self.pred_data.clear()
         self.pc_data.clear()
         self.report.clear()
+        self.centroids.clear()
         self.num_frames = 0
         self.slider.setRange(0, 0)
         self._draw_frame(None)  # clears
         self._update_error_plot()
 
-    def update(self, gt_tensor, pred_tensor, pc_tensor=None, frame_report=None):
+    def update(self, gt_tensor, pred_tensor, pc_tensor=None, frame_report=None, track_centroid=None):
         # Store references (CPU tensors or numpy-friendly)
         self.gt_data.append(gt_tensor)
         self.pred_data.append(pred_tensor)
         self.pc_data.append(pc_tensor)
         if frame_report is not None:
             self.report.append(frame_report)
-
-        # Update stats
+        self.centroids.append(None if track_centroid is None else np.asarray(track_centroid, dtype=np.float32))
+        
         self._append_errors(gt_tensor, pred_tensor, frame_report)
         self.num_frames = len(next(iter(self.stats_errors.values()))) if self.stats_errors else len(self.gt_data)
 
@@ -860,7 +451,11 @@ class SimpleGTPredVisualizerQT:
             self.view_pred.set_scatter(np.zeros((0, 3), dtype=np.float32))
             self.view_pred.set_bones([])
             self.pc_item.setData(pos=np.zeros((0, 3), dtype=np.float32))
+            self.gt_bbox_item.setData(pos=np.zeros((0, 3), dtype=np.float32))
+            self.pred_bbox_item.setData(pos=np.zeros((0, 3), dtype=np.float32))
+            self.pc_bbox_item.setData(pos=np.zeros((0, 3), dtype=np.float32))
             return
+
 
         # --- Skeleton GT/Pred ---
         gt = _to_numpy_1d(self.gt_data[idx])
@@ -881,6 +476,27 @@ class SimpleGTPredVisualizerQT:
         self.view_gt.set_bones(gt_segments, color=self._color_gt, width=2.0)
         self.view_pred.set_bones(pr_segments, color=self._color_pred, width=2.0)
 
+        # draw green tracking bbox (same in GT, Pred, and PC views)
+        center = self.centroids[idx] if idx < len(self.centroids) else None
+        if center is not None:
+            cx, cy = float(center[0]), float(center[1])
+            hs, zmin, zmax = self._bbox_half, self._bbox_zmin, self._bbox_zmax
+            b = np.array([[cx-hs, cy-hs, zmin],
+                          [cx+hs, cy-hs, zmin],
+                          [cx+hs, cy+hs, zmin],
+                          [cx-hs, cy+hs, zmin]], dtype=np.float32)
+            t = b.copy(); t[:, 2] = zmax
+            segs = []
+            # 12 edges as pairs for GL_LINES (2*12 = 24 points)
+            for i in range(4): segs += [b[i], t[i]]                 # verticals
+            for i in range(4): segs += [b[i], b[(i+1) % 4]]         # bottom loop
+            for i in range(4): segs += [t[i], t[(i+1) % 4]]         # top loop
+            pts = np.vstack(segs).astype(np.float32)
+            self.gt_bbox_item.setData(pos=pts, color=(0.0, 1.0, 0.0, 1.0), width=2.5, mode='lines')
+            self.pred_bbox_item.setData(pos=pts, color=(0.0, 1.0, 0.0, 1.0), width=2.5, mode='lines')
+        else:
+            self.gt_bbox_item.setData(pos=np.zeros((0, 3), dtype=np.float32))
+            self.pred_bbox_item.setData(pos=np.zeros((0, 3), dtype=np.float32))
         # --- Point cloud (optional) ---
         if self.chk_show_pc.isChecked():
             pc = self.pc_data[idx]
@@ -889,8 +505,14 @@ class SimpleGTPredVisualizerQT:
                 self.pc_item.setData(pos=np.zeros((0, 3), dtype=np.float32))
             else:
                 self.pc_item.setData(pos=pos.astype(np.float32), size=1.5)
+            if center is not None:
+                self.pc_bbox_item.setData(pos=pts, color=(0.0, 1.0, 0.0, 1.0), width=2.5, mode='lines')
+            else:
+                self.pc_bbox_item.setData(pos=np.zeros((0, 3), dtype=np.float32))
+
         else:
             self.pc_item.setData(pos=np.zeros((0, 3), dtype=np.float32))
+            self.pc_bbox_item.setData(pos=np.zeros((0, 3), dtype=np.float32)) 
 
     def _extract_pc_positions(self, pc_tensor) -> Optional[np.ndarray]:
         """Accept [1,F,N,C], [F,N,C], [N,C]; show up to 2 temporal slices with a gradient."""

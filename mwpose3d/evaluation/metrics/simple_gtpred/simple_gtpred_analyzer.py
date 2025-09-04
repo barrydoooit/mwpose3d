@@ -1,6 +1,7 @@
 import json
 from pathlib import Path
 from typing import Optional
+import numpy as np
 import torch
 
 from mwpose3d.evaluation.metrics.simple_gtpred.simple_gtpred_visualizer import SimpleGTPredVisualizerQT
@@ -83,39 +84,33 @@ class SimpleGTPredAnalyzer(BaseMetric):
         self.pred_data.append(pred)
         
         if self.visualize:
-            pcd = None
-            # common names someone might use
-            for k in ("final_pcd_tensor", "pcd", "points", "point_cloud"):
-                if k in data_batch:
-                    pcd = data_batch[k]
-                    break
-            # If available, keep only the last 2 temporal slices to make motion visible but fast
-            if isinstance(pcd, torch.Tensor):
-                try:
-                    # Accept [1,F,N,C], [F,N,C], or [N,C]
-                    if pcd.dim() == 4:
-                        pcd_vis = pcd[:, -min(2, pcd.shape[1]):, ...]
-                    elif pcd.dim() == 3:
-                        pcd_vis = pcd[-min(2, pcd.shape[0]):, ...].unsqueeze(0)
-                    elif pcd.dim() == 2:
-                        pcd_vis = pcd.unsqueeze(0).unsqueeze(0)
-                    else:
-                        pcd_vis = None
-                except Exception:
-                    pcd_vis = None
-            else:
-                pcd_vis = None
+            pcd_vis = data_batch["pcd_frames"][-1][0]
+            self.pcd_data.append(pcd_vis)
 
-            if pcd_vis is not None:
-                self.pcd_data.append(pcd_vis.detach().cpu())
-            else:
-                self.pcd_data.append(None)
+            centroid_xyz = None
+            if "track_centroid" in data_batch:
+                try:
+                    tc = data_batch["track_centroid"][-1][0]  # assume B=1
+                    tc_np = tc.detach().cpu().numpy() if isinstance(tc, torch.Tensor) else np.asarray(tc)
+                    frame_idx = len(self.gt_data) - 1
+                    if tc_np.ndim == 2 and tc_np.shape[1] >= 2:
+                        i = max(0, min(frame_idx, tc_np.shape[0] - 1))
+                        x, y = float(tc_np[i, 0]), float(tc_np[i, 1])
+                    elif tc_np.ndim == 1 and tc_np.shape[0] >= 2:
+                        x, y = float(tc_np[0]), float(tc_np[1])
+                    else:
+                        x = y = None
+                    if x is not None:
+                        centroid_xyz = np.array([x, y, 1.0], dtype=np.float32)
+                except Exception:
+                    centroid_xyz = None
 
             # Live, per-frame update & event pump (no blocking mainloop)
             self.visualizer.update(
                 gt_tensor=self.gt_data[-1],
                 pred_tensor=self.pred_data[-1],
                 pc_tensor=self.pcd_data[-1],
+                track_centroid=centroid_xyz,
                 frame_report=frame_report
             )
             self.visualizer.idle() 
@@ -145,8 +140,6 @@ class SimpleGTPredAnalyzer(BaseMetric):
         average_rmse /= len(joint_errors.items())
         
         if not show:
-            if self.visualize:
-                self.visualizer.finalize(self.gt_data, self.pred_data, self.report, pc_data=self.pcd_data)
             return summary
         
         print("Summary Report:")
@@ -154,7 +147,7 @@ class SimpleGTPredAnalyzer(BaseMetric):
             print(f"{joint:03}: MAE = {metrics['mae']:.4f}, RMSE = {metrics['rmse']:.4f}, MSE = {metrics['mse']:.4f}")
         print(f"avg: MAE = {average_mae:.4f}, RMSE = {average_rmse:.4f}, MSE = {average_mse:.4f}")
         if self.visualize:
-            self.visualizer.finalize(self.gt_data, self.pred_data, self.report, pc_data=self.pcd_data)
+            self.visualizer.finalize()
         
         if self.out_file is not None:
             with open(self.out_file, 'w') as f:
