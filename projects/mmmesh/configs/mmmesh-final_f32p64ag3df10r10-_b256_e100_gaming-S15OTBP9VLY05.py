@@ -7,10 +7,9 @@ custom_imports = dict(
 data_prefix = dict(pcd='mmwave',skel='skeleton')
 data_root = './data/gaming/S15OTBPX05'
 dataset_variant = 's15otbp9vly05'
-dataset_variant = 'mini'
 train_info = f'info_{dataset_variant}_train.pkl'
 val_info = f'info_{dataset_variant}_test.pkl'
-test_info = f'info_{dataset_variant}_test.pkl'
+test_info = f'info_armrise.pkl'
  
 keypoints_involved=[0, 1, 2, 4, 5, 6, 8, 9, 10]
 
@@ -60,8 +59,9 @@ TR_PointSortAndClip = dict(type='PointSortAndClip', target_num_points=point_clou
 TR_NormalizePointAttr = dict(type='NormalizePointAttr', attr_indices=(3, 4,), means=(0.0430, 9.4746), stds=(1.3270, 9.2075))
 TR_RelativeCoordtoTrackingCentroid = dict(type='RelativeCoordtoTrackingCentroid', discretize_resolution=tracking_discretize_resolution)
 TR_TrackingCentroidCalibration = dict(type='TrackingCentroidCalibration', method="suppress", method_cfg=dict(
-    keypoints_involved=keypoints_involved, spine_idx=1, l_shoulder_idx=4, l_wrist_idx=6, r_shoulder_idx=8, r_wrist_idx=10,))
-TR_SmoothingTrackingCentroid = dict(type='SmoothingTrackingCentroid', jitter_radius=0.1, release_scale=1.5, min_jitter_len=2, still_frames=3, window_length=7, polyorder=2)
+    keypoints_involved=keypoints_involved, spine_idx=1, l_shoulder_idx=4, l_wrist_idx=6, r_shoulder_idx=8, r_wrist_idx=10,
+    range_gate_on_trh=0.5, range_gate_off_trh=0.4, max_translate=0.3, w_vec_fusion_ratio=0.85,))
+TR_SmoothingTrackingCentroid = dict(type='SmoothingTrackingCentroid', jitter_radius=0.2, release_scale=1.5, min_jitter_len=2, still_frames=3, window_length=7, polyorder=2)
 
 PR_SkeletonBackToOriginalCoord = dict(type='SkeletonBackToOriginalCoord')
 PR_SavGolayFilter = dict(type='SavGolayFilter', window_length=7, polyorder=2, deriv=0, delta=0.055, mode='reflect', time_axis=0)
@@ -92,7 +92,7 @@ inference_engine_postprocess_pipeline = [
     PR_SkeletonBackToOriginalCoord
 ]
 
-inference_engine_start_checkpoint = 'checkpoints/s15otbp9vly05-df10r5.pth'
+inference_engine_start_checkpoint = 'checkpoints/s15otbp9vly05-df10r5_e60.pth'
 load_from = inference_engine_start_checkpoint
 inference_engine=dict(model=dict(model, return_sequence=True), 
             total_frames=num_frames, test_pipeline=normal_extra_pipeline, postprocess=inference_engine_postprocess_pipeline,
@@ -122,7 +122,7 @@ train_dataloader = dict(
 )
 
 optimizer_cfg = dict(type='AdamW', lr=0.00025, weight_decay=0.01)
-train_cfg = dict(type='EpochBasedTrainLoop', max_epochs=100, val_interval=1)
+train_cfg = dict(type='EpochBasedTrainLoop', max_epochs=50, val_interval=5)
 
 val_pipeline = [
     *default_pipeline,
@@ -198,7 +198,7 @@ custom_hooks = [
         inference_engine=inference_engine,
          extra_pipeline=calib_extra_pipeline,
          earliest_activation_epoch=0,
-         dynamic_loading_start_epoch=60,
+         dynamic_loading_start_epoch=1,
          strict_loading=True,
         parallel=False,
          priority="NORMAL"

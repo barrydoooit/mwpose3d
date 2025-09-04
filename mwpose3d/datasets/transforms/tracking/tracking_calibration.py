@@ -108,6 +108,7 @@ class TrackingCentroidCalibration(BaseTransform):
     def _calib_suppress_get_K(centroids: Tuple[np.ndarray, ...], skel_frames: Tuple[np.ndarray, ...], 
                               joint_map: Dict[int, int], spine_idx: int, l_wrist_idx:int, r_wrist_idx: int,
                               range_gate_on_trh: float, range_gate_off_trh: float,
+                              w_vec_fusion_ratio: float,
                               kappa: float, tau0: float, vector_pair_angle_max_degdiff: float,
                               K_default: float, K_min: float, K_max: float) -> float:
         ratios: List[float] = []
@@ -135,7 +136,7 @@ class TrackingCentroidCalibration(BaseTransform):
                 pass
             else:
                 if gateL and gateR:
-                    w_vec = 0.5 * (wL + wR)
+                    w_vec = w_vec_fusion_ratio * (wL + wR)
                 elif gateL:
                     w_vec = wL
                 else:
@@ -178,16 +179,21 @@ class TrackingCentroidCalibration(BaseTransform):
         K_max = float(method_cfg.get("K_max", 0.8))
 
         kappa, tau0 = float(method_cfg.get("kappa", 0.35)), float(method_cfg.get("tau0", 0.01))
-        case2_suppress_ratio = float(method_cfg.get("case2_suppress_ratio", 0.75))
-        case3_suppress_ratio = float(method_cfg.get("case3_suppress_ratio", 0.95))
+        case1_snapback_ratio = np.clip(float(method_cfg.get("case1_snapback_ratio", 0.75)), 0.0, 1.0)
+        case2_suppress_ratio = np.clip(float(method_cfg.get("case2_suppress_ratio", 0.9)), 0.0, 1.0)
+        case3_suppress_ratio = np.clip(float(method_cfg.get("case3_suppress_ratio", 0.99)), 0.0, 1.0)
         case3_calib_strength = float(method_cfg.get("case3_calib_strength", 0.4))
-        max_translate = float(method_cfg.get("max_translate", 0.3))
+        dead_band = float(method_cfg.get("dead_band", 0.05))
+
+        max_translate = float(method_cfg.get("max_translate", 0.5))
+        w_vec_fusion_ratio = float(method_cfg.get("w_vec_fusion_ratio", 0.5))
         
         vector_pair_angle_max_degdiff = float(method_cfg.get("vector_pair_angle_max_degdiff", 15.0))
 
         K = TrackingCentroidCalibration._calib_suppress_get_K(
             centroids, preds, joint_map, spine_idx, l_wrist_idx, r_wrist_idx,
             range_gate_on_trh, range_gate_off_trh,
+            w_vec_fusion_ratio,
             kappa, tau0, vector_pair_angle_max_degdiff,
             K_default, K_min, K_max)
 
@@ -223,7 +229,7 @@ class TrackingCentroidCalibration(BaseTransform):
             if gate:
                 segment_start = not (gateL_prev or gateR_prev)
                 if gateL and gateR:
-                    w_vec = 0.5 * (wL + wR)
+                    w_vec = w_vec_fusion_ratio * (wL + wR)
                 elif gateL:
                     w_vec = wL
                 else:
@@ -240,6 +246,7 @@ class TrackingCentroidCalibration(BaseTransform):
                 #CASE 1:
                 if c_vec_prj >= c_vec_trh:
                     suppress = 0.0
+                    translation_xy = _clamp_norm_xy(-case1_snapback_ratio * c_vec, max_translate)
                 elif abs(c_vec_prj) < c_vec_trh:
                     suppress = case2_suppress_ratio
                     translation_xy = _clamp_norm_xy(-K * w_vec, max_translate)
@@ -248,7 +255,19 @@ class TrackingCentroidCalibration(BaseTransform):
                     dir_c = _unit_xy(c_vec)
                     translation_xy = _clamp_norm_xy(case3_calib_strength * np.linalg.norm(c_vec) * dir_c, max_translate)
                 
-                centroid = centroid + np.array([translation_xy[0], translation_xy[1], 0], dtype=np.float32)
+                centroid = centroid.astype(np.float32, copy=True)
+                centroid[:2] += translation_xy
+
+                if len(out) > 0 and suppress > 0.0:
+                    prev_centroid = out[-1]
+                    delta_xy = centroid[:2] - prev_centroid[:2]
+                    trend = float(np.dot(delta_xy, w_vec_u))
+                    if trend > 0.0:
+                        delta_xy = delta_xy - suppress * trend * w_vec_u
+                        if dead_band > 0.0:
+                            delta_xy = np.where(np.abs(delta_xy) < dead_band, 0.0, delta_xy)
+                        centroid[:2] = prev_centroid[:2] + delta_xy
+
             out.append(centroid)
             gateL_prev, gateR_prev = gateL, gateR
         return tuple(out)
