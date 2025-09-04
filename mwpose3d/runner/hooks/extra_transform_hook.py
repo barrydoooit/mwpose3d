@@ -23,7 +23,7 @@ class ExtraTransformHook(Hook):
         self,
         extra_pipeline,                      # Sequence[ConfigType | callable]
         *,
-        parallel: bool = True,
+        parallel: bool = False,
         use_threads: bool = False,           # fallback if pickling is hard
         num_workers: Optional[int] = None,
         start_method: str = "spawn",
@@ -74,6 +74,7 @@ class ExtraTransformHook(Hook):
                 self.extra_pipeline.transforms,
                 inplace=True,
             )
+            return
 
         # PARALLEL path (persistent pool; no repeated warnings)
         return _apply_parallel_with_executor(
@@ -84,4 +85,5 @@ class ExtraTransformHook(Hook):
             share_cpu_tensors=self.share_cpu_tensors,
         )
 
-
+    def _before_iter(self, runner, batch_idx, data_batch, mode = 'train'):
+        self.execute_extra_pipeline(data_batch)

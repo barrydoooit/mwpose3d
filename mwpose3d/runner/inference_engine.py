@@ -214,10 +214,10 @@ class InferenceEngine:
         if not self.loaded:
             logger.warning("InferenceEngine not loaded with weights yet. Call load_checkpoint() or pass the checkpoint file from 'load_from' first.")
         if not inplace:
-            data_batch_dict = copy.deepcopy(data_batch_dict)
+            data_batch_dict_copy = copy.deepcopy(data_batch_dict)
         if self.preprocess_pipeline is not None:
-            data_batch_dict = apply_per_sample_transforms_serial(data_batch_dict, self.preprocess_pipeline.transforms)
-        batch_inputs, data_samples = self.model.pack_input(data_batch_dict)
+            data_batch_dict_copy = apply_per_sample_transforms_serial(data_batch_dict_copy, self.preprocess_pipeline.transforms)
+        batch_inputs, data_samples = self.model.pack_input(data_batch_dict_copy)
         with torch.no_grad():
             output = self.model(batch_inputs, data_samples, mode='predict')
         batch_inputs, data_samples = self._postprocess(batch_inputs, data_samples)

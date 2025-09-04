@@ -186,17 +186,20 @@ class Runner:
         self.cfg.dump(osp.join(self.work_dir, filename))
     
     def train(self):
-        print('Start training')
+        self.call_hook('before_run')
+        if self._load_from is not None:
+            print(f'Load checkpoint from {self._load_from}')
+            self.load_checkpoint(self._load_from)
         self.train_loop.run()
-        print('Training finished')
+        self.call_hook('after_run')
         
 
     def test(self):
-        print('Start testing')
+        self.call_hook('before_run')
         print(f'Load checkpoint from {self._load_from}')
         self.load_checkpoint(self._load_from)
         self.test_loop.run()
-        print('Testing finished')
+        self.call_hook('after_run')
 
     @property
     def max_epochs(self):

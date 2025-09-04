@@ -7,7 +7,7 @@ from .point_number_control import PointDuplicator, PointSortAndClip, PointPaddin
 from .coord_trans import Kinect2TICoordinateTransform, SkeletonCoordinateTransform, PointCloudCoordinateTransform
 from .sequence_clip import SequenceClip, StackPointCloudFrames, DensityFilter
 from .transform import RandomTransform, SequenceReverse, RandomFrameDrop
-from .tracking import LoadTrackingRecords, RelativeCoordtoTrackingCentroid, TrackingCentroidCalibration
+from .tracking import LoadTrackingRecords, RelativeCoordtoTrackingCentroid, TrackingCentroidCalibration, SmoothingTrackingCentroid
 
 __all__ = [
     'LoadSingleFrameFromH5', 'PointCloudRangeFilter', 'SkeletonKeypointFilter',
@@ -16,5 +16,5 @@ __all__ = [
     'SequenceReverse', 'RandomFrameDrop', 'RandomTransform',
     'StackPointCloudFrames', 'DensityFilter', 'SkeletonCoordinateTransform',
     'PointCloudCoordinateTransform', 'PointSortAndClip', 'NormalizePointAttr',
-    'LoadTrackingRecords', 'RelativeCoordtoTrackingCentroid', 'TrackingCentroidCalibration'
+    'LoadTrackingRecords', 'RelativeCoordtoTrackingCentroid', 'TrackingCentroidCalibration', 'SmoothingTrackingCentroid'
 ]

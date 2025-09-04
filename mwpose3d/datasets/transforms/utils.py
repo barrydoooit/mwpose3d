@@ -1,3 +1,4 @@
+import logging
 import warnings
 import numpy as np
 from typing import Any, Callable, Iterable, List, Mapping, Optional, Tuple, Union, Sequence
@@ -103,8 +104,8 @@ def _init_worker(transforms, suppress_import_warnings: bool = True):
     _GLOBAL_TRANSFORMS = transforms
     if suppress_import_warnings:
         warnings.filterwarnings("ignore", category=DeprecationWarning)
-    #for name in ("OpenGL", "OpenGL.acceleratesupport"):
-    #    logging.getLogger(name).setLevel(logging.ERROR)
+    for name in ("OpenGL", "OpenGL.acceleratesupport"):
+       logging.getLogger(name).setLevel(logging.ERROR)
 
 def _transform_worker(sample: Any) -> Any:
     for t in _GLOBAL_TRANSFORMS:
