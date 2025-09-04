@@ -1,4 +1,5 @@
 from contextlib import contextmanager
+from collections.abc import Sequence
 import numpy as np
 import torch
 
@@ -7,62 +8,205 @@ from .base import BasePostProcessing
 from .base import POSTPROCESSING
 
 
-
 @OnlineEnabled
 @POSTPROCESSING.register_module()
 class SkeletonBackToOriginalCoord(BasePostProcessing):
     """
     Undo the accumulated row-vector transform T_skel:
         [x y z 1] @ inv(T_skel)
-    Modifies datasample.pred / datasample.gt in place.
+
+    Supported datasample structures (return structure matches input):
+      1) Single datasample whose `pred`/`gt` are 1D (3K) or 2D (T, C) tensors/arrays.
+      2) List of datasamples (batch) where each has 1D or 2D `pred`/`gt`.
+
+    `data_batch_dict['T_skel']` is canonized into a List[List[np.ndarray]]
+    with shape [B][T] (B=batch, T=frames), accepting interchangeable container
+    types (list/tuple combinations, etc.) and single 4x4 matrices.
     """
+
     def __init__(self, online_mode: bool = False):
         super().__init__(online_mode)
 
+    # ----------------------------- helpers ---------------------------------
+
     @staticmethod
-    def _extract_Q_t_row(T):
+    def _extract_Q_t_row(T: np.ndarray):
         """
         For row vectors, we want p' = p @ Q + t.
         Handle either:
-        - top-right translation:  t = T[:3, 3]
+        - top-right translation:   t = T[:3, 3]
         - bottom-left translation: t = T[3, :3]
         """
-        Q = T[:3, :3]  # this is the linear part used with row vectors in your code
+        T = np.asarray(T)
+        Q = T[:3, :3]
         if np.any(T[3, :3] != 0):    # bottom-left convention
             t = T[3, :3]
-        else:                        # top-right convention (your current T_skel)
+        else:                        # top-right convention
             t = T[:3, 3]
         return Q, t
-    
+
+    @staticmethod
+    def _is_matrix44(x) -> bool:
+        return isinstance(x, np.ndarray) and x.shape == (4, 4)
+
+    @staticmethod
+    def _is_container(x) -> bool:
+        # Treat list/tuple (and other Sequence types except str/bytes) as containers.
+        return isinstance(x, Sequence) and not isinstance(x, (str, bytes, bytearray))
+
+    @staticmethod
+    def _canonize_T_skel(T_skel):
+        """
+        Returns per_batch_T: List[List[np.ndarray]] with shape [B][T],
+        where per_batch_T[b][t] is a 4x4 np.ndarray (float32).
+
+        Accepts source formats with interchangeable containers:
+          - Sequence of matrices:            [T]                  -> B=1
+          - Sequence of (sequence of mats):  [T][B] (frame-major) -> convert to [B][T]
+          - Single 4x4 matrix:               -> [[M]]
+          - Nested containers: peel until one of the above matches
+
+        Note: This function intentionally does not require specific container
+        types (list vs tuple). Any Sequence works.
+        """
+        if T_skel is None:
+            return None
+
+        # Single 4x4 matrix
+        if SkeletonBackToOriginalCoord._is_matrix44(T_skel):
+            return [[np.asarray(T_skel, dtype=np.float32)]]
+
+        # Container cases
+        if SkeletonBackToOriginalCoord._is_container(T_skel):
+            if len(T_skel) == 0:
+                raise ValueError("T_skel is an empty container.")
+
+            first = T_skel[0]
+
+            # Case: [T] where each element is a 4x4 matrix
+            if all(SkeletonBackToOriginalCoord._is_matrix44(x) for x in T_skel):
+                return [[np.asarray(x, dtype=np.float32) for x in T_skel]]
+
+            # Case: [T][B] where inner elements are 4x4 matrices (frame-major)
+            if (SkeletonBackToOriginalCoord._is_container(first)
+                and len(first) > 0
+                and all(SkeletonBackToOriginalCoord._is_matrix44(y) for y in first)):
+                T = len(T_skel)
+                B = len(first)
+                # Validate consistent B across frames
+                for t in range(T):
+                    assert len(T_skel[t]) == B, "Inconsistent batch size across frames in T_skel"
+                per_batch = [[] for _ in range(B)]
+                for t in range(T):
+                    for b in range(B):
+                        per_batch[b].append(np.asarray(T_skel[t][b], dtype=np.float32))
+                return per_batch
+
+            # Otherwise, peel one level and retry (handles deeper nesting or mixed containers)
+            return SkeletonBackToOriginalCoord._canonize_T_skel(first)
+
+        raise TypeError(f"Unexpected T_skel structure of type {type(T_skel)}")
+
+    @staticmethod
+    def _build_Qinv_t_list(per_frame_T):
+        """
+        From a list of 4x4 row-vector transforms for a single sample,
+        build lists of (Q^{-1}, t) as float32.
+        """
+        Qinv_list, t_list = [], []
+        for M in per_frame_T:
+            Q, t = SkeletonBackToOriginalCoord._extract_Q_t_row(np.asarray(M))
+            Qinv = np.linalg.inv(Q).astype(np.float32, copy=False)
+            t = t.astype(np.float32, copy=False)
+            Qinv_list.append(Qinv)
+            t_list.append(t)
+        return Qinv_list, t_list
+
+    @staticmethod
+    def _apply_inv_single_array(arr: np.ndarray, per_frame_T):
+        """
+        Apply the inverse transform to a *single* sample's array using the
+        given per-frame transforms (list of 4x4). Handles:
+          - 1D (3K)            -> uses last frame's inverse
+          - 2D (T, C)          -> per-frame; C may be 3K or >=3 (extras preserved)
+          - 3D (T, K, 3)       -> per-frame
+        """
+        if arr is None:
+            return None
+
+        arr = np.asarray(arr)
+        if arr.size == 0:
+            return arr
+
+        Qinv_list, t_list = SkeletonBackToOriginalCoord._build_Qinv_t_list(per_frame_T)
+
+        def untransform(pts, Qinv_, t_):
+            # pts: (N,3), float32 pipeline
+            return (pts.astype(np.float32, copy=False) - t_) @ Qinv_
+
+        # 1D: use last frame transform
+        if arr.ndim == 1:
+            K = arr.size // 3
+            if K == 0:
+                return arr
+            L = K * 3
+            out = arr.copy()
+            Qinv_, t_ = Qinv_list[-1], t_list[-1]
+            pts = out[:L].reshape(-1, 3)
+            pts = untransform(pts, Qinv_, t_)
+            out[:L] = pts.reshape(-1).astype(arr.dtype, copy=False)
+            return out
+
+        # 2D: per-frame along dim-0
+        if arr.ndim == 2:
+            T = arr.shape[0]
+            assert T == len(per_frame_T), \
+                f"Sequence length mismatch: data T={T} vs T_skel T={len(per_frame_T)}"
+            C = arr.shape[1]
+            # Use the largest multiple of 3 within C; extras (if any) are preserved
+            L = (C // 3) * 3
+            if L == 0:
+                return arr
+            out = arr.copy()
+            for i in range(T):
+                Qinv_, t_ = Qinv_list[i], t_list[i]
+                pts = out[i, :L].reshape(-1, 3)
+                pts = untransform(pts, Qinv_, t_)
+                out[i, :L] = pts.reshape(-1).astype(arr.dtype, copy=False)
+            return out
+
+        # 3D: treat dim-0 as frames, last dim as xyz
+        if arr.ndim == 3 and arr.shape[-1] == 3:
+            T = arr.shape[0]
+            assert T == len(per_frame_T), \
+                f"Sequence length mismatch: data T={T} vs T_skel T={len(per_frame_T)}"
+            out = arr.copy()
+            for i in range(T):
+                Qinv_, t_ = Qinv_list[i], t_list[i]
+                pts = out[i].reshape(-1, 3)
+                pts = untransform(pts, Qinv_, t_)
+                out[i] = pts.reshape(out[i].shape).astype(arr.dtype, copy=False)
+            return out
+
+        # Unknown layout: leave unchanged
+        print(f"[SkeletonBackToOriginalCoord] Unhandled array shape {arr.shape}; leaving unchanged.")
+        return arr
+
     @contextmanager
     def _numpy_views(self, datasample, fields=('pred', 'gt')):
-        """
-        Yield NumPy views of the given fields, then write back in original type.
-        Now also supports fields that are a list/tuple of tensors/ndarrays.
-        The list dimension is treated as batch (B).
-        """
+        """Yield NumPy views of the given fields on a SINGLE datasample, then write back in original type."""
         originals, views = {}, {}
-
-        def _to_numpy(x):
-            if x is None:
-                return None
-            if (torch is not None) and isinstance(x, torch.Tensor):
-                return x.detach().cpu().numpy()
-            if isinstance(x, np.ndarray):
-                return x
-            return np.asarray(x)
-
         for f in fields:
             x = getattr(datasample, f, None)
             originals[f] = x
             if x is None:
                 views[f] = None
-            elif isinstance(x, (list, tuple)):
-                # list-of-tensors/ndarrays -> list-of-numpy
-                views[f] = [ _to_numpy(e) for e in x ]
+            elif (torch is not None) and isinstance(x, torch.Tensor):
+                views[f] = x.detach().cpu().numpy()
+            elif isinstance(x, np.ndarray):
+                views[f] = x
             else:
-                views[f] = _to_numpy(x)
-
+                views[f] = np.asarray(x)
         try:
             yield views
         finally:
@@ -70,215 +214,51 @@ class SkeletonBackToOriginalCoord(BasePostProcessing):
                 orig, new = originals[f], views[f]
                 if orig is None:
                     continue
-
-                if isinstance(orig, (list, tuple)):
-                    # elementwise restore type/device; preserve tuple/list type
-                    restored = []
-                    for e_orig, e_new in zip(orig, new):
-                        if (torch is not None) and isinstance(e_orig, torch.Tensor):
-                            restored.append(torch.as_tensor(e_new, dtype=e_orig.dtype, device=e_orig.device))
-                        else:
-                            restored.append(e_new)
-                    if isinstance(orig, tuple):
-                        restored = tuple(restored)
-                    setattr(datasample, f, restored)
+                if (torch is not None) and isinstance(orig, torch.Tensor):
+                    setattr(datasample, f, torch.as_tensor(new, dtype=orig.dtype, device=orig.device))
                 else:
-                    if (torch is not None) and isinstance(orig, torch.Tensor):
-                        setattr(datasample, f, torch.as_tensor(new, dtype=orig.dtype, device=orig.device))
-                    else:
-                        setattr(datasample, f, new)
+                    # Keep numpy for non-tensors; preserve dtype if possible
+                    if isinstance(orig, np.ndarray) and isinstance(new, np.ndarray) and new.dtype != orig.dtype:
+                        new = new.astype(orig.dtype, copy=False)
+                    setattr(datasample, f, new)
 
-    @staticmethod
-    def _apply_inv_inplace(arr: np.ndarray, Q: np.ndarray, t: np.ndarray) -> np.ndarray:
-        """
-        Inverse of p' = p @ Q + t  ->  p = (p' - t) @ Q^{-1}
-        Works for 1D 3K[+tail], 2D (N,3K), (N,3), (N,>=3), and 3D (N,K,3).
-        """
-        if arr is None:
-            return arr
-        Qinv = np.linalg.inv(Q).astype(np.float32, copy=False)
-        t = t.astype(np.float32, copy=False)
-
-        def do_pts(pts):
-            return (pts.astype(np.float32, copy=False) - t) @ Qinv
-
-        if arr.ndim == 1:
-            K = arr.size // 3
-            if K:
-                arr[:3*K] = do_pts(arr[:3*K].reshape(-1, 3)).reshape(-1).astype(arr.dtype, copy=False)
-            return arr
-
-        if arr.ndim == 2:
-            N, C = arr.shape
-            if C == 3:
-                arr[:, :3] = do_pts(arr[:, :3]).astype(arr.dtype, copy=False)
-                return arr
-            if C % 3 == 0:
-                arr[:, :C] = do_pts(arr[:, :C].reshape(-1, 3)).reshape(N, C).astype(arr.dtype, copy=False)
-                return arr
-            # first 3 are xyz; keep extras
-            arr[:, :3] = do_pts(arr[:, :3]).astype(arr.dtype, copy=False)
-            return arr
-
-        if arr.ndim == 3 and arr.shape[-1] == 3:
-            N, K, _ = arr.shape
-            arr[:] = do_pts(arr.reshape(-1, 3)).reshape(N, K, 3).astype(arr.dtype, copy=False)
-            return arr
-
-        return arr  # unknown layout
-
+    # ----------------------------- main API --------------------------------
 
     def transform(self, data_batch_dict, datasample):
-        import numpy as np
+        """
+        Applies the inverse of T_skel to datasample(s) in-place, returning the
+        same structure provided as input for `datasample`.
 
-        def extract_Q_t_row(M: np.ndarray):
-            # row-vector convention: [x y z 1] @ M
-            Q = M[:3, :3]
-            t = M[:3, 3]
-            return Q, t
-
-        def canonize_T_skel(T_skel):
-            """
-            Returns per_batch_T: List[List[np.ndarray]]
-            - len(per_batch_T) == B
-            - len(per_batch_T[b]) == T
-            - per_batch_T[b][t] is 4x4 np.ndarray
-            Accepts:
-            - List[Tuple[np.ndarray]]  -> [T][B]
-            - Tuple[np.ndarray] (B==1) -> [T]
-            """
-            # Case: Tuple[np.ndarray] -> batch=1
-            if isinstance(T_skel, tuple) and all(isinstance(x, np.ndarray) for x in T_skel):
-                return [list(T_skel)]  # B=1
-
-            # Case: List[Tuple[np.ndarray]] -> frame-major
-            if isinstance(T_skel, list) and len(T_skel) > 0 and isinstance(T_skel[0], tuple):
-                T = len(T_skel)
-                B = len(T_skel[0])
-                per_batch = [[] for _ in range(B)]
-                for t in range(T):
-                    assert len(T_skel[t]) == B, "Inconsistent batch size across frames in T_skel"
-                    for b in range(B):
-                        per_batch[b].append(np.asarray(T_skel[t][b], dtype=np.float32))
-                return per_batch
-
-            # Fallback: already a single 4x4 (treat as B=1, T=1)
-            if isinstance(T_skel, np.ndarray) and T_skel.shape == (4, 4):
-                return [[T_skel]]
-
-            # If still nested, peel once and retry
-            if isinstance(T_skel, (list, tuple)) and len(T_skel) > 0:
-                return canonize_T_skel(T_skel[0])
-
-            raise TypeError(f"Unexpected T_skel structure: {type(T_skel)}")
-
-        def apply_inv_per_frame(arr, per_batch_T):
-            """
-            Apply inverse of per-frame row-vector transforms to various layouts.
-
-            Supports:
-            - list/tuple of (T, C) arrays/tensors  -> batch list with sequence first
-            - (B, T, C) ndarray
-            - (T, C) ndarray (assumes B==1)
-            - (B, C) ndarray with T==1
-            - (C,) flat vector
-
-            Returns with the SAME container/shape as input.
-            """
-            if arr is None:
-                return None
-
-            # build per-batch Qinv/t once
-            def _extract_Q_t_row(M: np.ndarray):
-                Q = M[:3, :3]
-                t = M[:3, 3]
-                return Q, t
-
-            B = len(per_batch_T)
-            T = len(per_batch_T[0])
-            Qinv = [[np.linalg.inv(_extract_Q_t_row(M)[0]).astype(np.float32) for M in per_batch_T[b]] for b in range(B)]
-            tvec = [[_extract_Q_t_row(M)[1].astype(np.float32) for M in per_batch_T[b]] for b in range(B)]
-
-            def _untransform_pts(pts, Qinv_, t_):
-                # pts: (N, 3) float32-ish
-                return (pts.astype(np.float32, copy=False) - t_) @ Qinv_
-
-            # --- NEW: list/tuple (batch list) ---
-            if isinstance(arr, (list, tuple)):
-                assert len(arr) == B, f"B mismatch: data {len(arr)} vs T_skel {B}"
-                out_list = []
-                for b in range(B):
-                    xb = np.asarray(arr[b])
-                    assert xb.ndim == 2 and xb.shape[0] == T, \
-                        f"Expect (T, C) per batch item; got {xb.shape} for batch {b}"
-                    C = xb.shape[1]
-                    assert C % 3 == 0, "Channel dim must be multiple of 3"
-                    K = C // 3
-                    xb_out = xb.copy()
-                    for i in range(T):
-                        pts = xb_out[i, :3*K].reshape(-1, 3)
-                        pts = _untransform_pts(pts, Qinv[b][i], tvec[b][i])
-                        xb_out[i, :3*K] = pts.reshape(-1)
-                    out_list.append(xb_out)
-                # preserve original container type
-                return tuple(out_list) if isinstance(arr, tuple) else out_list
-
-            # --- Existing cases ---
-            arr_np = np.asarray(arr)
-
-            if arr_np.ndim == 3:
-                assert arr_np.shape[0] == B, f"B mismatch: data {arr_np.shape[0]} vs T_skel {B}"
-                assert arr_np.shape[1] == T, f"T mismatch: data {arr_np.shape[1]} vs T_skel {T}"
-                C = arr_np.shape[2]; assert C % 3 == 0
-                K = C // 3
-                out = arr_np.copy()
-                for b in range(B):
-                    for i in range(T):
-                        pts = out[b, i, :3*K].reshape(-1, 3)
-                        pts = _untransform_pts(pts, Qinv[b][i], tvec[b][i])
-                        out[b, i, :3*K] = pts.reshape(-1)
-                return out
-
-            if arr_np.ndim == 2 and arr_np.shape[0] == T:
-                C = arr_np.shape[1]; assert C % 3 == 0
-                K = C // 3
-                out = arr_np.copy()
-                for i in range(T):
-                    pts = out[i, :3*K].reshape(-1, 3)
-                    pts = _untransform_pts(pts, Qinv[0][i], tvec[0][i])
-                    out[i, :3*K] = pts.reshape(-1)
-                return out
-
-            if arr_np.ndim == 2 and arr_np.shape[0] == B and T == 1:
-                C = arr_np.shape[1]; assert C % 3 == 0
-                K = C // 3
-                out = arr_np.copy()
-                for b in range(B):
-                    pts = out[b, :3*K].reshape(-1, 3)
-                    pts = _untransform_pts(pts, Qinv[b][0], tvec[b][0])
-                    out[b, :3*K] = pts.reshape(-1)
-                return out
-
-            if arr_np.ndim == 1 and (arr_np.size % 3 == 0):
-                K = arr_np.size // 3
-                out = arr_np.copy()
-                pts = out[:3*K].reshape(-1, 3)
-                pts = _untransform_pts(pts, Qinv[0][-1], tvec[0][-1])
-                out[:3*K] = pts.reshape(-1)
-                return out
-
-            print(f"[SkeletonBackToOriginalCoord] Unhandled array shape {arr_np.shape}; leaving unchanged.")
-            return arr
-
+        `T_skel` is expected to be any interchangeable container of 4x4 matrices
+        that resolves to one of:
+          - [T] (sequence of matrices) -> B=1
+          - [T][B] (frame-major)       -> converted to [B][T]
+          - single 4x4 matrix          -> B=1, T=1
+        """
         T_skel = data_batch_dict.get('T_skel', None)
         if T_skel is None:
             print("Warning: T_skel is None, skipping untransform.")
             return data_batch_dict, datasample
 
-        per_batch_T = canonize_T_skel(T_skel)
+        per_batch_T = self._canonize_T_skel(T_skel)  # [B][T]
 
-        with self._numpy_views(datasample, fields=('pred', 'gt')) as a:
-            a['pred'] = apply_inv_per_frame(a.get('pred'), per_batch_T)
-            a['gt']   = apply_inv_per_frame(a.get('gt'), per_batch_T)
+        # Case A: datasample is a list (batch)
+        if isinstance(datasample, list):
+            B_data = len(datasample)
+            B_T = len(per_batch_T)
+            assert B_data == B_T, \
+                f"Batch size mismatch: datasample B={B_data} vs T_skel B={B_T}"
+            for b, ds in enumerate(datasample):
+                with self._numpy_views(ds, fields=('pred', 'gt')) as arrs:
+                    arrs['pred'] = self._apply_inv_single_array(arrs.get('pred'), per_batch_T[b])
+                    arrs['gt']   = self._apply_inv_single_array(arrs.get('gt'),   per_batch_T[b])
+            return data_batch_dict, datasample
 
-        return data_batch_dict, datasample
+        # Case B: single datasample object (B==1)
+        else:
+            assert len(per_batch_T) >= 1, "Empty T_skel after canonization."
+            per_frame_T = per_batch_T[0]
+            with self._numpy_views(datasample, fields=('pred', 'gt')) as arrs:
+                arrs['pred'] = self._apply_inv_single_array(arrs.get('pred'), per_frame_T)
+                arrs['gt']   = self._apply_inv_single_array(arrs.get('gt'),   per_frame_T)
+            return data_batch_dict, datasample

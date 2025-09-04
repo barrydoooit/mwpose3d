@@ -117,6 +117,9 @@ class TrackingCentroidCalibration(BaseTransform):
                     w_vec = wR
                 
                 w_norm = float(np.linalg.norm(w_vec))
+                if w_norm < 0.2:
+                    gateL_prev, gateR_prev = gateL, gateR
+                    continue
                 w_vec_u = _unit_xy(w_vec)
 
                 c_vec = _vec_xy(centroid - J_S)
@@ -155,7 +158,7 @@ class TrackingCentroidCalibration(BaseTransform):
         case3_calib_strength = float(method_cfg.get("case3_calib_strength", 0.4))
         max_translate = float(method_cfg.get("max_translate", 0.3))
         
-        vector_pair_angle_max_degdiff = float(method_cfg.get("vector_pair_angle_max_degdiff", 30.0))
+        vector_pair_angle_max_degdiff = float(method_cfg.get("vector_pair_angle_max_degdiff", 15.0))
 
         K = TrackingCentroidCalibration._calib_suppress_get_K(
             centroids, preds, joint_map, spine_idx, l_wrist_idx, r_wrist_idx,
