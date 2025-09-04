@@ -22,9 +22,10 @@ class PreInferenceHook(ExtraTransformHook):
                  extra_pipeline: Sequence[Union[ConfigType, callable]],
                  earliest_activation_epoch: int = 0,
                  dynamic_loading_start_epoch: int = -1,
-                 strict_loading: bool = True
+                 strict_loading: bool = True,
+                 **kwargs
                  ):
-        super().__init__(extra_pipeline)
+        super().__init__(extra_pipeline, **kwargs)
         self.earliest_activation_epoch = earliest_activation_epoch
         if isinstance(inference_engine, InferenceEngine):
             self.inference_engine = inference_engine

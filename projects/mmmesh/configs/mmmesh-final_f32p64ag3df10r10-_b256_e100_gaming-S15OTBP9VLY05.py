@@ -7,6 +7,7 @@ custom_imports = dict(
 data_prefix = dict(pcd='mmwave',skel='skeleton')
 data_root = './data/gaming/S15OTBPX05'
 dataset_variant = 's15otbp9vly05'
+dataset_variant = 'mini'
 train_info = f'info_{dataset_variant}_train.pkl'
 val_info = f'info_{dataset_variant}_test.pkl'
 test_info = f'info_{dataset_variant}_test.pkl'
@@ -126,6 +127,11 @@ train_cfg = dict(type='EpochBasedTrainLoop', max_epochs=100, val_interval=1)
 val_pipeline = [
     *default_pipeline,
 ]
+inference_pipeline = [
+    *default_pipeline,
+    *calib_extra_pipeline,
+    *normal_extra_pipeline,
+]
 
 val_dataloader = dict(
     batch_size=1,
@@ -194,11 +200,14 @@ custom_hooks = [
          earliest_activation_epoch=0,
          dynamic_loading_start_epoch=60,
          strict_loading=True,
+        parallel=False,
          priority="NORMAL"
     ),
     dict(
         type='ExtraTransformHook',
         extra_pipeline=normal_extra_pipeline,
+        parallel=False,
         priority="BELOW_NORMAL"
     )
 ]
+inference_hooks = []

@@ -184,7 +184,6 @@ class InferenceEngine:
         return input
 
     def infer(self, point_cloud: Union['SimplePointCloud5D', np.ndarray]) -> Optional[Union[Tuple[np.ndarray], np.ndarray]]:
-        self.call_custom_hook('before_test_iter')
         if not self.loaded:
             logger.warning("InferenceEngine not loaded with weights yet. Call load_checkpoint() or pass the checkpoint file from 'load_from' first.")
         try:
@@ -210,7 +209,6 @@ class InferenceEngine:
             return None
 
     def infer_batched_dict(self, data_batch_dict: dict, inplace: bool = False) -> Optional[Union[Tuple[np.ndarray, ...], Tuple[Tuple[np.ndarray, ...], ...]]]:
-        self.call_custom_hook('before_test_iter')
         if not self.loaded:
             logger.warning("InferenceEngine not loaded with weights yet. Call load_checkpoint() or pass the checkpoint file from 'load_from' first.")
         if not inplace:
@@ -255,10 +253,10 @@ class InferenceEngine:
         return cls(
             model=config['model'],
             frame_buffer_size=config['total_frames'],
-            preprocess_pipeline=config['test_pipeline'],
+            preprocess_pipeline=config.get('inference_pipeline', config['test_pipeline']),
             postprocess_pipeline=config.get('postprocess', None),
             load_from=config['load_from'],
             keypoints_involved=config['keypoints_involved'],
-            custom_hooks=config.get('custom_hooks', None),
+            custom_hooks=config.get('inference_hooks', config.get('custom_hooks', None)),
             cfg=config
         )

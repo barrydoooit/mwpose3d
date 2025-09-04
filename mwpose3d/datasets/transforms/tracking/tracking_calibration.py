@@ -1,6 +1,8 @@
+from statistics import median
 from typing import Any, Dict, List, Tuple
 import numpy as np
 from mwpose3d.runner.hooks.pre_inference_hook import PreInferenceHook
+from mwpose3d.runner.inference_engine import InferenceEngine
 
 from ..base import BaseTransform, OnlineEnabled
 from mwpose3d.registry import TRANSFORMS
@@ -72,6 +74,29 @@ class TrackingCentroidCalibration(BaseTransform):
         input["track_centroid"] = self.calib(input, input["track_centroid"], preds, self.method_cfg)
         return input
 
+    def transform_online(self, input: Dict[str, Any]) -> Dict[str, Any]:
+        track_centroid = input["track_centroid"][:-1]  # Exclude current frame
+        skel_pred_history: List[np.ndarray] = InferenceEngine.get_current_instance().get_pred_history()
+        if len(skel_pred_history) < len(track_centroid):
+            return input
+        input["track_centroid"] = tuple(
+            list(self.calib(input, track_centroid, tuple(skel_pred_history), self.method_cfg)) + [self._estim_missing_centroid(track_centroid)])
+        return input
+
+    def _estim_missing_centroid(self, centroids: Tuple[np.ndarray, ...], n_frames: int = 5) -> np.ndarray:
+        if n_frames is not None:
+            centroids = centroids[-n_frames:]
+        xs = [c[0] for c in centroids]
+        ys = [c[1] for c in centroids]
+
+        x_last = median(xs)
+        y_last = median(ys)
+        dxs = [xs[i] - xs[i-1] for i in range(1, len(xs))]
+        dys = [ys[i] - ys[i-1] for i in range(1, len(ys))]
+        vx, vy = median(dxs), median(dys)
+        return np.array([x_last + vx, y_last + vy, 0], dtype=np.float32)
+
+    
     @staticmethod
     def _calib_identity(input: Dict[str, Any],
                         centroids: Tuple[np.ndarray, ...],
