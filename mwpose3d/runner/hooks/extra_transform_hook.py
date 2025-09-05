@@ -21,7 +21,8 @@ if TYPE_CHECKING:
 class ExtraTransformHook(Hook):
     def __init__(
         self,
-        extra_pipeline,                      # Sequence[ConfigType | callable]
+        extra_pipeline = None,                      # Sequence[ConfigType | callable]
+        extra_pipeline_train = None,
         *,
         parallel: bool = False,
         use_threads: bool = False,           # fallback if pickling is hard
@@ -30,8 +31,10 @@ class ExtraTransformHook(Hook):
         share_cpu_tensors: bool = False,     # only for ProcessPool
         chunksize: Optional[int] = None,
         suppress_worker_warnings: bool = True,
-    ):
-        self.extra_pipeline = Compose(extra_pipeline)
+    ):  
+        self.extra_pipeline = Compose(extra_pipeline) if extra_pipeline is not None else None
+        self.extra_pipeline_train = Compose(extra_pipeline_train) if extra_pipeline_train is not None else None
+        
         self.parallel = parallel
         self.use_threads = use_threads
         self.num_workers = num_workers or min(32, os.cpu_count() or 1)
@@ -66,16 +69,21 @@ class ExtraTransformHook(Hook):
             self._executor = None
 
     # Call this wherever your framework lets you postprocess the batch:
-    def execute_extra_pipeline(self, data_batch: dict) -> dict:
+    def execute_extra_pipeline(self, data_batch: dict, train_mode: bool) -> dict:
         # SERIAL fallback
         if not self.parallel or self._executor is None:
+            if train_mode and self.extra_pipeline_train is not None:
+                transforms = self.extra_pipeline_train.transforms
+            else:
+                transforms = self.extra_pipeline.transforms
             apply_per_sample_transforms_serial(
                 data_batch,
-                self.extra_pipeline.transforms,
+                transforms,
                 inplace=True,
             )
             return
 
+        raise NotImplementedError("Parallel not workable  yet")
         # PARALLEL path (persistent pool; no repeated warnings)
         return _apply_parallel_with_executor(
             data_batch,
@@ -86,4 +94,4 @@ class ExtraTransformHook(Hook):
         )
 
     def _before_iter(self, runner, batch_idx, data_batch, mode = 'train'):
-        self.execute_extra_pipeline(data_batch)
+        self.execute_extra_pipeline(data_batch, train_mode=(mode=='train'))

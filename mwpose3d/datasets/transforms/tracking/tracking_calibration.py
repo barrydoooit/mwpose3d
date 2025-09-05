@@ -54,10 +54,11 @@ class TrackingCentroidCalibration(BaseTransform):
     def __init__(self,
                  method: str = "identity",
                  method_cfg: Dict[str, Any] | None = None,
+                 calib_prob: float = 1.0,
                  online_mode: bool = False):
         super().__init__(online_mode)
         self.method_cfg = dict(method_cfg or {})
-
+        self.calib_prob = float(calib_prob)
         # Simple if/else assignment instead of registry
         if method == "identity":
             self.calib = self._calib_identity
@@ -67,6 +68,9 @@ class TrackingCentroidCalibration(BaseTransform):
             raise ValueError(f"Unknown calibration method '{method}'")
         
     def transform(self, input: Dict[str, Any]) -> Dict[str, Any]:
+        do_calib = np.random.rand() < self.calib_prob
+        if not do_calib:
+            return input
         try:
             preds: Tuple[np.ndarray, ...] = input[PreInferenceHook.PREINFERENCE_RESULTS]
         except KeyError:
@@ -180,9 +184,9 @@ class TrackingCentroidCalibration(BaseTransform):
 
         kappa, tau0 = float(method_cfg.get("kappa", 0.35)), float(method_cfg.get("tau0", 0.01))
         case1_snapback_ratio = np.clip(float(method_cfg.get("case1_snapback_ratio", 0.75)), 0.0, 1.0)
-        case2_suppress_ratio = np.clip(float(method_cfg.get("case2_suppress_ratio", 0.9)), 0.0, 1.0)
+        case2_suppress_ratio = np.clip(float(method_cfg.get("case2_suppress_ratio", 0.99)), 0.0, 1.0)
         case3_suppress_ratio = np.clip(float(method_cfg.get("case3_suppress_ratio", 0.99)), 0.0, 1.0)
-        case3_calib_strength = float(method_cfg.get("case3_calib_strength", 0.4))
+        case3_calib_strength = float(method_cfg.get("case3_calib_strength", 0.75))
         dead_band = float(method_cfg.get("dead_band", 0.05))
 
         max_translate = float(method_cfg.get("max_translate", 0.5))
@@ -252,7 +256,7 @@ class TrackingCentroidCalibration(BaseTransform):
                     translation_xy = _clamp_norm_xy(-K * w_vec, max_translate)
                 else:
                     suppress = case3_suppress_ratio
-                    dir_c = _unit_xy(c_vec)
+                    dir_c = -_unit_xy(c_vec)
                     translation_xy = _clamp_norm_xy(case3_calib_strength * np.linalg.norm(c_vec) * dir_c, max_translate)
                 
                 centroid = centroid.astype(np.float32, copy=True)
