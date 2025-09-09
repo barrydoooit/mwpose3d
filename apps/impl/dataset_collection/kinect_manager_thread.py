@@ -91,7 +91,7 @@ class KinectManagerWorker(QObject):
         if self._ct.is_alive():
             logger.info("Stopping Kinect Capture thread.")
             self._ct.join(timeout=1)
-        self.kinect_mgr.stop_skeleton_capture()
+        self.kinect_mgr.refresh()
         self._running = False
         self._paused = False
         logger.info("Kinect Capture thread terminated.")

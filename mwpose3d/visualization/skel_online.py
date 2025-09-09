@@ -34,9 +34,9 @@ class OnlineSkeletonVisualizer(OnlinePointCloudVisualizer):
         joints = flat.reshape(-1, 3)
 
         if self.joint_indices is not None and joints.shape[0] != len(self.joint_indices):
-            logger.warning("Skeleton joint count does not match expected count. "
+            logger.debug("Skeleton joint count does not match expected count. "
                            f"Expected {len(self.joint_indices)}, got {joints.shape[0]}.")
-            return
+            joints = joints[self.joint_indices]
         
         self._skel_scatter.setData(pos=joints)
 

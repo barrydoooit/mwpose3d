@@ -1,7 +1,7 @@
 from pathlib import Path
 import sys
 from typing import Optional, Union, TYPE_CHECKING
-from apps.impl.online_skeleton_estim.estimation_worker import InferenceWorkerThread
+from apps.impl.online_skeleton_estim.estimation_worker import InferenceWorker, InferenceWorkerThread
 from mwcore.apps import BaseMWOnlineApp
 from mwcore.registry import APPS
 from mwpose3d.registry import VISUALIZERS
@@ -24,10 +24,12 @@ class OnlineSkeletionEstimationApp(BaseMWOnlineApp):
                  reader_cfg: dict,
                  hpe_model_cfg: Union[Path, str, dict],
                  vis_cfg: dict,
+                 inference_worker_cfg: dict = {},
                  load_from: Optional[Union[Path, str]] = None,
                  cfg: ConfigType = None):
         super().__init__(reader_cfg, vis_cfg, cfg)
         self.hpe_model_cfg = self._load_hpe_cfg(hpe_model_cfg, load_from)
+        self.inference_worker, self.inference_thread = InferenceWorker.build_with_thread(self, inference_worker_cfg)
     
     @staticmethod
     def _load_hpe_cfg(hpe_model_cfg: Union[Path, str, dict], load_from: Optional[str]) -> dict:
@@ -44,14 +46,14 @@ class OnlineSkeletionEstimationApp(BaseMWOnlineApp):
             logger.info(f"Loaded inference engine with model: {self._inference_engine.model.__class__.__name__}")
         return self._inference_engine
     
-    @property
-    def inference_thread(self) -> InferenceWorkerThread:
-        if not hasattr(self, '_inference_thread'):
-            self._inference_thread = InferenceWorkerThread(self, parent=None)
-            if hasattr(self.visualizer, 'update_skeleton'):
-                self._inference_thread.inferece_done.connect(self.visualizer.update_skeleton)
-            logger.info("Inference worker thread initialized.")
-        return self._inference_thread
+    # @property
+    # def inference_thread(self) -> InferenceWorkerThread:
+    #     if not hasattr(self, '_inference_thread'):
+    #         self._inference_thread = InferenceWorkerThread(self, parent=None)
+    #         if hasattr(self.visualizer, 'update_skeleton'):
+    #             self._inference_thread.inference_done.connect(self.visualizer.update_skeleton)
+    #         logger.info("Inference worker thread initialized.")
+    #     return self._inference_thread
 
     def _make_visualizer(self, vis_cfg: dict) -> 'OnlinePointCloudVisualizer':
         def _on_close(event):
@@ -67,7 +69,9 @@ class OnlineSkeletionEstimationApp(BaseMWOnlineApp):
     def start(self):
         self.app = QApplication(sys.argv)
         logger.info("Starting Online Skeleton Estimation Application...")
-        self.reader_thread.array_data.connect(self.inference_thread.enqueue, Qt.ConnectionType.QueuedConnection)
+        if hasattr(self.visualizer, 'update_skeleton'):
+            self.inference_worker.inference_done.connect(self.visualizer.update_skeleton)
+        self.reader_thread.array_data.connect(self.inference_worker.enqueue, Qt.ConnectionType.QueuedConnection)
         self.reader_thread.array_data.connect(self.visualizer.on_new_cloud, Qt.ConnectionType.QueuedConnection)
         self.inference_thread.start()
         self.reader_thread.start()
@@ -79,5 +83,6 @@ class OnlineSkeletionEstimationApp(BaseMWOnlineApp):
         reader_cfg = cfg.get('reader_cfg')
         hpe_model_cfg = cfg.get('hpe_model_cfg')
         vis_cfg = cfg.get('vis_cfg')
+        inference_worker_cfg = cfg.get('inference_worker_cfg', {})
         load_from = cfg.get('load_from')
-        return cls(reader_cfg, hpe_model_cfg, vis_cfg, load_from, cfg)
+        return cls(reader_cfg, hpe_model_cfg, vis_cfg, inference_worker_cfg, load_from, cfg)

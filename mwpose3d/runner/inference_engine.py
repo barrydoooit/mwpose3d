@@ -1,8 +1,10 @@
 import copy
+import time
 from typing import Any, Callable, List, Sequence, Tuple, TYPE_CHECKING, Union, Deque, Optional
 from collections import deque
 import numpy as np
 import torch
+from mmengine.runner.amp import autocast
 from mmengine.device import get_device
 from mmengine.dataset import Compose
 from mmengine.config import Config
@@ -82,6 +84,7 @@ class InferenceEngine:
                  postprocess_pipeline: Optional[List[dict]] = None,
                  cfg: Optional[ConfigType] = None,
                  custom_hooks: Optional[List[dict]] = None,
+                 fp16: bool = True
                  ): 
         InferenceEngine._current_engine = self
         if cfg is not None:
@@ -91,7 +94,7 @@ class InferenceEngine:
                 self.cfg = Config(cfg)
         else:
             self.cfg = Config(dict())
-
+        self.fp16 = fp16
         self.model: torch.nn.Module = MODELS.build(model)
         self.model.to(get_device())
         self.preprocess_pipeline: ComposePreprocessOnline = ComposePreprocessOnline(preprocess_pipeline) if preprocess_pipeline is not None else None
@@ -107,6 +110,7 @@ class InferenceEngine:
         self.register_custom_hooks(custom_hooks)
         self.active_frames: Deque[Any] = deque(maxlen=frame_buffer_size)
         self._pred_history: Deque[Any] = deque(maxlen=frame_buffer_size)
+        self.cpu_buf = torch.empty((len(self.keypoints_involved) * 3,), pin_memory=True)
 
         # NOTE: While your hooks is usually implemented for the runner to train/test offline, runner.xxx must also be available in this class.
         self.call_custom_hook('before_test')
@@ -192,10 +196,16 @@ class InferenceEngine:
                 return None
             batch_inputs, data_samples = self.model.pack_input(data_batch_dict)
             with torch.no_grad():
-                output = self.model(batch_inputs, data_samples, mode='predict')
+                with autocast(enabled=self.fp16):
+                    output = self.model(batch_inputs, data_samples, mode='predict')
             data_samples_0 = data_samples[0]
             batch_inputs, data_samples_0 = self._postprocess(batch_inputs, data_samples_0)
-            preds = data_samples_0.pred.cpu().numpy()
+
+            pred = data_samples_0.pred
+            preds = pred if pred.is_contiguous() else pred.contiguous()
+            self.cpu_buf.copy_(preds.view(-1), non_blocking=True)
+            preds = self.cpu_buf.numpy()
+
             if preds.ndim == 2: # Sequence output
                 preds = tuple(preds[i] for i in range(preds.shape[0]))
             if isinstance(preds, np.ndarray):

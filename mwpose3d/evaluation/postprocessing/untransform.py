@@ -1,5 +1,7 @@
 from contextlib import contextmanager
 from collections.abc import Sequence
+import time
+from typing import Union
 import numpy as np
 import torch
 
@@ -24,25 +26,30 @@ class SkeletonBackToOriginalCoord(BasePostProcessing):
     types (list/tuple combinations, etc.) and single 4x4 matrices.
     """
 
-    def __init__(self, online_mode: bool = False):
+    def __init__(self, online_mode: bool = False, process_with_torch: bool = True):
         super().__init__(online_mode)
+        self.process_with_torch = process_with_torch
 
     # ----------------------------- helpers ---------------------------------
 
     @staticmethod
-    def _extract_Q_t_row(T: np.ndarray):
+    def _extract_Q_t_row(T: Union[np.ndarray, torch.Tensor], is_numpy: bool = True):
         """
         For row vectors, we want p' = p @ Q + t.
         Handle either:
-        - top-right translation:   t = T[:3, 3]
+        - top-right translation:   t = T[:3, 3] [DELETED]
         - bottom-left translation: t = T[3, :3]
         """
-        T = np.asarray(T)
+        # if is_numpy:
+        #     tool = np
+        # else:
+        #     tool = torch
         Q = T[:3, :3]
-        if np.any(T[3, :3] != 0):    # bottom-left convention
-            t = T[3, :3]
-        else:                        # top-right convention
-            t = T[:3, 3]
+        # if tool.any(T[3, :3] != 0):
+        #     print("first case")
+        #     t = T[3, :3]
+        # else:
+        t = T[:3, 3]
         return Q, t
 
     @staticmethod
@@ -121,6 +128,78 @@ class SkeletonBackToOriginalCoord(BasePostProcessing):
             Qinv_list.append(Qinv)
             t_list.append(t)
         return Qinv_list, t_list
+
+    @staticmethod
+    def _apply_inv_single_tensor(arr: torch.Tensor, per_frame_T):  # NEW
+        if arr is None:
+            return None
+        assert isinstance(arr, torch.Tensor)
+
+        if arr.numel() == 0:
+            return arr
+
+        device = arr.device
+        orig_dtype = arr.dtype
+        work_dtype = torch.float32  # compute in fp32, cast back
+
+        # Precompute Q^{-1} and t on-device
+        Qinv_list, t_list = [], []
+        if arr.dim() == 1:
+            per_frame_T = [per_frame_T[-1]]
+        
+        for M in per_frame_T:
+            Q_t, t_t = SkeletonBackToOriginalCoord._extract_Q_t_row(torch.as_tensor(M, dtype=work_dtype, device=device), is_numpy=False)
+            Qinv = torch.linalg.inv(Q_t)
+            Qinv_list.append(Qinv)
+            t_list.append(t_t)
+
+        def untransform(pts, Qinv_, t_):
+            return (pts.to(work_dtype) - t_) @ Qinv_
+        # 1D (3K) -> use last frame
+        if arr.dim() == 1:
+            K = arr.numel() // 3
+            if K == 0:
+                return arr
+            L = K * 3
+            out = arr.clone()
+            Qinv_, t_ = Qinv_list[-1], t_list[-1]
+            pts = out[:L].view(-1, 3)
+            pts = untransform(pts, Qinv_, t_)
+            out[:L] = pts.reshape(-1).to(orig_dtype)
+            return out
+
+        # 2D (T, C) -> per-frame
+        if arr.dim() == 2:
+            T = arr.shape[0]
+            assert T == len(per_frame_T), \
+                f"Sequence length mismatch: data T={T} vs T_skel T={len(per_frame_T)}"
+            C = arr.shape[1]
+            L = (C // 3) * 3
+            if L == 0:
+                return arr
+            out = arr.clone()
+            for i in range(T):
+                Qinv_, t_ = Qinv_list[i], t_list[i]
+                pts = out[i, :L].view(-1, 3)
+                pts = untransform(pts, Qinv_, t_)
+                out[i, :L] = pts.reshape(-1).to(orig_dtype)
+            return out
+
+        # 3D (T, K, 3) -> per-frame
+        if arr.dim() == 3 and arr.shape[-1] == 3:
+            T = arr.shape[0]
+            assert T == len(per_frame_T), \
+                f"Sequence length mismatch: data T={T} vs T_skel T={len(per_frame_T)}"
+            out = arr.clone()
+            for i in range(T):
+                Qinv_, t_ = Qinv_list[i], t_list[i]
+                pts = out[i].reshape(-1, 3)
+                pts = untransform(pts, Qinv_, t_)
+                out[i] = pts.view_as(out[i]).to(orig_dtype)
+            return out
+
+        print(f"[SkeletonBackToOriginalCoord] (torch) Unhandled tensor shape {arr.shape}; leaving unchanged.")
+        return arr
 
     @staticmethod
     def _apply_inv_single_array(arr: np.ndarray, per_frame_T):
@@ -222,19 +301,7 @@ class SkeletonBackToOriginalCoord(BasePostProcessing):
                         new = new.astype(orig.dtype, copy=False)
                     setattr(datasample, f, new)
 
-    # ----------------------------- main API --------------------------------
-
     def transform(self, data_batch_dict, datasample):
-        """
-        Applies the inverse of T_skel to datasample(s) in-place, returning the
-        same structure provided as input for `datasample`.
-
-        `T_skel` is expected to be any interchangeable container of 4x4 matrices
-        that resolves to one of:
-          - [T] (sequence of matrices) -> B=1
-          - [T][B] (frame-major)       -> converted to [B][T]
-          - single 4x4 matrix          -> B=1, T=1
-        """
         T_skel = data_batch_dict.get('T_skel', None)
         if T_skel is None:
             print("Warning: T_skel is None, skipping untransform.")
@@ -249,16 +316,30 @@ class SkeletonBackToOriginalCoord(BasePostProcessing):
             assert B_data == B_T, \
                 f"Batch size mismatch: datasample B={B_data} vs T_skel B={B_T}"
             for b, ds in enumerate(datasample):
-                with self._numpy_views(ds, fields=('pred', 'gt')) as arrs:
-                    arrs['pred'] = self._apply_inv_single_array(arrs.get('pred'), per_batch_T[b])
-                    arrs['gt']   = self._apply_inv_single_array(arrs.get('gt'),   per_batch_T[b])
+                pred, gt = getattr(ds, 'pred', None), getattr(ds, 'gt', None)
+
+                if self.process_with_torch:
+                    ds.pred = self._apply_inv_single_tensor(pred, per_batch_T[b])
+                    ds.gt   = self._apply_inv_single_tensor(gt,   per_batch_T[b])
+                else:
+                    # Original NumPy path
+                    with self._numpy_views(ds, fields=('pred', 'gt')) as arrs:
+                        arrs['pred'] = self._apply_inv_single_array(arrs.get('pred'), per_batch_T[b])
+                        arrs['gt']   = self._apply_inv_single_array(arrs.get('gt'),   per_batch_T[b])
             return data_batch_dict, datasample
 
         # Case B: single datasample object (B==1)
         else:
             assert len(per_batch_T) >= 1, "Empty T_skel after canonization."
             per_frame_T = per_batch_T[0]
-            with self._numpy_views(datasample, fields=('pred', 'gt')) as arrs:
-                arrs['pred'] = self._apply_inv_single_array(arrs.get('pred'), per_frame_T)
-                arrs['gt']   = self._apply_inv_single_array(arrs.get('gt'),   per_frame_T)
-            return data_batch_dict, datasample
+            pred, gt = getattr(datasample, 'pred', None), getattr(datasample, 'gt', None)
+
+            if self.process_with_torch:
+                datasample.pred = self._apply_inv_single_tensor(pred, per_frame_T)
+                datasample.gt   = self._apply_inv_single_tensor(gt,   per_frame_T)
+                return data_batch_dict, datasample
+            else:
+                with self._numpy_views(datasample, fields=('pred', 'gt')) as arrs:
+                    arrs['pred'] = self._apply_inv_single_array(arrs.get('pred'), per_frame_T)
+                    arrs['gt']   = self._apply_inv_single_array(arrs.get('gt'),   per_frame_T)
+                return data_batch_dict, datasample

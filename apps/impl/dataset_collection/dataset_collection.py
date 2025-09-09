@@ -104,7 +104,7 @@ class _LoopController(QObject):
         self.app.kinect_mgr_worker.recentSkeletonJointCoordSignal.connect(self.app.visualizer.update_skeleton, Qt.ConnectionType.QueuedConnection)
         self.app.instruction_worker.finishedOnInit.connect(self._on_init_stage_complete, Qt.ConnectionType.QueuedConnection)
         self.app.pcd_buffering_worker.bufferFull.connect(self._on_buffer_full)
-        self.app.pcd_buffering_worker.bufferDumped.connect(lambda x: self.app.kinect_mgr_worker.dumpSkeletonsSignal.emit(Path(x).name))
+        self.app.pcd_buffering_worker.bufferDumped.connect(self.app.kinect_mgr_worker.dumpSkeletonsSignal.emit)
         self.app.instruction_worker.finishedOnStop.connect(self._on_cycle_complete, Qt.ConnectionType.QueuedConnection)
 
     @Slot()

@@ -17,7 +17,7 @@ class KinectManager:
     def __init__(self,
                  exe_path: str,
                  output_dir: str,
-                 mode: List[Literal["dump", "capture"]] = ["capture"]
+                 mode: List[Literal["dump", "capture", "control"]] = ["capture", "control"]
                  ):
         self.exe_path = os.path.abspath(exe_path)
         self.output_dir = Path(output_dir)
@@ -47,6 +47,10 @@ class KinectManager:
     def is_capturing(self) -> bool:
         return "capture" in self.mode
     
+    @property
+    def is_controller(self) -> bool:
+        return "control" in self.mode
+    
     def error_if_not_dumping(self):
         logger.error("KinectManager is indicated to not dump to file. " \
             "Add 'dump' to the mode list when you have your exe ready for dumping to file.")
@@ -64,6 +68,10 @@ class KinectManager:
         if self.is_dumping_to_file:
             self.delete_default_output_file()
         cmd = [self.exe_path, "--prefix", str(self.output_prefix)]
+        if not self.is_capturing:
+            cmd.append("--ncap")
+        if not self.is_controller:
+            cmd.append("--nctrl")
         self.process = subprocess.Popen(
             cmd,
             stdout=subprocess.PIPE,
