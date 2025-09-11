@@ -1,5 +1,5 @@
 _base_ = [
-    './readers/6843base.py',
+    './readers/offline.py',
 ]
 custom_imports = dict(
     imports=['mwpose3d', 'apps.impl.online_skeleton_estim'], allow_failed_imports=False)

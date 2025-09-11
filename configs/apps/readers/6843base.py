@@ -6,6 +6,7 @@ reader_cfg=dict(
     # Data_port='COM6',
     # CLI_port='/dev/ttyUSB0',
     # Data_port='/dev/ttyUSB1',
+    density_threshold=3,
     config_file_path='./configs/chirp_configs/6843_tracking.cfg',
     firmware_tilt_deg=20,
     firmware_tilt_axis='x',

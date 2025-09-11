@@ -1,4 +1,5 @@
 from collections import deque
+from functools import partial
 import mmap
 import struct
 import threading
@@ -35,7 +36,7 @@ class InferenceWorker(QObject):
             app=app,
             with_ctrl_joints=config.get('with_ctrl_joints', True),
             ctrl_joints=config.get('ctrl_joints', None),
-            max_concurrency=config.get('max_concurrency', 1),
+            max_concurrency=config.get('max_concurrency', 2),
             queue_capacity=config.get('queue_capacity', 1),
         )
         worker.moveToThread(thread)
@@ -103,7 +104,22 @@ class InferenceWorker(QObject):
                 self.error.emit(f"Could not create update MMF: {e}")
             except Exception:
                 pass
+        # Ordering state
+        self._seq_next = 0
+        self._emit_next = 0
+        self._results: dict[int, Optional[np.ndarray]] = {}
+        self._order_lock = threading.Lock()
 
+        # Keep a small ring of recent frames to build per-task windows (no copies)
+        self._queue: Deque[object] = deque()
+
+        self._window_size: Optional[int] = None
+        self._frame_ring: Deque[object] = deque(maxlen=1)  # temporary; real size set lazily
+
+        self.last_input_frame_time = 0.0
+        self.last_output_frame_time = 0.0
+
+        
     # ---------- Public API ----------
     @property
     def inference_engine(self) -> "InferenceEngine":
@@ -136,23 +152,47 @@ class InferenceWorker(QObject):
                 tagname=_controller_map_name,
                 access=mmap.ACCESS_WRITE,
             )
+    def _ensure_window_init(self):
+        if self._window_size is not None:
+            return
+        # Access the engine here so it’s created in the worker thread
+        try:
+            self._window_size = int(getattr(self.app.inference_engine, "frame_buffer_size", 1))
+        except Exception:
+            self._window_size = 1
+        # rebuild ring to the right size
+        self._frame_ring = deque(maxlen=self._window_size)
 
     @Slot(object)
     def enqueue(self, frame: object) -> None:
-        """Push a frame into the worker.
+        self._ensure_window_init()
+        if isinstance(frame, np.ndarray):
+            frame = frame.copy()
+        # print("Interval since last input frame: {:.3f} s".format(
+        #     time.perf_counter() - self.last_input_frame_time
+        # ))
+        self.last_input_frame_time = time.perf_counter()
+        # 1) Extend ring with newest frame
+        self._frame_ring.append(frame)
 
-        Bounded queue with coalescing: if full, replace the newest entry to keep
-        latency low.
-        """
+        # 2) Warm-up: don't enqueue until the window is full
+        if len(self._frame_ring) < self._window_size:
+            return
+
+        # 3) Snapshot the window (cheap tuple of refs)
+        window_snapshot = tuple(self._frame_ring)
+
+        # 4) Push into bounded queue with tail-replacement coalescing
         with QMutexLocker(self._mutex):
             if len(self._queue) >= self._queue_capacity:
-                # Drop the newest and append the latest (coalescing effect)
-                if self._queue:
-                    self._queue.pop()
-                self._queue.append(frame)
+                # Replace the newest pending task (maintains order, avoids left-drop)
+                self._queue[-1] = window_snapshot
             else:
-                self._queue.append(frame)
+                self._queue.append(window_snapshot)
+
+            # Collect work; submission happens outside the lock in _maybe_dispatch_locked
             self._maybe_dispatch_locked()
+
 
     @Slot()
     def stop(self) -> None:
@@ -225,28 +265,41 @@ class InferenceWorker(QObject):
                 except Exception:
                     pass
 
-    def _run_inference(self, frame: object) -> Optional[np.ndarray]:
+    def _run_inference(self, window_snapshot: tuple) -> Optional[np.ndarray]:
         try:
             if self._serialize_engine:
                 with self._engine_lock:
-                    out = self.inference_engine.infer(frame)
+                    out = self.inference_engine.infer_window(window_snapshot)
             else:
-                out = self.inference_engine.infer(frame)
+                out = self.inference_engine.infer_window(window_snapshot)
+            # print("Interval since last output frame: {:.3f} s".format(
+            #     time.perf_counter() - self.last_output_frame_time
+            # ))
+            self.last_output_frame_time = time.perf_counter()
         except Exception as e:
             self.error.emit(str(e))
             out = None
         return out
 
     def _maybe_dispatch_locked(self) -> None:
-        # Assumes self._mutex is locked
+        # assumes self._mutex is locked
+        to_submit = []
         was_idle = self._inflight == 0
-        while self._inflight < self._max_concurrency and self._queue:
-            frame = self._queue.popleft()
-            self._inflight += 1
-            future = self._pool.submit(self._run_inference, frame)
-            future.add_done_callback(self._on_task_done)
-        if was_idle and self._inflight > 0:
+
+        slots = self._max_concurrency - self._inflight
+        n = min(slots, len(self._queue))
+        for _ in range(n):
+            to_submit.append(self._queue.popleft())
+        self._inflight += n
+
+        if was_idle and n > 0:
             self.busy_changed.emit(True)
+
+        # Submit outside the lock
+        for payload in to_submit:
+            fut = self._pool.submit(self._run_inference, payload)
+            # if you're using the in-order emission I suggested earlier, wire the seq there
+            fut.add_done_callback(self._on_task_done)
 
     # Runs in a pool thread
     def _on_task_done(self, fut: Future) -> None:
@@ -255,6 +308,7 @@ class InferenceWorker(QObject):
         except Exception as e:
             result = None
             self.error.emit(f"Inference task error: {e}")
+
         if result is not None:
             try:
                 self._write_controller_mmf(result)
@@ -262,13 +316,27 @@ class InferenceWorker(QObject):
                 self.error.emit(f"Controller write failed: {e}")
             self.inference_done.emit(result)
 
+        # minimal critical section
         with QMutexLocker(self._mutex):
             self._inflight -= 1
             became_idle = self._inflight == 0
-            # Try to launch more, if any queued
+            # try to collect more work (doesn't submit here)
             self._maybe_dispatch_locked()
         if became_idle:
             self.busy_changed.emit(False)
+
+    def _drain_ready_locked(self) -> None:
+        # Assumes self._order_lock is held
+        while self._emit_next in self._results:
+            result = self._results.pop(self._emit_next)
+            if result is not None:
+                try:
+                    self._write_controller_mmf(result)
+                except Exception as e:
+                    self.error.emit(f"Controller write failed: {e}")
+                self.inference_done.emit(result)
+            # Even if result is None (e.g. not enough frames yet), advance the sequence
+            self._emit_next += 1
 
 class InferenceWorkerThread(QThread):
     inference_done = Signal(np.ndarray)

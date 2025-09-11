@@ -84,7 +84,7 @@ class TrackingCentroidCalibration(BaseTransform):
         if len(skel_pred_history) < len(track_centroid):
             return input
         input["track_centroid"] = tuple(
-            list(self.calib(input, track_centroid, tuple(skel_pred_history), self.method_cfg)) + [self._estim_missing_centroid(track_centroid)])
+            list(self.calib(input, track_centroid, tuple(skel_pred_history[-len(track_centroid):]), self.method_cfg)) + [self._estim_missing_centroid(track_centroid)])
         return input
 
     def _estim_missing_centroid(self, centroids: Tuple[np.ndarray, ...], n_frames: int = 5) -> np.ndarray:

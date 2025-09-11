@@ -1,4 +1,5 @@
 import copy
+import threading
 import time
 from typing import Any, Callable, List, Sequence, Tuple, TYPE_CHECKING, Union, Deque, Optional
 from collections import deque
@@ -112,6 +113,9 @@ class InferenceEngine:
         self._pred_history: Deque[Any] = deque(maxlen=frame_buffer_size)
         self.cpu_buf = torch.empty((len(self.keypoints_involved) * 3,), pin_memory=True)
 
+        self.frame_buffer_size = int(frame_buffer_size)
+        self._history_lock = threading.Lock()
+        
         # NOTE: While your hooks is usually implemented for the runner to train/test offline, runner.xxx must also be available in this class.
         self.call_custom_hook('before_test')
         self.call_custom_hook('before_test_epoch')
@@ -187,6 +191,38 @@ class InferenceEngine:
         ]) # make a batch dimension
         return input
 
+    def infer_window(self, frames_window: Sequence[np.ndarray]) -> Optional[Union[Tuple[np.ndarray], np.ndarray]]:
+        # Worker guarantees len == frame_buffer_size here
+        assert len(frames_window) >= self.frame_buffer_size
+
+        input_dict = {
+            'pcd_frames': tuple(frames_window),
+            'remaining_frames_idx': list(range(len(frames_window))),
+        }
+        if self.preprocess_pipeline is not None:
+            input_dict = self.preprocess_pipeline(input_dict)
+
+        input_dict['pcd_frames'] = tuple(
+            np.expand_dims(pcd_frame, axis=0) for pcd_frame in input_dict['pcd_frames']
+        )
+
+        with torch.no_grad():
+            with autocast(enabled=self.fp16):
+                batch_inputs, data_samples = self.model.pack_input(input_dict)
+                _ = self.model(batch_inputs, data_samples, mode='predict')
+        data_samples_0 = data_samples[0]
+        batch_inputs, data_samples_0 = self._postprocess(batch_inputs, data_samples_0)
+
+        pred = data_samples_0.pred
+        preds = pred if pred.is_contiguous() else pred.contiguous()
+        out = preds.view(-1).detach().cpu().numpy().copy()
+        if preds.ndim == 2:
+            # split sequence if needed
+            steps = preds.shape[0]
+            out = tuple(out[i * out.size // steps:(i + 1) * out.size // steps] for i in range(steps))
+        return out
+
+    
     def infer(self, point_cloud: Union['SimplePointCloud5D', np.ndarray]) -> Optional[Union[Tuple[np.ndarray], np.ndarray]]:
         if not self.loaded:
             logger.warning("InferenceEngine not loaded with weights yet. Call load_checkpoint() or pass the checkpoint file from 'load_from' first.")
