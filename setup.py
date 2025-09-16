@@ -1,31 +1,49 @@
+# setup.py (at repo root, parallel to ./mwpose3d)
 from setuptools import setup, find_packages
 from torch.utils.cpp_extension import BuildExtension, CUDAExtension, include_paths
 import os
 
-PKG = "mwpose3d.evaluation.postprocessing.smoother_experimental"
-CSRC = os.path.join("mwpose3d", "evaluation", "postprocessing", "smoother_experimental", "csrc")
-# os.environ['TORCH_CUDA_ARCH_LIST'] = "8.6"
-ext = CUDAExtension(
-    name=f"{PKG}.cuda_pose_smoother",
-    sources=[
-        os.path.join(CSRC, "bindings.cpp"),
-        os.path.join(CSRC, "pose_smoother.cu"),
-        os.path.join(CSRC, "gaussian_ema.cu"), 
-    ],
-    include_dirs=[CSRC] + include_paths(),  # adds torch + pybind11 include paths
-    extra_compile_args={
-        # "cxx": ["-O3", "-std=c++17"],
-        # "nvcc": ["-O3", "-use_fast_math"],
-        "cxx": ["-O0", "-g", "-std=c++17"],
-        "nvcc": ["-O0", "-G", "-lineinfo"]  # remove "-use_fast_math" while debugging
-    },
-)
+# Toggle debug vs release with BUILD_DEBUG=1
+DEBUG = os.environ.get("BUILD_DEBUG", "0") == "1"
+cxx_flags = ["-O0", "-g", "-std=c++17"] if DEBUG else ["-O3", "-std=c++17"]
+nvcc_flags = ["-O0", "-G", "-lineinfo"] if DEBUG else ["-O3", "-use_fast_math"]
+
+# Optional: pin GPU archs (or set TORCH_CUDA_ARCH_LIST in env)
+# nvcc_flags += ["-gencode=arch=compute_80,code=sm_80"]
+
+ext_modules = [
+    # Existing smoother extension
+    CUDAExtension(
+        name="mwpose3d.evaluation.postprocessing.smoother_experimental.cuda_pose_smoother",
+        sources=[
+            "mwpose3d/evaluation/postprocessing/smoother_experimental/csrc/bindings.cpp",
+            "mwpose3d/evaluation/postprocessing/smoother_experimental/csrc/pose_smoother.cu",
+            "mwpose3d/evaluation/postprocessing/smoother_experimental/csrc/gaussian_ema.cu",
+        ],
+        include_dirs=[
+            "mwpose3d/evaluation/postprocessing/smoother_experimental/csrc"
+        ] + include_paths(),  # torch + pybind11
+        extra_compile_args={"cxx": cxx_flags, "nvcc": nvcc_flags},
+    ),
+
+    # New SDTW extension
+    CUDAExtension(
+        name="mwpose3d.models.utils.sdtw_cuda.sdtw_cuda",
+        sources=[
+            "mwpose3d/models/utils/sdtw_cuda/sdtw_cuda.cpp",
+            "mwpose3d/models/utils/sdtw_cuda/sdtw_cuda_kernel.cu",
+        ],
+        include_dirs=include_paths(),  # no local headers, just torch/pybind11
+        extra_compile_args={"cxx": cxx_flags, "nvcc": nvcc_flags},
+    ),
+]
 
 setup(
-    name="postprocessing-smoother-experimental",
-    version="0.1.0",
-    packages=find_packages(include=["mwpose3d.evaluation.postprocessing.smoother_experimental"]),
-    ext_modules=[ext],
-    cmdclass={"build_ext": BuildExtension},
+    name="mwpose3d",
+    version="0.0.0",
+    packages=find_packages(include=["mwpose3d", "mwpose3d.*"]),
+    ext_modules=ext_modules,
+    cmdclass={"build_ext": BuildExtension.with_options(use_ninja=True, no_python_abi_suffix=True),},
+    include_package_data=True,
     zip_safe=False,
 )

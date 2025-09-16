@@ -10,7 +10,7 @@ from mwpose3d.datasets.skel_data_sample import SkeletonDataSample
 from mwpose3d.models.base import BaseSkeletonEstimModel
 from mwpose3d.registry import MODELS
 try:
-    from mwpose3d.models.utils.sdtw_cuda_loss import SoftDTW
+    from mwpose3d.models.utils.sdtw_cuda import SoftDTW
 except Exception as e:
     warnings.warn(f"SoftDTW is not available due to: {e}. Training with SoftDTW will trigger error")
 
@@ -80,7 +80,7 @@ class MmMeshPredictor(BaseSkeletonEstimModel):
                     B, T = pred.shape[0], pred.shape[1]
                     pred2 = pred.reshape(B, T, -1)
                     gt2   = gt.reshape(B, T, -1)
-                    sdtw = SoftDTW(use_cuda=pred.is_cuda, gamma=gamma, normalize=spec.get("normalize", False))
+                    sdtw = SoftDTW(gamma=gamma, normalize=spec.get("normalize", False))
                     val = sdtw(pred2, gt2)
                     return val.mean()
                 losses.append((t, w, fn))

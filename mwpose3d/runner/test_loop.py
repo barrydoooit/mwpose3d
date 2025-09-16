@@ -4,13 +4,13 @@ import torch
 from torch.utils.data import DataLoader
 
 from mmengine.runner.amp import autocast
-from mwpose3d.evaluation.metrics.base import BaseMetric
 from mwpose3d.evaluation.postprocessing.base import ComposePostProcess
 from mwpose3d.registry import METRICS, LOOPS
 from .base_loop import BaseLoop
 
 if TYPE_CHECKING:
     from mwpose3d.runner.runner import Runner
+    from mwpose3d.evaluation.metrics.base import BaseMetric
 from tqdm import tqdm
 
 @LOOPS.register_module()

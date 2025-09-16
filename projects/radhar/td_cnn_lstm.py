@@ -13,7 +13,7 @@ from mwpose3d.models.base import BaseSkeletonEstimModel
 
 from mwpose3d.registry import MODELS
 try:
-    from mwpose3d.models.utils.sdtw_cuda_loss import SoftDTW
+    from mwpose3d.models.utils.sdtw_cuda import SoftDTW
 except Exception as e:
     warnings.warn(f"SoftDTW is not available due to: {e}. Training with SoftDTW will trigger error")
     
@@ -86,7 +86,7 @@ class RadHARCNNBiLSTM(BaseSkeletonEstimModel):
         elif criterion == 'CrossEntropyLoss':
             self.criterion = nn.CrossEntropyLoss()
         elif criterion == 'sdtw':
-            self.criterion = [SoftDTW(use_cuda=True, gamma=0.1), nn.MSELoss()]
+            self.criterion = [SoftDTW(gamma=0.1), nn.MSELoss()]
             self.sdtw = True
 
         self.train_cfg = train_cfg
