@@ -60,7 +60,7 @@ class ValLoop(BaseLoop):
         self.runner.call_hook(
             'before_val_iter', batch_idx=idx, data_batch=data_batch)
         assert hasattr(self.runner.model, 'pack_input')
-        batch_inputs, data_samples = self.runner.model.pack_input(dict(data_batch, previous_output=self.last_output))
+        batch_inputs, data_samples = self.runner.model.pack_input(dict(data_batch, previous_output=self.last_output), training=False)
         assert len(data_samples) == 1, 'TestLoop only supports batch_size=1'
         outputs = self.runner.model(batch_inputs, data_samples, mode='predict')
         self.last_output = outputs

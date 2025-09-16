@@ -71,7 +71,7 @@ class MarsPredictor(BaseSkeletonEstimModel):
         x = self.head(x)
         return x
     
-    def pack_input(self, data_batch_dict: dict):
+    def pack_input(self, data_batch_dict: dict, training: bool = True):
         pcd_frame_list: List[Tuple[np.ndarray]] = data_batch_dict['pcd_frames'] # F x B x N x C
         batch_size = len(pcd_frame_list[0])
         frame_len = len(pcd_frame_list)
@@ -160,7 +160,7 @@ class MarsPredictorTemporal(BaseSkeletonEstimModel):
         x = self.fc_out(x)
         return x
     
-    def pack_input(self, data_batch_dict: dict):
+    def pack_input(self, data_batch_dict: dict, training: bool = True):
         pcd_frame_list: List[Tuple[np.ndarray]] = data_batch_dict['pcd_frames'] # F x B x N x C
         batch_size = len(pcd_frame_list[0])
         frame_len = len(pcd_frame_list)

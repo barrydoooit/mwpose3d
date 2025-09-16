@@ -9,15 +9,26 @@
 
 // ===== Config carried on device (Gaussian EMA) =====
 struct GaussianEMAConfigDevice {
-    float dt;               // not strictly required here, but kept for parity
-    float mu_pos;           // meters; center of Gaussian for position diff
-    float delta_pos;        // meters; stddev of Gaussian for position diff
-    float mu_ang;           // radians; center of Gaussian for angle diff
-    float delta_ang;        // radians; stddev of Gaussian for angle diff
-    float lam_min;          // clamp
-    float lam_max;          // clamp
-    int32_t combine_rule;   // 0=min, 1=product, 2=weighted sum
-    float combine_alpha;    // for weighted rule: lam = a*lam_pos + (1-a)*lam_ang
+    float dt;
+
+    // Translation gaussian params per joint TYPE
+    // arrays indexed by joint type (see comment above)
+    float mu_trans[6];
+    float delta_trans[6];
+
+    // Rotation gaussian params per joint TYPE (angles in radians)
+    float mu_rot[6];
+    float delta_rot[6];
+
+    // lambda clamps & combination rule (shared)
+    float lam_min;
+    float lam_max;
+    int32_t combine_rule;   // 0=min, 1=product, 2=weighted
+    float combine_alpha;    // used when rule==2
+
+    // If true, apply positional smoothing (EMA) in relative coordinates to parent
+    // (spine is still treated as absolute; this flag doesn't affect spine).
+    int32_t use_relative_pos_except_spine;
 };
 
 // ===== Tiny EMA state (3D) =====

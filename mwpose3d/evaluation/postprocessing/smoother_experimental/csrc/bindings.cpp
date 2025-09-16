@@ -118,23 +118,68 @@ public:
 // ---------------- NEW Gaussian EMA smoother ----------------
 struct GaussianEMAConfigHost {
     float dt;
-    float mu_pos       = 0.0f;   // meters
-    float delta_pos    = 0.02f;  // meters
-    float mu_ang       = 0.0f;   // radians
-    float delta_ang    = 0.35f;  // ~20 degrees
-    float lam_min      = 0.05f;
-    float lam_max      = 0.95f;
-    int   combine_rule = 0;      // 0=min, 1=product, 2=weighted
-    float combine_alpha= 0.5f;   // only used for weighted
+
+    // translation params per type (meters)
+    float mu_trans_spine = 0.0f;
+    float delta_trans_spine = 0.02f;
+    float mu_trans_mid = 0.0f;
+    float delta_trans_mid = 0.02f;
+    float mu_trans_neck = 0.0f;
+    float delta_trans_neck = 0.02f;
+    float mu_trans_shoulder = 0.0f;
+    float delta_trans_shoulder = 0.02f;
+    float mu_trans_elbow = 0.0f;
+    float delta_trans_elbow = 0.02f;
+    float mu_trans_wrist = 0.0f;
+    float delta_trans_wrist = 0.02f;
+
+    // rotation params per type (radians)
+    float mu_rot_spine = 0.0f;
+    float delta_rot_spine = 0.35f;
+    float mu_rot_mid = 0.0f;
+    float delta_rot_mid = 0.35f;
+    float mu_rot_neck = 0.0f;
+    float delta_rot_neck = 0.35f;
+    float mu_rot_shoulder = 0.0f;
+    float delta_rot_shoulder = 0.35f;
+    float mu_rot_elbow = 0.0f;
+    float delta_rot_elbow = 0.35f;
+    float mu_rot_wrist = 0.0f;
+    float delta_rot_wrist = 0.35f;
+
+    // shared controls
+    float lam_min = 0.05f;
+    float lam_max = 0.95f;
+    int   combine_rule = 0;
+    float combine_alpha = 0.5f;
+
+    bool  use_relative_pos_except_spine = true;
 
     GaussianEMAConfigDevice to_device() const {
         GaussianEMAConfigDevice c{};
         c.dt = dt;
-        c.mu_pos = mu_pos; c.delta_pos = delta_pos;
-        c.mu_ang = mu_ang; c.delta_ang = delta_ang;
-        c.lam_min = lam_min; c.lam_max = lam_max;
+
+        // copy translation params
+        c.mu_trans[0] = mu_trans_spine;  c.delta_trans[0] = delta_trans_spine;
+        c.mu_trans[1] = mu_trans_mid;    c.delta_trans[1] = delta_trans_mid;
+        c.mu_trans[2] = mu_trans_neck;   c.delta_trans[2] = delta_trans_neck;
+        c.mu_trans[3] = mu_trans_shoulder; c.delta_trans[3] = delta_trans_shoulder;
+        c.mu_trans[4] = mu_trans_elbow;  c.delta_trans[4] = delta_trans_elbow;
+        c.mu_trans[5] = mu_trans_wrist;  c.delta_trans[5] = delta_trans_wrist;
+
+        // copy rotation params
+        c.mu_rot[0] = mu_rot_spine;  c.delta_rot[0] = delta_rot_spine;
+        c.mu_rot[1] = mu_rot_mid;    c.delta_rot[1] = delta_rot_mid;
+        c.mu_rot[2] = mu_rot_neck;   c.delta_rot[2] = delta_rot_neck;
+        c.mu_rot[3] = mu_rot_shoulder; c.delta_rot[3] = delta_rot_shoulder;
+        c.mu_rot[4] = mu_rot_elbow;  c.delta_rot[4] = delta_rot_elbow;
+        c.mu_rot[5] = mu_rot_wrist;  c.delta_rot[5] = delta_rot_wrist;
+
+        c.lam_min = lam_min;
+        c.lam_max = lam_max;
         c.combine_rule = combine_rule;
         c.combine_alpha = combine_alpha;
+        c.use_relative_pos_except_spine = use_relative_pos_except_spine ? 1 : 0;
         return c;
     }
 };
@@ -284,15 +329,40 @@ PYBIND11_MODULE(cuda_pose_smoother, m) {
     // --------- Gaussian EMA smoother ---------
     py::class_<GaussianEMAConfigHost>(m, "GaussianEMASmootherConfig")
         .def(py::init<float>(), py::arg("dt"))
-        .def_readwrite("mu_pos", &GaussianEMAConfigHost::mu_pos)
-        .def_readwrite("delta_pos", &GaussianEMAConfigHost::delta_pos)
-        .def_readwrite("mu_ang", &GaussianEMAConfigHost::mu_ang)
-        .def_readwrite("delta_ang", &GaussianEMAConfigHost::delta_ang)
+        // translation fields
+        .def_readwrite("mu_trans_spine", &GaussianEMAConfigHost::mu_trans_spine)
+        .def_readwrite("delta_trans_spine", &GaussianEMAConfigHost::delta_trans_spine)
+        .def_readwrite("mu_trans_mid", &GaussianEMAConfigHost::mu_trans_mid)
+        .def_readwrite("delta_trans_mid", &GaussianEMAConfigHost::delta_trans_mid)
+        .def_readwrite("mu_trans_neck", &GaussianEMAConfigHost::mu_trans_neck)
+        .def_readwrite("delta_trans_neck", &GaussianEMAConfigHost::delta_trans_neck)
+        .def_readwrite("mu_trans_shoulder", &GaussianEMAConfigHost::mu_trans_shoulder)
+        .def_readwrite("delta_trans_shoulder", &GaussianEMAConfigHost::delta_trans_shoulder)
+        .def_readwrite("mu_trans_elbow", &GaussianEMAConfigHost::mu_trans_elbow)
+        .def_readwrite("delta_trans_elbow", &GaussianEMAConfigHost::delta_trans_elbow)
+        .def_readwrite("mu_trans_wrist", &GaussianEMAConfigHost::mu_trans_wrist)
+        .def_readwrite("delta_trans_wrist", &GaussianEMAConfigHost::delta_trans_wrist)
+        // rotation fields
+        .def_readwrite("mu_rot_spine", &GaussianEMAConfigHost::mu_rot_spine)
+        .def_readwrite("delta_rot_spine", &GaussianEMAConfigHost::delta_rot_spine)
+        .def_readwrite("mu_rot_mid", &GaussianEMAConfigHost::mu_rot_mid)
+        .def_readwrite("delta_rot_mid", &GaussianEMAConfigHost::delta_rot_mid)
+        .def_readwrite("mu_rot_neck", &GaussianEMAConfigHost::mu_rot_neck)
+        .def_readwrite("delta_rot_neck", &GaussianEMAConfigHost::delta_rot_neck)
+        .def_readwrite("mu_rot_shoulder", &GaussianEMAConfigHost::mu_rot_shoulder)
+        .def_readwrite("delta_rot_shoulder", &GaussianEMAConfigHost::delta_rot_shoulder)
+        .def_readwrite("mu_rot_elbow", &GaussianEMAConfigHost::mu_rot_elbow)
+        .def_readwrite("delta_rot_elbow", &GaussianEMAConfigHost::delta_rot_elbow)
+        .def_readwrite("mu_rot_wrist", &GaussianEMAConfigHost::mu_rot_wrist)
+        .def_readwrite("delta_rot_wrist", &GaussianEMAConfigHost::delta_rot_wrist)
+        // shared
         .def_readwrite("lam_min", &GaussianEMAConfigHost::lam_min)
         .def_readwrite("lam_max", &GaussianEMAConfigHost::lam_max)
-        .def_readwrite("combine_rule", &GaussianEMAConfigHost::combine_rule)   // 0=min,1=prod,2=weighted
-        .def_readwrite("combine_alpha", &GaussianEMAConfigHost::combine_alpha) // used when rule=2
+        .def_readwrite("combine_rule", &GaussianEMAConfigHost::combine_rule)
+        .def_readwrite("combine_alpha", &GaussianEMAConfigHost::combine_alpha)
+        .def_readwrite("use_relative_pos_except_spine", &GaussianEMAConfigHost::use_relative_pos_except_spine)
     ;
+
 
     py::class_<PoseSmootherGaussianHost>(m, "GaussianEMASmoother")
         .def(py::init<int, const GaussianEMAConfigHost&>(), py::arg("N_joints"), py::arg("cfg"))

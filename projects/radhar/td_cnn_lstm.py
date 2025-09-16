@@ -198,7 +198,7 @@ class RadHARCNNBiLSTM(BaseSkeletonEstimModel):
             prev_feats=seq_feats,  # for caching
         )
 
-    def pack_input(self, data_batch_dict: dict):
+    def pack_input(self, data_batch_dict: dict, training: bool = True):
         pcd_frame_list: List[Tuple[np.ndarray]] = data_batch_dict['pcd_frames'] # F x B x N x C
         T = len(pcd_frame_list)
         B = len(pcd_frame_list[0])

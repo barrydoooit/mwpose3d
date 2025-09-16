@@ -35,10 +35,13 @@ class MmMeshPredictor(BaseSkeletonEstimModel):
         self.point_cloud_size = point_cloud_size
         self.in_channels = in_channels
         self.frame_len = frame_len
+        self.serial_test = bool(test_cfg.get("serial_test", False))
         self.base_pointnet = MODELS.build(base_pointnet_cfg)
         self.global_module = MODELS.build(global_module_cfg)
         self.anchor_module = MODELS.build(anchor_module_cfg)
         self.fusion_module = MODELS.build(fusion_module_cfg)
+        self.global_module.grnn.store_x = self.serial_test
+        self.anchor_module.arnn.store_x = self.serial_test
 
         if criterion == "MSELoss":
             self.criterion = [dict(type="MSELoss", weight=1.0)]
@@ -117,11 +120,8 @@ class MmMeshPredictor(BaseSkeletonEstimModel):
         feats = feat_flat.view(B, T, -1) # B x T x C
         main_feats = feats.reshape(B * T, N, -1)
 
-        hn_w_g, cn_w_g = h0_g, c0_g
-        hn_w_a, cn_w_a = h0_a, c0_a
-
-        g_vec, g_loc, g_weights, hn_g, cn_g = self.global_module(main_feats, hn_w_g, cn_w_g, B, T)
-        a_vec, a_weights, hn_a, cn_a = self.anchor_module(main_feats, g_loc, hn_w_a, cn_w_a, B, T, 28)
+        g_vec, g_loc, g_weights, hn_g, cn_g = self.global_module(main_feats, h0_g, c0_g, B, T)
+        a_vec, a_weights, hn_a, cn_a = self.anchor_module(main_feats, g_loc, h0_a, c0_a, B, T, 28)
         x_out = self.fusion_module(g_vec, a_vec)
 
         return dict(
@@ -132,9 +132,16 @@ class MmMeshPredictor(BaseSkeletonEstimModel):
             cn_a=cn_a,
         )
     
-    def pack_input(self, data_batch_dict: dict):
+    def pack_input(self, data_batch_dict: dict, training: bool = True):
         pcd_frame_list: List[Tuple[np.ndarray]] = data_batch_dict['pcd_frames'] # F x B x N x C
         batch_size = len(pcd_frame_list[0])
+
+        serial = bool(self.serial_test) and not training # Soft assurance for testing mode
+        starting = bool(data_batch_dict.get("starting_flag", [True])[0])
+
+        if serial and not starting:
+            pcd_frame_list = [pcd_frame_list[-1]]
+        
         frame_len = len(pcd_frame_list)
         final_pcd_frame = np.zeros((frame_len, batch_size, self.point_cloud_size, self.in_channels
                                    ), dtype=np.float32)

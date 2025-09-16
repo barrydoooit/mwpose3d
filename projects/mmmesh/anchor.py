@@ -88,29 +88,93 @@ class AnchorRNN(nn.Module):
                  dropout: float = 0.1,
                  bidirectional: bool = False,
                  learnable_init_state: bool = False,
+                 use_carry_init: bool = False,
+                 store_x: bool = False
                  ):
         super().__init__()
-        self.num_layers = num_layers * 2 if bidirectional else num_layers
         self.input_size = input_size
         self.hidden_size = hidden_size
+        self.bidirectional = bidirectional
+        self.learnable_init_state = learnable_init_state
+        self.use_carry_init = use_carry_init
+        self.store_x = store_x
+
         self.rnn = nn.LSTM(input_size=input_size,
                            hidden_size=hidden_size,
                            num_layers=num_layers,
                            batch_first=batch_first,
                            dropout=dropout,
                            bidirectional=bidirectional)
-        
-        self.learnable_init_state = learnable_init_state
+
+        dir_mult = 2 if bidirectional else 1
+        self.num_layers = num_layers * dir_mult
+
         if learnable_init_state:
             self.h0 = nn.Parameter(torch.zeros(self.num_layers, 1, self.hidden_size))
             self.c0 = nn.Parameter(torch.zeros(self.num_layers, 1, self.hidden_size))
+        else:
+            self.h0 = None
+            self.c0 = None
+        self._x_buf = None
+        self._carry_h0 = None 
+        self._carry_c0 = None
     
-    def forward(self, x, h0=None, c0=None):
-        batch_size = x.size(0)
+    def _init_states(self, x, h0, c0):
+        if h0 is not None and c0 is not None:
+            return h0, c0
+        B = x.size(0)
+        dir_mult = 2 if self.bidirectional else 1
         if self.learnable_init_state:
-            h0 = self.h0.expand(-1, batch_size, -1).contiguous()
-            c0 = self.c0.expand(-1, batch_size, -1).contiguous()
+            h0 = self.h0.expand(self.num_layers, B, self.hidden_size).contiguous()
+            c0 = self.c0.expand(self.num_layers, B, self.hidden_size).contiguous()
+        else:
+            h0 = x.new_zeros(self.rnn.num_layers * dir_mult, B, self.rnn.hidden_size)
+            c0 = x.new_zeros_like(h0)
+        return h0, c0
+
+    def _maybe_concat_with_buffer(self, x):
+        if self._x_buf is None:
+            return x
+        x_newest = x[:, -1:, :]
+        return torch.cat([self._x_buf, x_newest], dim=1)
+
+    def _compose_next_init(self, h1, c1, device, dtype):
+        if not self.use_carry_init:
+            return
+        if not self.bidirectional:
+            self._carry_h0, self._carry_c0 = h1.detach(), c1.detach()
+            return
+        L, B, H = self.rnn.num_layers, h1.size(1), h1.size(2)
+        if self.learnable_init_state:
+            h_next = self.h0.expand(self.num_layers, B, H).contiguous().clone().to(device=device, dtype=dtype)
+            c_next = self.c0.expand(self.num_layers, B, H).contiguous().clone().to(device=device, dtype=dtype)
+        else:
+            h_next = torch.zeros(self.num_layers, B, H, device=device, dtype=dtype)
+            c_next = torch.zeros_like(h_next)
+        # forward halves (even indices) from h1/c1, backward halves reset
+        h_next[0::2] = h1[0::2].detach()
+        c_next[0::2] = c1[0::2].detach()
+        self._carry_h0, self._carry_c0 = h_next, c_next
+        
+    def reset_buffer(self):
+        self._x_buf = None
+        self._carry_h0 = None
+        self._carry_c0 = None
+    
+    def forward(self, x, h0=None, c0=None, new_sequence: bool = True):
+        if new_sequence:
+            self.reset_buffer()
+        x = self._maybe_concat_with_buffer(x)
+        if self.use_carry_init and self._carry_h0 is not None and self._carry_c0 is not None:
+            h0, c0 = self._carry_h0, self._carry_c0
+        else:
+            h0, c0 = self._init_states(x, h0, c0)
         a_vec, (hn, cn) = self.rnn(x, (h0, c0))
+        with torch.no_grad():
+            _, (h1, c1) = self.rnn(x[:, :1, :], (h0, c0))
+            self._compose_next_init(h1, c1, device=x.device, dtype=x.dtype)
+        if self.store_x:
+            self._x_buf = x.detach()
         return a_vec, hn, cn
 
 
@@ -169,6 +233,8 @@ class AnchorModule(nn.Module):
         self.arnn = AnchorRNN(**anchor_rnn_cfg)
     
     def forward(self, x, g_loc, h0, c0, batch_size, length_size, feature_size):
+        if g_loc.size(1) != length_size:
+            g_loc = g_loc[:, -length_size:, :].contiguous()
         g_loc = g_loc.view(batch_size * length_size, 1, 2).repeat(1, self.spatial_volume, 1)
         anchors = self.template_points.view(1, self.spatial_volume, 3).repeat(batch_size * length_size, 1, 1)
         anchors[:,:,:2] += g_loc
@@ -178,5 +244,5 @@ class AnchorModule(nn.Module):
         voxel_points = voxel_points.view(batch_size * length_size, self.voxel_size[0], self.voxel_size[1], self.voxel_size[2], self.apointnet.channels[-1])
         voxel_vec = self.avoxel(voxel_points)
         voxel_vec = voxel_vec.view(batch_size, length_size, self.avoxel.channels[-1])
-        a_vec, hn, cn = self.arnn(voxel_vec, h0, c0)
+        a_vec, hn, cn = self.arnn(voxel_vec, h0, c0, new_sequence=(length_size > 1))
         return a_vec, attn_weights, hn, cn

@@ -88,7 +88,7 @@ class EpochBasedTrainLoop(BaseLoop):
     def _run_iter(self, idx: int, data_batch: dict) -> None:
         self.runner.call_hook('before_train_iter', batch_idx=idx, data_batch=data_batch)
         assert hasattr(self.runner.model, 'pack_input')
-        batch_inputs, data_samples = self.runner.model.pack_input(data_batch)
+        batch_inputs, data_samples = self.runner.model.pack_input(data_batch, training=True)
         loss = self.runner.model(batch_inputs, data_samples, mode='loss')
         self.runner.optimizer.zero_grad()
         loss.backward()
