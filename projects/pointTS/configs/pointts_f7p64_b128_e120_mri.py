@@ -46,7 +46,7 @@ model = dict(
     stacked_frames=W+1,
     input_channels=input_channels,
     train_cfg=dict(),
-    test_cfg=dict()
+    test_cfg=dict(serial_test=True)
 )
 
 train_pipeline = [

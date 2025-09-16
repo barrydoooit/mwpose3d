@@ -293,6 +293,7 @@ class InferenceEngine:
             self.model.load_state_dict(checkpoint.state_dict(), strict=strict)
         else:
             raise TypeError(f'checkpoint must be a str, dict or torch.nn.Module, but got {type(checkpoint)}')
+        self._loaded = True
         
     @classmethod
     def from_cfg(cls, config: dict):

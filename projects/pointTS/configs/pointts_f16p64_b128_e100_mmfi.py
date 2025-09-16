@@ -16,7 +16,7 @@ test_info = 'info_subj_val.pkl'
 keypoints_involved=list(range(0, 17))
 
 W=3
-K=3
+K=16
 num_frames = K + W + 1
 backup_frames = 10
 total_frames = num_frames + backup_frames

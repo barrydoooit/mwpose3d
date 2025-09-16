@@ -38,7 +38,7 @@ class RadHARCNNBiLSTM(BaseSkeletonEstimModel):
                  keypoints_involved: List[int] = list(range(0, 21)),
                  criterion: Literal['MSELoss', 'CrossEntropyLoss', 'sdtw'] = 'sdtw',
                  train_cfg: dict = dict(splits=2),
-                 test_cfg: dict = dict(cache_feats=True, splits=1),
+                 test_cfg: dict = dict(serial_test=True, splits=1),
                  ):
         super().__init__()
         self.middle_encoder: 'SparseEncoder' = MODELS.build(moddle_encoder)
@@ -92,6 +92,58 @@ class RadHARCNNBiLSTM(BaseSkeletonEstimModel):
         self.train_cfg = train_cfg
         self.test_cfg = test_cfg
 
+        self._reset_feat_buffer()
+
+    def _reset_feat_buffer(self):
+        self._feat_buf = None
+        self._feat_len = 0
+        self._feat_wptr = 0
+    
+    def _update_feat_buffer(self, seq_feats: torch.Tensor, new_sequence: bool) -> torch.Tensor:
+        if new_sequence:
+            self._reset_feat_buffer()
+
+        B, t, F = seq_feats.shape
+        device, dtype = seq_feats.device, seq_feats.dtype
+
+        if self._feat_buf is None:
+                self._feat_buf = torch.empty(B, self.num_frames, F, device=device, dtype=dtype)
+                self._feat_len = 0
+                self._feat_wptr = 0
+
+        if t > 1:
+            take = min(t, self.num_frames)
+            window = seq_feats[:, -take:, :]
+            if take == self.num_frames:
+                self._feat_buf.copy_(window)
+                self._feat_len = self.num_frames
+                self._feat_wptr = 0
+                return self._feat_buf
+            else:
+                self._feat_buf[:, :take, :].copy_(window)
+                self._feat_len = take
+                self._feat_wptr = 0
+                return self._feat_buf[:, :self._feat_len, :]
+
+        frame = seq_feats[:, 0:1, :]
+        if self._feat_len < self.num_frames:
+            idx = self._feat_len
+            self._feat_buf[:, idx:idx+1, :].copy_(frame)
+            self._feat_len += 1
+            return self._feat_buf[:, :self._feat_len, :]
+        else:
+            idx = self._feat_wptr
+            self._feat_buf[:, idx:idx+1, :].copy_(frame)
+            self._feat_wptr = (self._feat_wptr + 1) % self.num_frames
+            if self._feat_wptr == 0:
+                return self._feat_buf
+            else:
+                return torch.cat(
+                    [self._feat_buf[:, self._feat_wptr:, :],
+                     self._feat_buf[:, :self._feat_wptr, :]],
+                    dim=1
+                )
+            
     @torch.no_grad()
     def voxelize(self, points_list):
         """
@@ -154,54 +206,51 @@ class RadHARCNNBiLSTM(BaseSkeletonEstimModel):
         points_seq = batch_inputs['points']
         T = len(points_seq)
         B = len(points_seq[0])
-        if not self.training \
-            and self.test_cfg.get('cache_feats', False)\
-            and 'cached_feats' in batch_inputs:
-            cached_feats = batch_inputs.get('cached_feats')
-            last_pts = points_seq[-1]
-            feats, coords, _ = self.voxelize(last_pts)
-            spatial = self.middle_encoder(feats, coords, B)
-            seq_feats = self.backbone(spatial)[-1].view(B, -1).unsqueeze(1)
-            seq_feats = torch.cat((cached_feats, seq_feats), dim=1)
-            
-        else:
-            split = self.train_cfg.get('splits', 1) if self.training else self.test_cfg.get('splits', 1)
-            base_size, r = divmod(T, split)
-            sizes = [base_size + (1 if i < r else 0) for i in range(split)]
-            seq_feats_list = []
-            idx = 0
+        split = self.train_cfg.get('splits', 1) if self.training else self.test_cfg.get('splits', 1)
+        base_size, r = divmod(T, split)
+        sizes = [base_size + (1 if i < r else 0) for i in range(split)]
+        seq_feats_list, idx = [], 0
 
-            for sz in sizes:
-                flat_pc = [
-                    points_seq[t][b]
-                    for b in range(B)
-                    for t in range(idx, idx + sz)
-                ]
+        for sz in sizes:
+            # flatten frames for voxelization/encoder
+            flat_pc = [
+                points_seq[t][b]
+                for b in range(B)
+                for t in range(idx, idx + sz)
+            ]
+            feats, coords, _ = self.voxelize(flat_pc)
+            spatial = self.middle_encoder(feats, coords, B * sz)
+            seq_feats = self.backbone(spatial)[-1].view(B, sz, -1)  # [B, sz, F]
+            seq_feats_list.append(seq_feats)
+            idx += sz
 
-                feats, coords, _ = self.voxelize(flat_pc)
-                spatial = self.middle_encoder(feats, coords, B * sz)
-                seq_feats = self.backbone(spatial)[-1].view(B, sz, -1)
-                seq_feats_list.append(seq_feats)
-                idx += sz
-            seq_feats = torch.cat(seq_feats_list, dim=1)
-        # print(seq_feats[:, :, 0].flatten())
+        seq_feats = torch.cat(seq_feats_list, dim=1)              # [B, T, F]
+        seq_full = self._update_feat_buffer(seq_feats, batch_inputs.get('starting_flag', True))
+
         h0 = batch_inputs.get('h0', self.h0.expand(-1, B, -1).contiguous())
         c0 = batch_inputs.get('c0', self.c0.expand(-1, B, -1).contiguous())
-        lstm_out, (hn, cn) = self.lstm(seq_feats, (h0, c0))
-        flat = lstm_out.reshape(B * T, -1)
+        
+        lstm_out, (hn, cn) = self.lstm(seq_full, (h0, c0))
+        # print(seq_full.shape, lstm_out.shape)
+        flat = lstm_out.reshape(B * lstm_out.size(1), -1)
         logits = self.joints_head(flat)
-        logits = logits.view(B, T, self.num_joints * 3)
+        logits = logits.view(B, lstm_out.size(1), self.num_joints * 3)
         return dict(
             tensor=logits,
             hn=hn,
             cn=cn,
-            prev_feats=seq_feats,  # for caching
         )
 
     def pack_input(self, data_batch_dict: dict, training: bool = True):
         pcd_frame_list: List[Tuple[np.ndarray]] = data_batch_dict['pcd_frames'] # F x B x N x C
         T = len(pcd_frame_list)
         B = len(pcd_frame_list[0])
+        starting = bool(data_batch_dict.get('starting_flag', [True])[0])
+        serial = bool(self.test_cfg.get('serial_test', False)) and not training
+        if serial and not starting:
+            pcd_frame_list = [pcd_frame_list[-1]]
+            T = 1
+
         points = []
         for s in range(T):
             sample_frames = []
@@ -221,19 +270,13 @@ class RadHARCNNBiLSTM(BaseSkeletonEstimModel):
         except KeyError:
             data_sample_list = [SkeletonDataSample(gt=None) for _ in range(B)]
         
-        batch_inputs = dict(
-            points=points,
-        )
-        if 'previous_output' in data_batch_dict \
-            and len(data_batch_dict['previous_output']) > 0 \
-            and self.test_cfg.get('cache_feats', False) \
-            and (not data_batch_dict.get('starting_flag', [False])[0]):
-            prev_feat = data_batch_dict.pop('previous_output')["prev_feats"][:, 1:, ...]
-            batch_inputs = dict(
-                batch_inputs,
-                cached_feats=prev_feat,
-            )
+        batch_inputs = dict(points=points, starting_flag=starting)
+
         if not self.learnable_init_state:
-            batch_inputs['h0'] = torch.zeros((self.lstm_cfg['num_layers'] * (2 if self.lstm_cfg.get('bidirectional', False) else 1), B, self.lstm_cfg['hidden_size']), dtype=torch.float32, device=get_device())
-            batch_inputs['c0'] = torch.zeros((self.lstm_cfg['num_layers'] * (2 if self.lstm_cfg.get('bidirectional', False) else 1), B, self.lstm_cfg['hidden_size']), dtype=torch.float32, device=get_device())
+            num_dirs = (2 if self.lstm_cfg.get('bidirectional', False) else 1)
+            h0 = torch.zeros((self.lstm_cfg['num_layers'] * num_dirs, B, self.lstm_cfg['hidden_size']),
+                             dtype=torch.float32, device=get_device())
+            c0 = torch.zeros_like(h0)
+            batch_inputs['h0'] = h0
+            batch_inputs['c0'] = c0
         return batch_inputs, data_sample_list

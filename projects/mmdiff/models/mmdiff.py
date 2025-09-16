@@ -32,7 +32,6 @@ class mmDiffPredictor(BaseSkeletonEstimModel):
                  feature_extractor: dict,
                  diff_config,
                  beta_cfg: dict,
-                 test_cfg: dict,
                  global_feat_size: int,
                  past_frames: int, # NOTE: Num of extra previous predictions for phase 2
                  seq_frames: int, # NOTE: Num of frames used for phase 1 feat extract
@@ -45,6 +44,7 @@ class mmDiffPredictor(BaseSkeletonEstimModel):
                  temp_flag: Literal[0, 1],
                  limb_flag: Literal[0, 1, 2],
                  gt_norm_joint: Optional[int] = None,
+                 test_cfg: dict = dict(serial_test=False)
                 ):
         super().__init__()
         self.point_cloud_size = point_cloud_size
@@ -69,7 +69,7 @@ class mmDiffPredictor(BaseSkeletonEstimModel):
         )).float().to(get_device())
         self.num_timesteps = self.betas.shape[0]
         self.test_cfg = test_cfg
-
+        self.serial_test = bool(self.test_cfg.get('serial_test', False))
         ### Generate Diff Model ###
         self.diff_config = diff_config
         self.joint2idx, self.idx2joint, self.edges_compressed = compress_joints_and_edges(keypoints_involved)
@@ -92,9 +92,15 @@ class mmDiffPredictor(BaseSkeletonEstimModel):
         # self.pose_coarse_curr = None # shape: (b, num_joints, 3)
         # self.cemd_curr = None # shape: (b, num_joints, global_feat_size)
         # self.x_history_list = None # shape: (b, num_joints, 3*(self.past_frames+1)), [[past_coarse_poses], curr_coarse_pose]
-        
+        self._reset_buffers()
         self.criterion = nn.MSELoss()
         self._mode: Literal['train', 'pred_coarse', 'pred_fine'] = 'train' # TODO: replace loss-pretrain and loss-train by configuring _mode in train loop
+    
+    def _reset_buffers(self):
+        # Coarse pose history (keeps last `past_frames+1` coarse preds)
+        self._coarse_buf = None      # [B, past_frames+1, num_joints, 3]
+        self._coarse_len = 0         # <= past_frames+1
+        self._coarse_wptr = 0
     
     @property
     def mode(self) -> Literal['train', 'pred_coarse', 'pred_fine']:
@@ -238,16 +244,27 @@ class mmDiffPredictor(BaseSkeletonEstimModel):
                 coarse_pr_list=[out_pose_pr_curr]
             )
         assert self.mode == 'pred_fine', "Mode should either be 'pred_coarse' or 'pred_fine', but get {}".format(self.mode)
-        if "out_pose_pr_past_frames" in batch_inputs:
-            out_pose_pr_curr, out_pose_feat = self.extract_feat(batch_inputs['final_pcd_tensor'], only_current_frame=True)
-            out_pose_pr_past_frames: List[torch.Tensor] = batch_inputs["out_pose_pr_past_frames"]
-            out_pose_pr_past_frames = out_pose_pr_past_frames[-self.past_frames:]
-            out_pose_pr_list = out_pose_pr_past_frames + [out_pose_pr_curr]
+
+        if self.serial_test:
+            if bool(batch_inputs.get('starting_flag', True)):
+                self._reset_buffers()
+                out_pose_pr_list, out_pose_feat = self.extract_feat(
+                    batch_inputs['final_pcd_tensor'],
+                    only_current_frame=False,   # <-- seed with past_frames+1 coarses
+                    return_list=True
+                )
+                H = self.past_frames + 1
+                out_pose_pr_list = out_pose_pr_list[-H:]
+                for pr in out_pose_pr_list:
+                    self._push_coarse(pr)
+            else:
+                out_pose_pr_curr, out_pose_feat = self.extract_feat(batch_inputs['final_pcd_tensor'], only_current_frame=True, return_list=False)
+                self._push_coarse(out_pose_pr_curr)
+            out_pose_pr_list = self._coarse_list()
         else:
             out_pose_pr_list, out_pose_feat = self.extract_feat(batch_inputs['final_pcd_tensor'], only_current_frame=False, return_list=True)
-            assert len(out_pose_pr_list) == self.past_frames + 1
-        
-                    
+
+        assert len(out_pose_pr_list) == self.past_frames + 1, f"Expect {self.past_frames + 1} coarse predictions, got {len(out_pose_pr_list)}"
         out_pose_pr = torch.concat(out_pose_pr_list, dim=2)
         # x_history = out_pose_pr[:,:,:] - out_pose_pr[:, [self.gt_norm_joint], :] # NOTE: gt normal now disabled
         x_history = out_pose_pr.repeat(self.test_cfg["test_times"], 1, 1)
@@ -304,6 +321,16 @@ class mmDiffPredictor(BaseSkeletonEstimModel):
         pcd_frame_list: List[Tuple[np.ndarray]] = data_batch_dict['pcd_frames'] # F x B x N x C
         batch_size = len(pcd_frame_list[0])
         frame_len = len(pcd_frame_list)
+        starting = bool(data_batch_dict.get('starting_flag', [True])[0])
+        serial = self.serial_test and not training
+        if serial and not starting:
+            if frame_len < self.seq_frames:
+                raise AssertionError(
+                    f"Serial fine mode expects at least seq_frames={self.seq_frames} frames; got {frame_len}."
+                )
+            pcd_frame_list = pcd_frame_list[-self.seq_frames:]
+            frame_len = self.seq_frames
+
         final_pcd_frame = np.zeros((frame_len, batch_size, self.point_cloud_size, self.radar_input_c), dtype=np.float32)
         for frame_seq, batched_frames in enumerate(pcd_frame_list):
             for batch_idx, pcd_frame in enumerate(batched_frames):
@@ -327,7 +354,40 @@ class mmDiffPredictor(BaseSkeletonEstimModel):
 
         batch_inputs = dict(
             final_pcd_tensor=final_pcd_tensor,
+            starting_flag=bool(data_batch_dict.get('starting_flag', [True])[0]) 
         )
         data_batch_dict.update(batch_inputs)
         
         return batch_inputs, data_sample_list
+    
+    def _push_coarse(self, coarse_now: torch.Tensor):
+        B, J, _ = coarse_now.shape
+        H = self.past_frames + 1
+        device, dtype = coarse_now.device, coarse_now.dtype
+        if self._coarse_buf is None:
+            self._coarse_buf = torch.empty(B, H, J, 3, device=device, dtype=dtype)
+            self._coarse_len = 0; self._coarse_wptr = 0
+
+        if self._coarse_len < H:
+            idx = self._coarse_len
+            self._coarse_buf[:, idx:idx+1, :, :].copy_(coarse_now.unsqueeze(1))
+            self._coarse_len += 1
+        else:
+            idx = self._coarse_wptr
+            self._coarse_buf[:, idx:idx+1, :, :].copy_(coarse_now.unsqueeze(1))
+            self._coarse_wptr = (self._coarse_wptr + 1) % H
+
+    def _coarse_list(self) -> List[torch.Tensor]:
+        assert self._coarse_buf is not None and self._coarse_len > 0
+        H = self.past_frames + 1
+        if self._coarse_wptr == 0 and self._coarse_len == H:
+            seq = self._coarse_buf
+        elif self._coarse_wptr == 0:
+            seq = self._coarse_buf[:, :self._coarse_len, :, :]
+        else:
+            seq = torch.cat(
+                [self._coarse_buf[:, self._coarse_wptr:, :, :],
+                 self._coarse_buf[:, :self._coarse_wptr, :, :]],
+                dim=1
+            )
+        return [seq[:, i, :, :] for i in range(seq.size(1))]

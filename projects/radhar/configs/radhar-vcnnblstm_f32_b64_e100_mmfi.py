@@ -2,7 +2,7 @@ _base_ = [
     '../../../configs/__base__/default_runtime.py',
 ]
 custom_imports = dict(
-    imports=['mwpose3d', 'projects.pointTS'], allow_failed_imports=False)
+    imports=['mwpose3d', 'projects.radhar'], allow_failed_imports=False)
 
 data_prefix = dict(
     pcd='mmwave_filtered',
@@ -15,47 +15,69 @@ test_info = 'info_subj_val.pkl'
 
 keypoints_involved=list(range(0, 17))
 
-W=3
-K=3
-num_frames = K + W + 1
-backup_frames = 10
+num_frames = 32
+backup_frames = 5
 total_frames = num_frames + backup_frames
-point_cloud_size = 64
-input_channels = 3
+pcd_dim = 5
+point_cloud_range = [-1.2, 1.0, -1.5, 1.2, 4.5, 3.0]
+voxel_size = [0.05, 0.05, 0.05]
+sparse_shape = [
+                    round((point_cloud_range[5] - point_cloud_range[2]) / voxel_size[2]),
+                round((point_cloud_range[4] - point_cloud_range[1]) / voxel_size[1]),
+                round((point_cloud_range[3] - point_cloud_range[0]) / voxel_size[0]),]
 model = dict(
-    type='PointTSPredictor',
-    # Backbone builds a PointNet to extract per-window spatial features
-    backbone_cfg=dict(
-        type='PointNetBackbone',
-        input_channels=input_channels,
-        conv_channels=(128, 256, 512, 1024),
-        global_feat_dim=256
+    type='RadHARCNNBiLSTM',
+    num_frames=num_frames,
+    voxel_size = voxel_size,
+    point_cloud_range = point_cloud_range,
+    moddle_encoder=dict(
+        type='SparseEncoder',
+        in_channels=pcd_dim,
+        sparse_shape=sparse_shape,
+        output_channels=64,
+        encoder_channels=((16,), (32, 32), (32, 64), (64, 64)),
+        encoder_paddings=((1,), (1, 1), (1, 1), (1, 1)),
+        output_kernel_size=(3, 3, 3),
+        output_stride=(2, 2, 2),
+        output_padding=(1, 1, 1),
+        block_type='conv_module',
+        rulebook_reuse=True
     ),
-    global_feat_dim=256,
-    # Transformer for temporal encoding
-    transformer_cfg=dict(
-        num_layers=4,
-        nhead=4,
-        dim_feedforward=512,
+    backbone=dict(
+        type='SECOND',
+        in_channels=384,
+        out_channels=[128, 128],
+        layer_nums=[3, 3],
+        layer_strides=[1, 2],
+    ),
+    lstm_cfg=dict(
+        input_size=768,
+        hidden_size=64,
+        num_layers=3,
+        batch_first=True,
         dropout=0.1,
-        activation='relu',
-        agg='last',
+        bidirectional=True,
+        learnable_init_state=True,
     ),
+    head_channels=(128, 256, 128),
     keypoints_involved=keypoints_involved,
-    point_cloud_size_per_frame=point_cloud_size,
-    stacked_frames=W+1,
-    input_channels=input_channels,
-    train_cfg=dict(),
-    test_cfg=dict(serial_test=True)
+    criterion='sdtw',
 )
 
 train_pipeline = [
     dict(
         type='LoadMultiFrameFromH5',
-        load_pcd_dim=input_channels,
+        load_pcd_dim=5,
         num_frames=num_frames,
         backup_frames=backup_frames,
-        empty_frame_op='prev',
+        empty_frame_op='zero'
+    ),
+    dict(
+        type='PointCloudRangeFilter',
+        point_cloud_range=point_cloud_range,
+        empty_frame_op='shift',
+        backup_frames=backup_frames,
+        min_num_frames=num_frames,
     ),
     dict(
         type='SequenceClip',
@@ -67,45 +89,24 @@ train_pipeline = [
         keypoints_involved=keypoints_involved,
     ),
     dict(
-        type='SkeletonCoordinateTransform',
-        tran_xyz=(0, -3.15, 0)
-    ),
-    dict(
-        type='PointCloudCoordinateTransform',
-        tran_xyz=(0, -3.15, 0),
-    ),
-    dict(
         type='RandomTransform',
         transform_prob=0.8,
         sigma_xyz=(0.02, 0.02, 0.02),
         max_d_xyz=(0.1, 0.1, 0.1)
     ),
     dict(
-        type='PointDuplicator',
-        target_num_points=point_cloud_size,
-    ),
-    dict(
-        type='PointSortAndClip',
-        target_num_points=point_cloud_size,
-        sort_dim=2,
-        sort_order='desc'
-    ),
-    dict(
-        type='StackPointCloudFrames',
-        stack_size=W+1,
-    ),
-    dict(
-        type='SequenceClip',
-        mode='last',
-        sequence_length=K+1
+        type='NormalizePointAttr',
+        attr_indices=(3, 4,),
+        means=(-0.00047, 16.56169),
+        stds=(0.79512, 3.88067)
     ),
 ]
 
 train_dataloader = dict(
-    batch_size=128,
+    batch_size=64,
     num_workers=16,
     shuffle=True,
-    drop_last=True,
+  #  drop_last=True,
     dataset=dict(
         type='MotionDataset',
         data_root=f"{data_root}",
@@ -119,7 +120,7 @@ train_dataloader = dict(
 
 optimizer_cfg = dict(
     type='AdamW',
-    lr = 0.0005,
+    lr = 0.00025,
     weight_decay=0.01
 )
 
@@ -133,10 +134,16 @@ train_cfg = dict(
 val_pipeline = [
     dict(
         type='LoadMultiFrameFromH5',
-        load_pcd_dim=input_channels,
+        load_pcd_dim=5,
         num_frames=num_frames,
         backup_frames=backup_frames,
-        empty_frame_op='prev',
+        empty_frame_op='zero'
+    ),
+    dict(
+        type='PointCloudRangeFilter',
+        point_cloud_range=point_cloud_range,
+        empty_frame_op='shift',
+        backup_frames=backup_frames,
     ),
     dict(
         type='SequenceClip',
@@ -148,31 +155,10 @@ val_pipeline = [
         keypoints_involved=keypoints_involved,
     ),
     dict(
-        type='SkeletonCoordinateTransform',
-        tran_xyz=(0, -3.15, 0)
-    ),
-    dict(
-        type='PointCloudCoordinateTransform',
-        tran_xyz=(0, -3.15, 0),
-    ),
-    dict(
-        type='PointDuplicator',
-        target_num_points=point_cloud_size,
-    ),
-    dict(
-        type='PointSortAndClip',
-        target_num_points=point_cloud_size,
-        sort_dim=2,
-        sort_order='desc'
-    ),
-    dict(
-        type='StackPointCloudFrames',
-        stack_size=W+1,
-    ),
-    dict(
-        type='SequenceClip',
-        mode='last',
-        sequence_length=K+1
+        type='NormalizePointAttr',
+        attr_indices=(3, 4,),
+        means=(-0.00047, 16.56169),
+        stds=(0.79512, 3.88067)
     ),
 ]
 
@@ -216,5 +202,13 @@ test_dataloader = dict(
 
 test_cfg = dict(
     type='TestLoop',
-    metric_cfg=metric,
+    metric_cfg=metric
 )
+
+custom_hooks = [
+    dict(
+        type='LatencyProfilingHook',
+        subject_modules=[],
+        include_full_forward=True,
+    )
+]

@@ -85,8 +85,7 @@ class GlobalRNN(nn.Module):
                  fc_channels: List[int] = [64, 16, 2],
                  learnable_init_state: bool = False,
                  bidirectional: bool = False,
-                 use_carry_init: bool = False,
-                 store_x: bool = False
+                 store_x: bool = False,
                   ):
         super().__init__()
         self.num_layers = num_layers
@@ -94,9 +93,7 @@ class GlobalRNN(nn.Module):
         self.learnable_init_state = learnable_init_state
         self.bidirectional = bidirectional
         self.hidden_size = hidden_size
-        self.use_carry_init = use_carry_init
         self.store_x = store_x
-
         self.rnn = nn.LSTM(in_channel, hidden_size, num_layers, batch_first=batch_first, dropout=dropout, bidirectional=bidirectional)
         dir_mult = 2 if bidirectional else 1
         self.fc1 = nn.Linear(fc_channels[0] * dir_mult, fc_channels[1])
@@ -110,15 +107,14 @@ class GlobalRNN(nn.Module):
             self.h0 = None
             self.c0 = None
         
-        self._x_buf = None
-        self._carry_h0: torch.Tensor | None = None
-        self._carry_c0: torch.Tensor | None = None
+        self.reset_buffer()
     
     def reset_buffer(self):
         self._x_buf = None
-        self._carry_h0 = None
-        self._carry_c0 = None
-    
+        self._x_len = 0
+        self._x_T = 0
+        self._wptr = 0
+
     def _init_states(self, x: torch.Tensor, h0: torch.Tensor | None, c0: torch.Tensor | None):
         batch_size = x.size(0)
         dir_mult = 2 if self.bidirectional else 1
@@ -130,49 +126,62 @@ class GlobalRNN(nn.Module):
                 h0 = x.new_zeros(self.rnn.num_layers * dir_mult, batch_size, self.rnn.hidden_size)
                 c0 = x.new_zeros_like(h0)
         return h0, c0
-
+    
     def _maybe_concat_with_buffer(self, x: torch.Tensor, concat: bool = True):
         if not concat or self._x_buf is None:
             return x
-        x_newest = x[:, -1:, :]
-        x_full = torch.cat([self._x_buf, x_newest], dim=1)
-        return x_full
+        B, T_in, C = x.shape
+        device, dtype = x.device, x.dtype
 
-    def _compose_next_init(self, h1: torch.Tensor, c1: torch.Tensor, device, dtype):
-        if not self.use_carry_init:
-            return
-        if not self.bidirectional:
-            self._carry_h0 = h1
-            self._carry_c0 = c1
-            return
-        L, B, H = self.num_layers, h1.size(1), h1.size(2)
-        if self.learnable_init_state:
-            h_next = self.h0.expand(L * 2, B, H).contiguous().clone().to(device=device, dtype=dtype)
-            c_next = self.c0.expand(L * 2, B, H).contiguous().clone().to(device=device, dtype=dtype)
+        if T_in > 1:
+            self._x_T = T_in
+            self._x_buf = torch.empty(B, self._x_T, C, device=device, dtype=dtype)
+            self._x_buf[:, :T_in, :].copy_(x.detach())
+            self._x_len = T_in
+            self._wptr = 0
+            return self._x_buf[:, :self._x_len, :]
+
+        # T_in == 1
+        if self._x_buf is None:
+            self._x_T = 1
+            self._x_buf = torch.empty(B, 1, C, device=device, dtype=dtype)
+            self._x_buf[:, 0:1, :].copy_(x.detach())
+            self._x_len = 1
+            self._wptr = 0
+            return self._x_buf[:, :1, :]
+        
+        if self._x_len < self._x_T:
+            idx = self._x_len
+            self._x_buf[:, idx:idx+1, :].copy_(x.detach())
+            self._x_len += 1
+            return self._x_buf[:, :self._x_len, :]
+        
+        idx = self._wptr
+        self._x_buf[:, idx:idx+1, :].copy_(x.detach())
+        self._wptr = (self._wptr + 1) % self._x_T
+
+        # Build chronological view: [oldest..newest] = buf[wptr:]+buf[:wptr]
+        if self._wptr == 0:
+            return self._x_buf[:, :self._x_T, :]
         else:
-            h_next = torch.zeros(L * 2, B, H, device=device, dtype=dtype)
-            c_next = torch.zeros_like(h_next)
-        h_next[0::2] = h1[0::2]
-        c_next[0::2] = c1[0::2]
-        self._carry_h0 = h_next
-        self._carry_c0 = c_next
-    
+            return torch.cat([
+                self._x_buf[:, self._wptr:, :],
+                self._x_buf[:, :self._wptr, :]
+            ], dim=1)
+
     def forward(self, x, h0=None, c0=None, new_sequence: bool = True):
+        if self.training:
+            h0, c0 = self._init_states(x, h0, c0)
+            g_vec, (hn, cn) = self.rnn(x, (h0, c0))
+            g_loc = self.fc2(self.faf1(self.fc1(g_vec)))
+            return g_vec, g_loc, hn, cn
+        
         if new_sequence:
             self.reset_buffer()
-        x = self._maybe_concat_with_buffer(x)
-        if self.use_carry_init and self._carry_h0 is not None and self._carry_c0 is not None:
-            h0, c0 = self._carry_h0, self._carry_c0
-        else:
-            h0, c0 = self._init_states(x, h0, c0)
-
-        g_vec, (hn, cn) = self.rnn(x, (h0, c0))
+        x_full = self._maybe_concat_with_buffer(x)
+        h0, c0 = self._init_states(x_full, h0, c0)
+        g_vec, (hn, cn) = self.rnn(x_full, (h0, c0))
         g_loc = self.fc2(self.faf1(self.fc1(g_vec)))
-        with torch.no_grad():
-            _, (h1, c1) = self.rnn(x[:, :1, :], (h0, c0))
-            self._compose_next_init(h1, c1, device=x.device, dtype=x.dtype)
-        if self.store_x:
-            self._x_buf = x.detach()
         return g_vec, g_loc, hn, cn
 
 @MODELS.register_module()
