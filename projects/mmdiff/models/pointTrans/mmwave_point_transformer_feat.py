@@ -1,3 +1,4 @@
+from typing import Literal
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -154,7 +155,7 @@ class Backbone(nn.Module):
 class PointTransformerRegFeatureExtractor(nn.Module):
     def __init__(self, input_dim=5, nblocks=5, nneighbor=16, seq_tag=False,
                  transformer_dim=128, n_p=17, dropout=0., drop_key=0.,
-                 dim=512, depth=5, heads=4, dim_head=128, mlp_dim=256):
+                 dim=512, depth=5, heads=4, dim_head=128, mlp_dim=256, collapse_t_into: Literal["n", "b"] = 'n'):
         super().__init__()
         self.backbone = Backbone(
             nblocks = nblocks,
@@ -166,6 +167,7 @@ class PointTransformerRegFeatureExtractor(nn.Module):
         self.nblocks = nblocks
         self.n_p = n_p
         self.seq_tag = seq_tag
+        self.collapse_t_into = collapse_t_into
 
         depth = nblocks
         self.joint_posembeds_vector = nn.Parameter(torch.tensor(self.get_positional_embeddings1(self.n_p, dim)).float())
@@ -188,21 +190,52 @@ class PointTransformerRegFeatureExtractor(nn.Module):
         )
 
     def forward(self, x):
-        if len(x.shape) == 4: 
+        if x.dim() == 4:
+            b, t, n, c = x.shape
             if self.seq_tag:
-                b, t, n, c = x.shape
                 if t > 1:
                     seq = (torch.arange(t, device=x.device).float() - (t - 1) / 2) / ((t - 1) / 2)
+                else:
+                    seq = torch.zeros(t, device=x.device)
                 seq = seq.view(1, t, 1, 1).expand(b, t, n, 1)
-                x = torch.cat([x, seq], dim=-1)
-            b, t, n, c = x.shape
-            x = x.view(b, t*n, c)
-        points, _ = self.backbone(x)
-        joint_embedding = self.joint_posembeds_vector.expand(b, -1, -1) #torch.rand(size = (points.size()[0], self.n_p, points.size()[2])).cuda() + self.joint_posembeds_vector
-        embedding = torch.cat([joint_embedding, points], dim=1)
-        output = self.transformer(embedding)[:, :self.n_p, :]
+                x = torch.cat([x, seq], dim=-1)  # (B, T, N, C+1)
+                c = c + 1
 
-        feat = self.fc2(output)
+            if self.collapse_t_into == "n":
+                # Original behavior: time -> points
+                x_flat = x.view(b, t * n, c)
+                points, _ = self.backbone(x_flat)                 # (B, T*N, dim)
+                joint_emb = self.joint_posembeds_vector.expand(b, -1, -1)  # (B, J, dim)
+                tokens = torch.cat([joint_emb, points], dim=1)    # (B, J + T*N, dim)
+                out = self.transformer(tokens)[:, :self.n_p, :]   # (B, J, dim)
+            else:
+                # New behavior: time -> batch (per-frame backbone), then aggregate time in final transformer
+                x_bt = x.view(b * t, n, c)                        # (B*T, N, C)
+                points_bt, _ = self.backbone(x_bt)                # (B*T, N, dim)
+                points = points_bt.view(b, t, n, -1)              # (B, T, N, dim)
+
+                # Per-frame joint tokens + per-frame point tokens
+                joint_emb = self.joint_posembeds_vector.view(1, 1, self.n_p, -1).expand(b, t, -1, -1)  # (B,T,J,dim)
+                tokens = torch.cat([joint_emb, points], dim=2)    # (B, T, J+N, dim)
+
+                # Aggregate across time in the final Transformer
+                tokens_flat = tokens.view(b, t * (self.n_p + n), -1)  # (B, T*(J+N), dim)
+                out_all = self.transformer(tokens_flat)               # (B, T*(J+N), dim)
+
+                # Keep the joint tokens of the *last* frame (consistent with original extractor contract)
+                frame_len = self.n_p + n
+                start = (t - 1) * frame_len
+                out = out_all[:, start:start + self.n_p, :]          # (B, J, dim)
+
+        else:
+            # x: (B, N, C)
+            b, n, c = x.shape
+            points, _ = self.backbone(x)                          # (B, N, dim)
+            joint_emb = self.joint_posembeds_vector.expand(b, -1, -1)
+            tokens = torch.cat([joint_emb, points], dim=1)        # (B, J+N, dim)
+            out = self.transformer(tokens)[:, :self.n_p, :]
+
+        feat = self.fc2(out)
         pts = self.fc3(feat)
 
         

@@ -1,3 +1,4 @@
 # from .p4trans.p4Transformer import P4TransformerFeatureExtractor
 from .pointTrans.mmwave_point_transformer_feat import PointTransformerRegFeatureExtractor
 from .mmdiff import mmDiffPredictor
+from .ptTrans import PtTransPredictor
