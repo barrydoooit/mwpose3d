@@ -94,6 +94,7 @@ class LoadMultiFrameFromH5(BaseTransform):
                 raise IndexError(f'local_idx {local_idx} is out of bounds [0, {index[-1]})')
             
             pcd_frames = []
+            pcd_ts = []
             last_valid = None
             
             for i in range(total):
@@ -104,13 +105,16 @@ class LoadMultiFrameFromH5(BaseTransform):
                     start = index[cur]
                     end = index[cur + 1] if cur + 1 < len(index) else None
                     pcd_data = grp[self.DATA][start:end][:, :self.load_pcd_dim]
+                    ts = grp[self.DATA][start:end][0, -1]
                     if pcd_data.size == 0:
                         pcd_frame = self.handle_empty_pcd(last_valid)
                     else:
                         pcd_frame = pcd_data
                         last_valid = pcd_frame
                 pcd_frames.append(pcd_frame)
+                pcd_ts.append(ts)
             input[self.PCD_FRAMES] = tuple(pcd_frames)
+            input['pcd_ts'] = tuple(pcd_ts)
         
         input[self.REMAINING_FRAMES_IDX] = list(range(total))
         if not self.with_skeleton:
@@ -128,6 +132,7 @@ class LoadMultiFrameFromH5(BaseTransform):
                 skel_frames.append(skel_seq[skel_idx])
         
             input[self.SKEL_FRAMES] = tuple(skel_frames)
+            input["raw_skel_frames"] = tuple([s.copy() for s in skel_frames])
             
         input[self.TARGET_NUM_FRAMES] = self.num_frames
         return input

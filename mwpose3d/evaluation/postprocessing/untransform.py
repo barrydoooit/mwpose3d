@@ -33,23 +33,18 @@ class SkeletonBackToOriginalCoord(BasePostProcessing):
     # ----------------------------- helpers ---------------------------------
 
     @staticmethod
-    def _extract_Q_t_row(T: Union[np.ndarray, torch.Tensor], is_numpy: bool = True):
+    def _extract_Q_t_row(T: Union[np.ndarray, torch.Tensor]):
         """
-        For row vectors, we want p' = p @ Q + t.
-        Handle either:
-        - top-right translation:   t = T[:3, 3] [DELETED]
-        - bottom-left translation: t = T[3, :3]
+        Row-vector affine blocks:
+        T = [[Q, 0],
+            [t^T, 1]]
+
+        Returns:
+        Q: (3,3)
+        t: (3,)
         """
-        # if is_numpy:
-        #     tool = np
-        # else:
-        #     tool = torch
         Q = T[:3, :3]
-        # if tool.any(T[3, :3] != 0):
-        #     print("first case")
-        #     t = T[3, :3]
-        # else:
-        t = T[:3, 3]
+        t = T[3, :3]
         return Q, t
 
     @staticmethod
@@ -148,7 +143,7 @@ class SkeletonBackToOriginalCoord(BasePostProcessing):
             per_frame_T = [per_frame_T[-1]]
         
         for M in per_frame_T:
-            Q_t, t_t = SkeletonBackToOriginalCoord._extract_Q_t_row(torch.as_tensor(M, dtype=work_dtype, device=device), is_numpy=False)
+            Q_t, t_t = SkeletonBackToOriginalCoord._extract_Q_t_row(torch.as_tensor(M, dtype=work_dtype, device=device))
             Qinv = torch.linalg.inv(Q_t)
             Qinv_list.append(Qinv)
             t_list.append(t_t)

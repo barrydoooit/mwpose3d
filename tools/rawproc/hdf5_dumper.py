@@ -39,7 +39,7 @@ class ToHdf5:
         grouped = pcd_df.groupby('seq', sort=True)
         for fid in frame_ids:
             group = grouped.get_group(fid)
-            group_values = group.to_numpy().astype(np.float32)
+            group_values = group.to_numpy().astype(np.float64)
             all_points.append(group_values)
             frame_indices.append(frame_indices[-1] + group_values.shape[0])
         pcd_all = np.concatenate(all_points, axis=0)
@@ -47,7 +47,7 @@ class ToHdf5:
         
         
         skel_df = self.alligned_episode.skel_df
-        skel_all = skel_df.to_numpy(np.float32)
+        skel_all = skel_df.to_numpy(np.float64)
         
         with h5py.File(out_mmwave, 'w') as h5file:
             grp_pcd = h5file.create_group('pcd')

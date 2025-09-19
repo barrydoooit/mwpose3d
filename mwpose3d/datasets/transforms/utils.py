@@ -9,16 +9,15 @@ from mwpose3d.datasets.utils import pseudo_collate, pseudo_decollate, pseudo_rec
 
 def make_row_affine(R: Optional[np.ndarray]=None, t: Optional[Iterable]=None, dtype=np.float32) -> np.ndarray:
     """
-    Build a 4x4 homogeneous matrix M for row vectors so that:
-        [x y z 1] @ M
-    If R is a standard 3x3 rotation (column-vector convention), we store R^T
-    so that your row-vector usage 'pts.dot(R.T) + t' matches '[x 1] @ M'.
+    Creates a 4x4 affine transformation matrix for row-vector multiplication (p' = p @ T).
     """
     M = np.eye(4, dtype=dtype)
     if R is not None:
-        M[:3, :3] = R.T  # row-vector block
+        # The rotation matrix R is applied as p' = p @ R.T, so we place R.T here.
+        M[:3, :3] = R.T
     if t is not None:
-        M[:3, 3] = np.asarray(t, dtype=dtype)
+        # The translation vector t is placed in the last row for row-vector multiplication.
+        M[3, :3] = np.asarray(t, dtype=dtype)
     return M
 
 def _ensure_T_tuple(input_dict: dict, key: str, n: int) -> None:

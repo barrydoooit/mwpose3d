@@ -31,6 +31,7 @@ def round_floats(obj, decimals=2):
 class SimpleGTPredAnalyzer(BaseMetric):
     def __init__(self,
                  keypoints_involved: list,
+                 clip_keys: Optional[list] = None,
                  out_file: Optional[str] = None,
                  visualizer_cfg: Optional[dict] = None):
         self.keypoints_involved = keypoints_involved
@@ -39,7 +40,8 @@ class SimpleGTPredAnalyzer(BaseMetric):
         self.gt_data = []
         self.pred_data = []
         self.pcd_data = []
-
+        self.clip_keys = clip_keys
+        self.last_key = None
         self.out_file = out_file  # Prevent attribute error in evaluate
         if self.out_file is not None:
             self.out_file = Path(self.out_file)
@@ -64,6 +66,20 @@ class SimpleGTPredAnalyzer(BaseMetric):
         self.visualizer = SimpleGTPredVisualizerQT(**cfg)
         
     def process_sample(self, data_sample, data_batch):
+        if self.clip_keys is not None:
+            clip_label = "_".join([str(data_batch[k][0]) for k in self.clip_keys if k in data_batch])
+            if self.last_key is None:
+                self.last_key = clip_label
+                print(f"Processing clip: {self.last_key}")
+            elif self.last_key != clip_label:
+                print(f"Finished clip: {self.last_key}")
+                self.out_file = self.out_file.parent / f"{self.last_key}_gtpred.json" if self.out_file is not None else None
+                print(f"Saving to: {self.out_file}")
+                self.evaluate()
+                self.reset()
+                self.last_key = clip_label
+                print(f"Processing clip: {clip_label}")
+        pcd_ts = data_batch.get("pcd_ts", None)
         gt = data_sample.gt
         pred = data_sample.pred
         assert isinstance(gt, torch.Tensor) and isinstance(pred, torch.Tensor), "Currently only support torch.Tensor as gt type, make conversion in the data_sample first"
@@ -77,8 +93,10 @@ class SimpleGTPredAnalyzer(BaseMetric):
                 "gt_joint": gt_joint.tolist(),
                 "pred_joint": pred_joint.tolist(),
                 "abs_error": torch.norm(gt_joint - pred_joint).item(),
-                "square_error": torch.norm(torch.pow(gt_joint - pred_joint, 2)).item()
+                "square_error": torch.norm(torch.pow(gt_joint - pred_joint, 2)).item(),
             }
+            if pcd_ts is not None:
+                frame_report[joint]["pcd_ts"] = pcd_ts[-1][-1]
         self.report.append(frame_report)
         self.gt_data.append(gt)
         self.pred_data.append(pred)
