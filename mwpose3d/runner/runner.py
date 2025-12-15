@@ -251,15 +251,29 @@ class Runner:
         self._timestamp = time.strftime('%Y%m%d_%H%M%S',
                                         time.localtime(timestamp.item()))
 
-            
+
     def save_checkpoint(self, filename: str):
-        torch.save(self.model.state_dict(), self.work_dir / filename)
-    
+        torch.save({
+            "epoch": self.train_loop.epoch,
+            "model_state_dict": self.model.state_dict(),
+            "optimizer_state_dict": self.optimizer.state_dict(),
+            "loss": self.train_loop.loss,
+        },
+            Path(self.work_dir) / filename)
+
     def load_checkpoint(self, filename: str):
-        self.model.load_state_dict(torch.load(filename, 
-                                              map_location=torch.device(get_device()),
-                                              weights_only=True,
-                                              ),strict=False)
+        checkpoint = torch.load(filename,
+                                map_location=torch.device(get_device()),
+                                weights_only=True)
+        # remain compatible with previously saved checkpoints
+        if "model_state_dict" in checkpoint.keys():
+            self.train_loop._epoch = checkpoint['epoch']
+            self.train_loop._epoch_loss = checkpoint['loss']
+            self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+            self.model.load_state_dict(checkpoint['model_state_dict'])
+            print(f"loaded checkpoint at [epoch={self.train_loop.epoch}]")
+        else:
+            self.model.load_state_dict(checkpoint)
     
     @property
     def hooks(self) -> List[Hook]:
