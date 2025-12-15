@@ -18,6 +18,8 @@ def round_floats(obj, decimals=2):
     """Recursively round float values in a complex data structure."""
     if isinstance(obj, float):
         return round(obj, decimals)
+    elif isinstance(obj, np.float32):
+        return round_floats(float(obj))  # Convert np.float32 to float, to make JSON happy
     elif isinstance(obj, dict):
         return {k: round_floats(v, decimals) for k, v in obj.items()}
     elif isinstance(obj, list):
@@ -43,16 +45,23 @@ class SimpleGTPredAnalyzer(BaseMetric):
         self.clip_keys = clip_keys
         self.last_key = None
         self.out_file = out_file  # Prevent attribute error in evaluate
-        if self.out_file is not None:
-            self.out_file = Path(self.out_file)
-            if not self.out_file.parent.exists():
-                self.out_file.parent.mkdir(parents=True, exist_ok=True)
+        self.out_file = out_file
+        self.make_out_file(self.out_file)
 
         if self.visualize:
             self._make_visualizer(visualizer_cfg)
         else:
             self.visualizer = None
-            
+
+    @staticmethod
+    def make_out_file(file: str):
+        if file is None:
+            return
+
+        file = Path(file)
+        file.parent.mkdir(parents=True, exist_ok=True)
+
+
     def _make_visualizer(self, visualizer_cfg):
         # Sensible defaults
         cfg = {
