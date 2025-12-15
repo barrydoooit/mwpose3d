@@ -26,11 +26,18 @@ class EpochBasedTrainLoop(BaseLoop):
             f'`max_epochs` should be a integer number, but get {max_epochs}.'
         self._max_iters = self._max_epochs * len(self.dataloader)
         self._epoch = 0
+        self._epoch_loss = 0
+        self._epoch_sum_loss = 0
+        self._epoch_loss_count = 0
         self._iter = 0
         self.val_begin = val_begin
         self.val_interval = val_interval
         self.stop_training = False
-        
+
+    @property
+    def loss(self) -> float:
+        return self._epoch_loss
+
     @property
     def max_epochs(self):
         """int: Total epochs to train model."""
@@ -81,9 +88,13 @@ class EpochBasedTrainLoop(BaseLoop):
     def _run_epoch(self) -> None:
         self.runner.call_hook('before_train_epoch')
         self.runner.model.train()
+        self._epoch_sum_loss = 0
+        self._epoch_loss_count = 0
         for idx, data_batch in enumerate(self.dataloader):
             self._run_iter(idx, data_batch)
-            
+
+        if self.runner.lr_scheduler is not None:
+            self.runner.lr_scheduler.step()
         self.runner.call_hook('after_train_epoch')
         self._epoch += 1
     
@@ -95,9 +106,12 @@ class EpochBasedTrainLoop(BaseLoop):
         self.runner.optimizer.zero_grad()
         loss.backward()
         self.runner.optimizer.step()
+        self._epoch_sum_loss += loss.item()
+        self._epoch_loss_count += 1
+        self._epoch_loss = self._epoch_sum_loss / self._epoch_loss_count
         if self._iter % 30 == 0:
-            self.epoch_pbar.set_postfix_str(f'loss: {loss.item():.4f}')
-        
+            self.epoch_pbar.set_postfix_str(f'loss: {self._epoch_loss:.4f}')
+
         self.runner.call_hook(
             'after_train_iter',
             batch_idx=idx,
