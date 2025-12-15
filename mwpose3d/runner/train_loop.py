@@ -4,6 +4,8 @@ from torch.utils.data import DataLoader
 from tqdm import tqdm
 from .base_loop import BaseLoop
 from mwpose3d.registry import LOOPS
+from pathlib import Path
+import datetime
 
 if TYPE_CHECKING:
     from mwpose3d.runner.runner import Runner
@@ -102,6 +104,97 @@ class EpochBasedTrainLoop(BaseLoop):
             data_batch=data_batch,
             outputs=loss)
         self._iter += 1
-        
-        
+
+
+class ValidationOutput:
+
+    def __init__(self, runner: "Runner", out_file: str):
+        self._runner = runner
+        self._initialized: bool = False
+        self.out_file = Path(self.runner.work_dir / out_file)
+
+    def _initialize_output_file(self):
+        if self._initialized:
+            return
+        self._initialized = True
+
+        self.out_file.parent.mkdir(parents=True, exist_ok=True)
+        if self.out_file.exists():
+            print("Validation output file already exists, saving backup before overwriting...")
+            timestamp = datetime.datetime.now()
+            backup_filename = self.out_file.with_name(
+                f"{self.out_file.stem}_backup_{timestamp.strftime("%Y%m%d_%H%M%S")}.csv"
+            )
+            print(f"writing backup file to {backup_filename}")
+            self.out_file.rename(backup_filename)
+
+        # Overwrite existing file
+        with open(self.out_file, "w") as f:
+            f.write("epoch, train_loss, validation_loss\n")
+
+    def _write_training_progress_to_file(
+            self, epoch: int, train_loss: float, validation_loss: float
+    ):
+        if validation_loss is None or self.out_file is None:
+            return
+
+        # If we do this in the constructor, then we always make a backup and overwrite the existing
+        # file. This is undesirable, because this would spam empty backups during testing, even
+        # though we don't validate, but this class is only being constructed.
+        if not self._initialized:
+            print("Initializing validation output file on first call...")
+            self._initialize_output_file()
+
+        with open(self.out_file, "a", encoding="UTF-8") as f:
+            f.write(f"{epoch}, {train_loss}, {validation_loss}\n")
+
+    def validate(self, checkpoint_filename: str, mode: str = "loss") -> float | None:
+        loss: float | None = self._runner.val_loop.run(mode=mode)
+        self._runner.save_checkpoint(checkpoint_filename)
+        return loss
+
+
+@LOOPS.register_module()
+class EpochBasedTrainLoopWithValidationOutput(EpochBasedTrainLoop, ValidationOutput):
+    def __init__(
+            self,
+            runner: "Runner",
+            dataloader: Union[DataLoader, Dict],
+            max_epochs: int,
+            out_file: str,
+            val_begin: int = 1,
+            val_interval: int = 1,
+    ):
+        EpochBasedTrainLoop.__init__(
+            self, runner, dataloader, max_epochs, val_begin, val_interval
+        )
+        ValidationOutput.__init__(self, self.runner, out_file)
+
+    def run(self) -> torch.nn.Module:
+        self.runner.call_hook("before_train")
+
+        # Lots of duplicated code below, should be merged with EpochBasedTrainLoop
+        self.epoch_pbar = tqdm(
+            range(1, self._max_epochs + 1),
+            desc="Epochs",
+            leave=True,
+            total=self._max_epochs,
+        )
+
+        for epoch in self.epoch_pbar:
+            if self.stop_training:
+                break
+            self._run_epoch()
+
+            if (self.runner.val_loop is not None
+                    and self._epoch >= self.val_begin
+                    and (self._epoch % self.val_interval == 0
+                         or self._epoch == self._max_epochs)):
+                loss: float | None = self.validate(f'epoch_{self._epoch}.pth')
+                self._write_training_progress_to_file(self._epoch, self._epoch_loss, loss)
+
+        self.epoch_pbar.close()
+        self.runner.call_hook("after_train")
+        return self.runner.model
+
         
