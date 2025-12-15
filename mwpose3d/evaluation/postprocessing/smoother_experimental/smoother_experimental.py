@@ -4,10 +4,11 @@ import numpy as np
 import torch
 
 from mwpose3d.datasets.transforms.base import OnlineEnabled
-from .cuda_pose_smoother import (
-    PoseSmoother, PoseSmootherConfig,
-    GaussianEMASmoother, GaussianEMASmootherConfig
-)
+# Not in the source code?
+# from .cuda_pose_smoother import (
+#     PoseSmoother, PoseSmootherConfig,
+#     GaussianEMASmoother, GaussianEMASmootherConfig
+# )
 from ..base import BasePostProcessing
 from ..base import POSTPROCESSING
 
