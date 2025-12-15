@@ -1,7 +1,7 @@
 from .base import BaseTransform, OnlineEnabled, is_online_enabled
 from .loading import LoadSingleFrameFromH5
 from .range_filter import PointCloudRangeFilter
-from .skel_filter import SkeletonKeypointFilter, SkeletonCoordNormalization
+from .skel_filter import SkeletonKeypointFilter, SkeletonCoordNormalization, SkeletonDatasetTransform
 from .point_value_control import AddRangeDimension, NormalizePointAttr
 from .point_number_control import PointDuplicator, PointSortAndClip, PointPadding
 from .coord_trans import Kinect2TICoordinateTransform, SkeletonCoordinateTransform, PointCloudCoordinateTransform
@@ -10,7 +10,7 @@ from .transform import RandomTransform, SequenceReverse, RandomFrameDrop
 from .tracking import LoadTrackingRecords, RelativeCoordtoTrackingCentroid, TrackingCentroidCalibration, SmoothingTrackingCentroid
 
 __all__ = [
-    'LoadSingleFrameFromH5', 'PointCloudRangeFilter', 'SkeletonKeypointFilter',
+    'LoadSingleFrameFromH5', 'PointCloudRangeFilter', 'SkeletonKeypointFilter', 'SkeletonDatasetTransform',
     'SkeletonCoordNormalization', 'AddRangeDimension', 'PointDuplicator',
     'PointPadding', 'Kinect2TICoordinateTransform', 'SequenceClip',
     'SequenceReverse', 'RandomFrameDrop', 'RandomTransform',
