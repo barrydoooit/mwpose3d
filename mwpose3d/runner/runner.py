@@ -35,6 +35,7 @@ class Runner:
                  default_hooks: Optional[Dict[str, Union[Hook, Dict]]] = None,
                  custom_hooks: Optional[List[Union[Hook, Dict]]] = None,
                  optimizer_cfg: Optional[dict] = None,
+                 lr_scheduler_cfg: Optional[dict] = None,
                  load_from: Optional[str] = None,
                  env_cfg: Dict = dict(dist_cfg=dict(backend='nccl')),
                  default_scope: str = 'mmengine',
@@ -56,6 +57,7 @@ class Runner:
         self._train_dataloader = train_dataloader
         self._train_loop = train_cfg
         self._optimizer_cfg = optimizer_cfg
+        self._lr_scheduler_cfg = lr_scheduler_cfg
         
         self._val_dataloader = val_dataloader
         self._val_loop = val_cfg
@@ -124,6 +126,13 @@ class Runner:
         self._optimizer_cfg['params'] = self.model.parameters()
         optim_cls = getattr(torch.optim, self._optimizer_cfg.pop('type'))
         self.optimizer = optim_cls(**self._optimizer_cfg)
+
+        if self._lr_scheduler_cfg is not None:
+            lr_sched_cls = getattr(torch.optim.lr_scheduler, self._lr_scheduler_cfg.pop("type"))
+            self.lr_scheduler = lr_sched_cls(self.optimizer, **self._lr_scheduler_cfg.pop("args"))
+        else:
+            self.lr_scheduler = None
+
         return loop
     
     @property
@@ -170,6 +179,7 @@ class Runner:
             default_hooks=cfg.get('default_hooks', None),
             custom_hooks=cfg.get('custom_hooks', None),
             optimizer_cfg=cfg.get('optimizer_cfg'),
+            lr_scheduler_cfg=cfg.get('lr_scheduler_cfg'),
             load_from=cfg.get('load_from', None),
             default_scope=cfg.get('default_scope', 'mmengine'),
             experiment_name=cfg.get('experiment_name', None),
