@@ -1,0 +1,1 @@
+from .pointmlp import PointMLPPredictor
