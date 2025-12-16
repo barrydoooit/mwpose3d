@@ -109,6 +109,31 @@ class SkeletonDatasetTransform(BaseTransform):
     """
 
     JOINTS: dict[str, dict[str, int]] = {
+        "mars_feat": {
+            "spine_base": 0,
+            "spine_mid": 1,
+            "neck": 2,
+            "head": 3,
+            "shoulder_left": 4,
+            "elbow_left": 5,
+            "wrist_left": 6,
+            "hand_left": 7,
+            "shoulder_right": 8,
+            "elbow_right": 9,
+            "wrist_right": 10,
+            "hand_right": 11,
+            "hip_left": 12,
+            "knee_left": 13,
+            "ankle_left": 14,
+            "foot_left": 15,
+            "hip_right": 16,
+            "knee_right": 17,
+            "ankle_right": 18,
+            "foot_right": 19,
+            "spine_shoulder": 20,
+            # This is the preprocessed mars dataset
+            # Which has already less joints
+        },
         "mars": {
             "spine_base": 0,
             "spine_mid": 1,
