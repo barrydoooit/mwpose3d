@@ -8,6 +8,7 @@ from .base import BaseTransform
 from mwpose3d.registry import TRANSFORMS
 
 
+
 @TRANSFORMS.register_module()
 class LoadSingleFrameFromH5(BaseTransform):
     POINTCLOUD_MODALITY_KEY = 'pcd'
@@ -42,7 +43,8 @@ class LoadSingleFrameFromH5(BaseTransform):
             input['skel_frames'] = (skel_data,)
             input['pcd_frames'] = (pcd_data,)
         return input
-    
+
+
 @TRANSFORMS.register_module()
 class LoadMultiFrameFromH5(BaseTransform):
     POINTCLOUD_MODALITY_KEY = 'pcd'
@@ -150,3 +152,34 @@ class LoadMultiFrameFromH5(BaseTransform):
                 return np.zeros((1, self.load_pcd_dim), dtype=np.float32)
         elif self.empty_frame_op == 'error':
             raise ValueError("Empty frame found in the dataset. Set empty_frame_op to 'zero' or 'prev' to handle empty frames.")
+
+@TRANSFORMS.register_module()
+class LoadRandomData(LoadMultiFrameFromH5):
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.noise_mean = 0
+        self.noise_std = 1
+        self.max_number_of_points = 64
+        self.rng = np.random.default_rng()
+
+    def transform(self, input):
+        input = super().transform(input)
+        pcd_data = input[self.PCD_FRAMES]
+
+        random_frames = []
+        for _ in pcd_data:
+            random_frame = self.generate_random_frame()
+            random_frames.append(random_frame)
+        input[self.PCD_FRAMES] = tuple(random_frames)
+
+        return input
+
+    def generate_random_frame(self):
+        number_of_points = self.rng.integers(low=1, high=self.max_number_of_points, endpoint=True)
+        random_points = self.rng.normal(
+            loc=self.noise_mean,
+            scale=self.noise_std,
+            size=(number_of_points, self.load_pcd_dim)
+        )
+        return random_points
