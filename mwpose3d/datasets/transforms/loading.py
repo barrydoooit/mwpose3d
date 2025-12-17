@@ -107,10 +107,12 @@ class LoadMultiFrameFromH5(BaseTransform):
                     start = index[cur]
                     end = index[cur + 1] if cur + 1 < len(index) else None
                     pcd_data = grp[self.DATA][start:end][:, :self.load_pcd_dim]
-                    ts = grp[self.DATA][start:end][0, -1]
                     if pcd_data.size == 0:
                         pcd_frame = self.handle_empty_pcd(last_valid)
+                        ts = np.array([])
                     else:
+                        # I don't know what `ts` is, but it cannot handle empty frames
+                        ts = grp[self.DATA][start:end][0, -1]
                         pcd_frame = pcd_data
                         last_valid = pcd_frame
                 pcd_frames.append(pcd_frame)
