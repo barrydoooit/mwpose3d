@@ -207,7 +207,8 @@ class MRIDatasetConverter:
         all_entries = []
         subjects = []
         # iterate subjects
-        for cpl_file in sorted(self.pose_dir.glob('*_all_labels.cpl')):
+        files_found = sorted(self.pose_dir.glob('*_all_labels.cpl'))
+        for cpl_file in files_found:
             # process each subject
             self.process_subject(cpl_file, subjects, all_entries)
 
