@@ -64,7 +64,8 @@ class LoadMultiFrameFromH5(BaseTransform):
                  num_frames: int,
                  backup_frames: int = 0,
                  empty_frame_op: Literal['zero', 'prev', 'error'] = 'error',
-                 with_skeleton: bool = True
+                 with_skeleton: bool = True,
+                 stack_frames: bool = False
                  ):
         super().__init__()
         self.backup_frames = backup_frames
@@ -72,6 +73,7 @@ class LoadMultiFrameFromH5(BaseTransform):
         self.num_frames = num_frames
         self.empty_frame_op = empty_frame_op
         self.with_skeleton = with_skeleton
+        self.stack_frames = stack_frames
 
         self._empty_frame_count = 0
     
@@ -101,6 +103,7 @@ class LoadMultiFrameFromH5(BaseTransform):
             
             for i in range(total):
                 cur = start_idx + i
+                ts = np.array([])
                 if cur < 0 or cur >= index[-1]:
                     pcd_frame = self.handle_empty_pcd(last_valid)
                 else:
@@ -109,7 +112,6 @@ class LoadMultiFrameFromH5(BaseTransform):
                     pcd_data = grp[self.DATA][start:end][:, :self.load_pcd_dim]
                     if pcd_data.size == 0:
                         pcd_frame = self.handle_empty_pcd(last_valid)
-                        ts = np.array([])
                     else:
                         # I don't know what `ts` is, but it cannot handle empty frames
                         ts = grp[self.DATA][start:end][0, -1]
@@ -117,6 +119,12 @@ class LoadMultiFrameFromH5(BaseTransform):
                         last_valid = pcd_frame
                 pcd_frames.append(pcd_frame)
                 pcd_ts.append(ts)
+
+            # When stacking frames, all points are merged into one frame
+            if self.stack_frames:
+                pcd_frames = np.concatenate(pcd_frames)
+                pcd_frames = [pcd_frames]
+
             input[self.PCD_FRAMES] = tuple(pcd_frames)
             input['pcd_ts'] = tuple(pcd_ts)
         
@@ -154,6 +162,7 @@ class LoadMultiFrameFromH5(BaseTransform):
                 return np.zeros((1, self.load_pcd_dim), dtype=np.float32)
         elif self.empty_frame_op == 'error':
             raise ValueError("Empty frame found in the dataset. Set empty_frame_op to 'zero' or 'prev' to handle empty frames.")
+
 
 @TRANSFORMS.register_module()
 class LoadRandomData(LoadMultiFrameFromH5):
