@@ -26,6 +26,8 @@ def round_floats(obj, decimals=2):
         return [round_floats(elem, decimals) for elem in obj]
     elif isinstance(obj, tuple):
         return tuple(round_floats(elem, decimals) for elem in obj)
+    elif isinstance(obj, np.ndarray):   # Convert ndarray to list, to make JSON happy
+        return round_floats(obj.tolist(), decimals)
     else:
         return obj
     
