@@ -12,9 +12,12 @@ from mmengine.config import Config
 from ..utils import apply_frame_selection
 from ..base import BaseTransform, OnlineEnabled
 from mwpose3d.registry import TRANSFORMS
-from mwcore.tracking.api import BaseTracker
-from mwcore.registry import TRACKERS
 
+try:
+    from mwcore.tracking.api import BaseTracker
+    from mwcore.registry import TRACKERS
+except ImportError:
+    pass
 
 
 @OnlineEnabled

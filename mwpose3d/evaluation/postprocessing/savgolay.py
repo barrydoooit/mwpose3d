@@ -5,8 +5,10 @@ import torch
 from mwpose3d.datasets.transforms.base import OnlineEnabled
 from .base import BasePostProcessing
 from .base import POSTPROCESSING
-from mwcore.utils.smoothing.savgol_filter import savgol_filter, SavGolayConfig, SavGolayPadding
-
+try:
+    from mwcore.utils.smoothing.savgol_filter import savgol_filter, SavGolayConfig, SavGolayPadding
+except ImportError:
+    pass
 
 
 @OnlineEnabled
@@ -17,7 +19,7 @@ class SavGolayFilter(BasePostProcessing):
                  polyorder: int,
                  deriv: int = 0,
                  delta: float = 1.0,
-                 mode: SavGolayPadding = 'reflect',
+                 mode = 'reflect',
                  cval: float = 0.0,
                  time_axis: int = 0,
                  online_mode: bool = False):

@@ -1,6 +1,8 @@
-from PySide6.QtWidgets import QDialog, QFormLayout, QLineEdit, QDialogButtonBox, QVBoxLayout
-from PySide6.QtCore import Signal
-
+try:
+    from PySide6.QtWidgets import QDialog, QFormLayout, QLineEdit, QDialogButtonBox, QVBoxLayout
+    from PySide6.QtCore import Signal
+except ImportError:
+    pass
 
 
 

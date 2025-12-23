@@ -22,8 +22,10 @@ MODELS = Registry(
     'model', parent=MMENGINE_MODELS, locations=['mwpose3d.models'])
 METRICS = Registry(
     'metric', parent=MMENGINE_METRICS, locations=['mwpose3d.evaluation'])
-
-from mwcore.registry import VISUALIZERS as MWCORE_VISUALIZER
-
-VISUALIZERS = Registry(
-    'visualizer', parent=MWCORE_VISUALIZER, locations=['mwpose3d.visualization'])
+try:
+    from mwcore.registry import VISUALIZERS as MWCORE_VISUALIZER
+    VISUALIZERS = Registry(
+        'visualizer', parent=MWCORE_VISUALIZER, locations=['mwpose3d.visualization'])
+except ImportError as e:
+    print(f"Failed to import from mwcore, likely a Qt error on DAIC: {e}")
+    VISUALIZERS = Registry('visualizer', locations=['mwpose3d.visualization'])

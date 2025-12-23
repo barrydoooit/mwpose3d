@@ -9,9 +9,12 @@ from typing import Dict, List, Optional
 import numpy as np
 import torch
 
-from PySide6 import QtCore, QtWidgets
-import pyqtgraph as pg
-import pyqtgraph.opengl as gl
+try:
+    from PySide6 import QtCore, QtWidgets
+    import pyqtgraph as pg
+    import pyqtgraph.opengl as gl
+except ImportError:
+    pass
 
 from mwpose3d.utils.kinect_toolkits.kinectData import KeypointType, Connectivity
 

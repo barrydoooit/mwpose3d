@@ -4,7 +4,10 @@ import numpy as np
 
 from ..base import BaseTransform, OnlineEnabled
 from mwpose3d.registry import TRANSFORMS
-from mwcore.utils.smoothing.savgol_filter import savgol_filter, SavGolayConfig
+try:
+    from mwcore.utils.smoothing.savgol_filter import savgol_filter, SavGolayConfig
+except ImportError:
+    pass
 
 
 @OnlineEnabled

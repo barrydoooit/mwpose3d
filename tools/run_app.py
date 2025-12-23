@@ -6,8 +6,11 @@ import debugpy
 from mmengine.config import Config, DictAction
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from mwcore.apps.base import BaseMWApp
-from mwcore.registry import APPS
+try:
+    from mwcore.apps.base import BaseMWApp
+    from mwcore.registry import APPS
+except ImportError:
+    pass
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="mmwave breakout application")

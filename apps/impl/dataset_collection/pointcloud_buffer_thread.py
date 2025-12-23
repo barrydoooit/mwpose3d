@@ -7,13 +7,15 @@ from typing import Deque, Optional, Union
 from collections import deque
 import time
 
-from PySide6.QtCore import (
-    QThread,
-    QObject,
-    Signal,
-    Slot,
-)
-
+try:
+    from PySide6.QtCore import (
+        QThread,
+        QObject,
+        Signal,
+        Slot,
+    )
+except ImportError:
+    pass
 from mwpose3d.utils.pointcloud_toolkits.structures import PointCloudFrame, SimplePointCloud5D
 
 

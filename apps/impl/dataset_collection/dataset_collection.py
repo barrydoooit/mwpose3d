@@ -18,14 +18,16 @@ from mwpose3d.utils.pointcloud_toolkits.structures import SimplePointCloud5D
 
 from .pointcloud_buffer_thread import PointCloudBufferingWorker
 from .instruction_thread import InstructionWorker
-from mwcore.apps import BaseMWOnlineApp
-from mwcore.registry import APPS
 from mwpose3d.registry import VISUALIZERS
-from PySide6.QtCore import Qt, QCoreApplication, QObject, Slot, QMetaObject, QThread, QTimer
-QCoreApplication.setAttribute(Qt.AA_UseDesktopOpenGL)
-from PySide6.QtWidgets import QApplication
-from PySide6.QtCore import Qt
-
+try:
+    from mwcore.apps import BaseMWOnlineApp
+    from mwcore.registry import APPS
+    from PySide6.QtCore import Qt, QCoreApplication, QObject, Slot, QMetaObject, QThread, QTimer
+    QCoreApplication.setAttribute(Qt.AA_UseDesktopOpenGL)
+    from PySide6.QtWidgets import QApplication
+    from PySide6.QtCore import Qt
+except ImportError:
+    pass
 
 if TYPE_CHECKING:
     from mwpose3d.visualization.skel_online import OnlineSkeletonVisualizer

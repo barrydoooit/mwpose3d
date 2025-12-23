@@ -2,15 +2,18 @@ import time
 from typing import List, Dict, Any, Callable, Tuple
 import logging
 
-from PySide6.QtCore import (
-    QObject,
-    QThread,
-    Signal,
-    Slot,
-    QTimer,
-    QMetaObject, Qt
-)
-from PySide6.QtWidgets import QApplication, QDialog, QLabel, QVBoxLayout
+try:
+    from PySide6.QtCore import (
+        QObject,
+        QThread,
+        Signal,
+        Slot,
+        QTimer,
+        QMetaObject, Qt
+    )
+    from PySide6.QtWidgets import QApplication, QDialog, QLabel, QVBoxLayout
+except ImportError:
+    pass
 
 logger = logging.getLogger(__name__)
 

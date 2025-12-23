@@ -4,10 +4,12 @@ import json
 import time
 from pathlib import Path
 
-from PySide6.QtCore import QObject, Qt, QTimer, Slot, Signal, QSize
-from PySide6.QtGui import QGuiApplication, QMovie
-from PySide6.QtWidgets import QLabel, QWidget
-
+try:
+    from PySide6.QtCore import QObject, Qt, QTimer, Slot, Signal, QSize
+    from PySide6.QtGui import QGuiApplication, QMovie
+    from PySide6.QtWidgets import QLabel, QWidget
+except ImportError:
+    pass
 from pynput import keyboard
 
 

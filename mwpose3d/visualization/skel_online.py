@@ -1,9 +1,12 @@
 from typing import List, Optional, Sequence, Union
 
 import numpy as np
-from mwcore.visualization import OnlinePointCloudVisualizer
+try:
+    from mwcore.visualization import OnlinePointCloudVisualizer
+except ImportError:
+    pass
 from mwpose3d.registry import VISUALIZERS
-from PySide6.QtCore import Slot
+# from PySide6.QtCore import Slot
 import pyqtgraph.opengl as gl
 import logging
 

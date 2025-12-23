@@ -1,11 +1,13 @@
 
 import logging
 
-from PySide6.QtCore import Qt, QCoreApplication
-from PySide6.QtWidgets import QDialog, QVBoxLayout, QLabel, QPushButton, QHBoxLayout
+try:
+    from PySide6.QtCore import Qt, QCoreApplication
+    from PySide6.QtWidgets import QDialog, QVBoxLayout, QLabel, QPushButton, QHBoxLayout
+    QCoreApplication.setAttribute(Qt.AA_UseDesktopOpenGL)
+except ImportError:
+    pass
 
-
-QCoreApplication.setAttribute(Qt.AA_UseDesktopOpenGL)
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)

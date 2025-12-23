@@ -4,20 +4,23 @@ import h5py
 from mmengine.config import Config
 import numpy as np
 import sys
-from PySide6.QtWidgets import QApplication
+try:
+    from PySide6.QtWidgets import QApplication
+    from mwcore.registry import TRACKERS
+    if TYPE_CHECKING:
+        from mwcore.tracking.api.base import BaseTracker
+except ImportError:
+    pass
 from tqdm import tqdm
 import logging
 logger = logging.getLogger(__name__)
 
 from mwpose3d.runner import Runner
-from mwcore.registry import TRACKERS
 
 from torch.utils.data import DataLoader
 
 from mwpose3d.visualization.pcd_offline import PointCloudOfflineVisualizer, PointCloudOfflineVisualizerSK
 
-if TYPE_CHECKING:
-    from mwcore.tracking.api.base import BaseTracker
 
 
 

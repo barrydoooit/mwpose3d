@@ -2,18 +2,21 @@ from pathlib import Path
 import sys
 from typing import Optional, Union, TYPE_CHECKING
 from apps.impl.online_skeleton_estim.estimation_worker import InferenceWorker, InferenceWorkerThread
-from mwcore.apps import BaseMWOnlineApp
-from mwcore.registry import APPS
 from mwpose3d.registry import VISUALIZERS
-from mwcore.visualization import OnlinePointCloudVisualizer
 from mwpose3d.runner.inference_engine import InferenceEngine
 from mmengine.config import Config
-from PySide6.QtCore import Qt, QCoreApplication
 
-from mwpose3d.utils.typing_utils import ConfigType
-QCoreApplication.setAttribute(Qt.AA_UseDesktopOpenGL)
-from PySide6.QtWidgets import QApplication
-from PySide6.QtCore import Qt
+try:
+    from mwcore.apps import BaseMWOnlineApp
+    from mwcore.registry import APPS
+    from mwcore.visualization import OnlinePointCloudVisualizer
+    from PySide6.QtCore import Qt, QCoreApplication
+    from mwpose3d.utils.typing_utils import ConfigType
+    QCoreApplication.setAttribute(Qt.AA_UseDesktopOpenGL)
+    from PySide6.QtWidgets import QApplication
+    from PySide6.QtCore import Qt
+except ImportError:
+    pass
 import logging
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)

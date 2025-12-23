@@ -8,12 +8,16 @@ import logging
 
 from typing import Tuple
 logger = logging.getLogger(__name__)
-from PySide6.QtCore import (
-    QThread,
-    QObject,
-    Signal,
-    Slot,
-)
+
+try:
+    from PySide6.QtCore import (
+        QThread,
+        QObject,
+        Signal,
+        Slot,
+    )
+except ImportError:
+    pass
 
 import mwpose3d.utils.kinect_toolkits as ktk
 

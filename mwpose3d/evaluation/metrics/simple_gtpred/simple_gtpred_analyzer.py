@@ -4,8 +4,8 @@ from typing import Optional
 import numpy as np
 import torch
 
-from mwpose3d.evaluation.metrics.simple_gtpred.simple_gtpred_visualizer import SimpleGTPredVisualizerQT
 try:
+    from mwpose3d.evaluation.metrics.simple_gtpred.simple_gtpred_visualizer import SimpleGTPredVisualizerQT
     from .simple_gtpred_visualizer import SimpleGTPredVisualizer
 except Exception as e:
     print("Visualizer not available.")
