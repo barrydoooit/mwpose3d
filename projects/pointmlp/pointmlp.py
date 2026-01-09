@@ -54,7 +54,7 @@ class PointMLPPredictor(BaseSkeletonEstimModel):
         # print(f"{x.shape=}")
         return self.model(x)
 
-    def pack_input(self, data_batch_dict: dict):
+    def pack_input(self, data_batch_dict: dict, training: bool = True):
         # The code below is copied and adapted from the MARS predictor
         pcd_frame_list: list[tuple[np.ndarray]] = data_batch_dict[
             "pcd_frames"
