@@ -167,14 +167,16 @@ class LoadMultiFrameFromH5(BaseTransform):
 @TRANSFORMS.register_module()
 class LoadRandomData(LoadMultiFrameFromH5):
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, extra_pcd_dim: int = 0, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.noise_mean = 0
         self.noise_std = 1
         self.max_number_of_points = 64
         self.rng = np.random.default_rng()
+        self.rng_pcd_dim = self.load_pcd_dim + extra_pcd_dim
 
     def transform(self, input):
+        # Load the file from the dataset, but replace the point cloud data with random noise
         input = super().transform(input)
         pcd_data = input[self.PCD_FRAMES]
 
@@ -191,6 +193,6 @@ class LoadRandomData(LoadMultiFrameFromH5):
         random_points = self.rng.normal(
             loc=self.noise_mean,
             scale=self.noise_std,
-            size=(number_of_points, self.load_pcd_dim)
+            size=(number_of_points, self.rng_pcd_dim)
         )
         return random_points
