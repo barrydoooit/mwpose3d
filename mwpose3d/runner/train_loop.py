@@ -137,7 +137,7 @@ class ValidationOutput:
             print("Validation output file already exists, saving backup before overwriting...")
             timestamp = datetime.datetime.now()
             backup_filename = self.out_file.with_name(
-                f"{self.out_file.stem}_backup_{timestamp.strftime("%Y%m%d_%H%M%S")}.csv"
+                f"{self.out_file.stem}_backup_{timestamp.strftime('%Y%m%d_%H%M%S')}.csv"
             )
             print(f"writing backup file to {backup_filename}")
             self.out_file.rename(backup_filename)

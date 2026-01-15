@@ -7,7 +7,7 @@ name = "mwpose3d"
 version = "0.0.0"
 description = "mmWave radar-based 3D human pose estimation"
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.10,<3.13"
 license = { text = "MIT" }
 authors = [
   { name="Your Name", email="your@email.com" }
@@ -15,38 +15,34 @@ authors = [
 dependencies = [
     # Core ML frameworks
     "torch>=2.0",
-    "numpy>=1.24,<2.2",
-    
+    "numpy>=1.24",
     # OpenMMLab ecosystem
     "mmengine>=0.10.0",
     "mmcv>=2.0.0",
-    
     # Sparse convolution (optional, for SECOND backbone)
     # "spconv-cu118>=2.3.0",  # Uncomment and adjust CUDA version as needed
-    
     # Visualization
     "pyqtgraph>=0.13.0",
     "PySide6>=6.5.0",
     "pyopengl>=3.1.0",
     "matplotlib>=3.7.0",
-    
     # Data processing
     "h5py>=3.9.0",
     "pandas>=2.0.0",
     "scipy>=1.11.0",
     "scikit-learn>=1.3.0",
     "filterpy>=1.4.5",
-    
+    "pyquaternion>=0.9.9",
     # Serial communication (for IWR6843)
     "pyserial>=3.5",
-    
     # Input handling (for dataset collection)
     "pynput>=1.7.6",
-    
     # Utilities
     "tqdm>=4.65.0",
     "debugpy>=1.6.0",
     "networkx>=3.0",
+    "orjson>=3.9.0",
+    "mwcore",
 ]
 
 [project.optional-dependencies]
@@ -66,3 +62,6 @@ exclude = ["tests", "docs", "data", "checkpoints"]
 
 [tool.setuptools.package-data]
 "*" = ["*.yaml", "*.yml", "*.json", "*.cfg"]
+
+[tool.uv.sources]
+mwcore = { path = "../mwCore", editable = true }
