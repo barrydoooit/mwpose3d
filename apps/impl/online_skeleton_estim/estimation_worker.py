@@ -176,10 +176,6 @@ class InferenceWorker(QObject):
         # 1) Extend ring with newest frame
         self._frame_ring.append(frame)
 
-        # #region agent log
-        import json; open('/Users/joaquin/Desktop/delft/mwpose3d/.cursor/debug.log','a').write(json.dumps({"hypothesisId":"H1","location":"estimation_worker.py:enqueue","message":"frame_buffer_status","data":{"ring_len":len(self._frame_ring),"window_size":self._window_size},"timestamp":int(time.time()*1000)})+'\n')
-        # #endregion
-
         # 2) Warm-up: don't enqueue until the window is full
         if len(self._frame_ring) < self._window_size:
             return
@@ -271,28 +267,16 @@ class InferenceWorker(QObject):
                     pass
 
     def _run_inference(self, window_snapshot: tuple) -> Optional[np.ndarray]:
-        # #region agent log
-        import json; _infer_start = time.perf_counter(); open('/Users/joaquin/Desktop/delft/mwpose3d/.cursor/debug.log','a').write(json.dumps({"hypothesisId":"H4","location":"estimation_worker.py:_run_inference:start","message":"inference_starting","data":{"window_len":len(window_snapshot)},"timestamp":int(time.time()*1000)})+'\n')
-        # #endregion
         try:
             if self._serialize_engine:
                 with self._engine_lock:
                     out = self.inference_engine.infer_window(window_snapshot)
             else:
                 out = self.inference_engine.infer_window(window_snapshot)
-            # print("Interval since last output frame: {:.3f} s".format(
-            #     time.perf_counter() - self.last_output_frame_time
-            # ))
             self.last_output_frame_time = time.perf_counter()
         except Exception as e:
-            # #region agent log
-            import traceback; open('/Users/joaquin/Desktop/delft/mwpose3d/.cursor/debug.log','a').write(json.dumps({"hypothesisId":"H7","location":"estimation_worker.py:_run_inference:exception","message":"inference_exception","data":{"error":str(e),"traceback":traceback.format_exc()},"timestamp":int(time.time()*1000)})+'\n')
-            # #endregion
             self.error.emit(str(e))
             out = None
-        # #region agent log
-        _infer_dur = time.perf_counter() - _infer_start; open('/Users/joaquin/Desktop/delft/mwpose3d/.cursor/debug.log','a').write(json.dumps({"hypothesisId":"H4","location":"estimation_worker.py:_run_inference:end","message":"inference_complete","data":{"duration_ms":round(_infer_dur*1000,1),"has_output":out is not None,"output_shape":list(out.shape) if out is not None and hasattr(out,'shape') else None},"timestamp":int(time.time()*1000)})+'\n')
-        # #endregion
         return out
 
     def _maybe_dispatch_locked(self) -> None:
@@ -322,10 +306,6 @@ class InferenceWorker(QObject):
         except Exception as e:
             result = None
             self.error.emit(f"Inference task error: {e}")
-
-        # #region agent log
-        import json; open('/Users/joaquin/Desktop/delft/mwpose3d/.cursor/debug.log','a').write(json.dumps({"hypothesisId":"H2","location":"estimation_worker.py:_on_task_done","message":"task_done","data":{"has_result":result is not None,"result_shape":list(result.shape) if result is not None and hasattr(result,'shape') else None,"result_sample":result[:6].tolist() if result is not None else None},"timestamp":int(time.time()*1000)})+'\n')
-        # #endregion
 
         if result is not None:
             try:

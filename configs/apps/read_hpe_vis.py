@@ -23,5 +23,4 @@ vis_cfg = dict(
     joint_indices=list(range(0, 17)),  # all 17 mmFi joints
     # Offset to reverse preprocessing transform: skeleton Y was shifted by -3.15
     skeleton_offset=(0, 3.15, 0),
-    use_pcd_centroid=True,  # Track skeleton to point cloud position
 )

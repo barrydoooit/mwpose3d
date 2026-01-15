@@ -199,16 +199,8 @@ class InferenceEngine:
             'pcd_frames': tuple(frames_window),
             'remaining_frames_idx': list(range(len(frames_window))),
         }
-        # #region agent log
-        import json, time as _time; open('/Users/joaquin/Desktop/delft/mwpose3d/.cursor/debug.log','a').write(json.dumps({"hypothesisId":"H6","location":"inference_engine.py:infer_window:before_preprocess","message":"input_frames","data":{"num_frames":len(frames_window),"frame0_shape":list(frames_window[0].shape) if len(frames_window)>0 else None},"timestamp":int(_time.time()*1000)})+'\n')
-        # #endregion
         if self.preprocess_pipeline is not None:
             input_dict = self.preprocess_pipeline(input_dict)
-
-        # #region agent log
-        pcd_frames_after = input_dict.get('pcd_frames', ())
-        open('/Users/joaquin/Desktop/delft/mwpose3d/.cursor/debug.log','a').write(json.dumps({"hypothesisId":"H6","location":"inference_engine.py:infer_window:after_preprocess","message":"after_preprocess","data":{"num_frames_after":len(pcd_frames_after),"remaining_idx":input_dict.get('remaining_frames_idx',[])[:5]},"timestamp":int(_time.time()*1000)})+'\n')
-        # #endregion
 
         input_dict['pcd_frames'] = tuple(
             np.expand_dims(pcd_frame, axis=0) for pcd_frame in input_dict['pcd_frames']
@@ -224,9 +216,6 @@ class InferenceEngine:
         batch_inputs, data_samples_0 = self._postprocess(batch_inputs, data_samples_0)
 
         pred = data_samples_0.pred
-        # #region agent log
-        open('/Users/joaquin/Desktop/delft/mwpose3d/.cursor/debug.log','a').write(json.dumps({"hypothesisId":"H6","location":"inference_engine.py:infer_window:after_model","message":"model_output","data":{"pred_shape":list(pred.shape) if pred is not None else None,"pred_sample":pred.view(-1)[:5].tolist() if pred is not None else None},"timestamp":int(_time.time()*1000)})+'\n')
-        # #endregion
         preds = pred if pred.is_contiguous() else pred.contiguous()
         out = preds.view(-1).detach().cpu().numpy().copy()
         if preds.ndim == 2:
