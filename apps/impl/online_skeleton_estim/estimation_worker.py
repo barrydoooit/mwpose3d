@@ -2,6 +2,7 @@ from collections import deque
 from functools import partial
 import mmap
 import struct
+import sys
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, Future
@@ -10,6 +11,18 @@ import numpy as np
 from typing import TYPE_CHECKING, Deque, List, Optional
 
 from mwpose3d.utils.kinect_toolkits.kinectData import KeypointType
+
+# Windows named shared memory (mmap with tagname) is not available on macOS/Linux
+IS_WINDOWS = sys.platform == "win32"
+
+def create_named_mmap(size: int, tagname: str, access: int = mmap.ACCESS_WRITE) -> Optional[mmap.mmap]:
+    """Create a named memory-mapped file. Windows only - returns None on other platforms."""
+    if not IS_WINDOWS:
+        return None
+    try:
+        return mmap.mmap(-1, size, tagname=tagname, access=access)
+    except Exception:
+        return None
 if TYPE_CHECKING:
     from .online_skeletion_estim import OnlineSkeletionEstimationApp
     from mwpose3d.runner.inference_engine import InferenceEngine
@@ -84,24 +97,15 @@ class InferenceWorker(QObject):
         self._init_controller_mmf()
 
         # ADDED: Update-flag MMF (1 byte) to signal new frames have been written.
+        # Windows-only named shared memory for inter-process communication
         self._update_mmf: Optional[mmap.mmap] = None
         self._update_lock = threading.Lock()
-        try:
-            _update_map_name = r"Local\KinectUpdateFlag"
-            # create a 1-byte MMF for signalling; if creation fails, leave as None
-            self._update_mmf = mmap.mmap(-1, 1, tagname=_update_map_name, access=mmap.ACCESS_WRITE)
-            # initialize to zero
+        self._update_mmf = create_named_mmap(1, r"Local\KinectUpdateFlag")
+        if self._update_mmf is not None:
             try:
                 with self._update_lock:
                     self._update_mmf.seek(0)
                     self._update_mmf.write(b'\x00')
-            except Exception:
-                # ignore initialization errors
-                pass
-        except Exception as e:
-            # if creating the update mmf fails, keep it None and emit an error optionally
-            try:
-                self.error.emit(f"Could not create update MMF: {e}")
             except Exception:
                 pass
         # Ordering state
@@ -145,12 +149,9 @@ class InferenceWorker(QObject):
             pass
         self._controller_mmf = None
         if self._controller_packet_size > 0:
-            _controller_map_name = r"Local\KinectControl"
-            self._controller_mmf = mmap.mmap(
-                -1,
-                self._controller_packet_size,
-                tagname=_controller_map_name,
-                access=mmap.ACCESS_WRITE,
+            self._controller_mmf = create_named_mmap(
+                self._controller_packet_size, 
+                r"Local\KinectControl"
             )
     def _ensure_window_init(self):
         if self._window_size is not None:
@@ -174,6 +175,10 @@ class InferenceWorker(QObject):
         self.last_input_frame_time = time.perf_counter()
         # 1) Extend ring with newest frame
         self._frame_ring.append(frame)
+
+        # #region agent log
+        import json; open('/Users/joaquin/Desktop/delft/mwpose3d/.cursor/debug.log','a').write(json.dumps({"hypothesisId":"H1","location":"estimation_worker.py:enqueue","message":"frame_buffer_status","data":{"ring_len":len(self._frame_ring),"window_size":self._window_size},"timestamp":int(time.time()*1000)})+'\n')
+        # #endregion
 
         # 2) Warm-up: don't enqueue until the window is full
         if len(self._frame_ring) < self._window_size:
@@ -266,6 +271,9 @@ class InferenceWorker(QObject):
                     pass
 
     def _run_inference(self, window_snapshot: tuple) -> Optional[np.ndarray]:
+        # #region agent log
+        import json; _infer_start = time.perf_counter(); open('/Users/joaquin/Desktop/delft/mwpose3d/.cursor/debug.log','a').write(json.dumps({"hypothesisId":"H4","location":"estimation_worker.py:_run_inference:start","message":"inference_starting","data":{"window_len":len(window_snapshot)},"timestamp":int(time.time()*1000)})+'\n')
+        # #endregion
         try:
             if self._serialize_engine:
                 with self._engine_lock:
@@ -277,8 +285,14 @@ class InferenceWorker(QObject):
             # ))
             self.last_output_frame_time = time.perf_counter()
         except Exception as e:
+            # #region agent log
+            import traceback; open('/Users/joaquin/Desktop/delft/mwpose3d/.cursor/debug.log','a').write(json.dumps({"hypothesisId":"H7","location":"estimation_worker.py:_run_inference:exception","message":"inference_exception","data":{"error":str(e),"traceback":traceback.format_exc()},"timestamp":int(time.time()*1000)})+'\n')
+            # #endregion
             self.error.emit(str(e))
             out = None
+        # #region agent log
+        _infer_dur = time.perf_counter() - _infer_start; open('/Users/joaquin/Desktop/delft/mwpose3d/.cursor/debug.log','a').write(json.dumps({"hypothesisId":"H4","location":"estimation_worker.py:_run_inference:end","message":"inference_complete","data":{"duration_ms":round(_infer_dur*1000,1),"has_output":out is not None,"output_shape":list(out.shape) if out is not None and hasattr(out,'shape') else None},"timestamp":int(time.time()*1000)})+'\n')
+        # #endregion
         return out
 
     def _maybe_dispatch_locked(self) -> None:
@@ -308,6 +322,10 @@ class InferenceWorker(QObject):
         except Exception as e:
             result = None
             self.error.emit(f"Inference task error: {e}")
+
+        # #region agent log
+        import json; open('/Users/joaquin/Desktop/delft/mwpose3d/.cursor/debug.log','a').write(json.dumps({"hypothesisId":"H2","location":"estimation_worker.py:_on_task_done","message":"task_done","data":{"has_result":result is not None,"result_shape":list(result.shape) if result is not None and hasattr(result,'shape') else None,"result_sample":result[:6].tolist() if result is not None else None},"timestamp":int(time.time()*1000)})+'\n')
+        # #endregion
 
         if result is not None:
             try:
@@ -370,28 +388,18 @@ class InferenceWorkerThread(QThread):
         self._ctrl_joints: List[KeypointType] = []
         self.update_ctrl_joints(ctrl_joints)
         
-        _controller_map_name = r"Local\KinectControl"
-        self._controller_mmf = mmap.mmap(
-            -1, self._controller_packet_size, tagname=_controller_map_name, access=mmap.ACCESS_WRITE
-        )
+        # Windows-only named shared memory for controller communication
+        self._controller_mmf = create_named_mmap(self._controller_packet_size, r"Local\KinectControl")
         self._controller_lock = threading.Lock()
 
-        # ADDED: create update-flag MMF (1 byte) to signal new frames
+        # ADDED: create update-flag MMF (1 byte) to signal new frames (Windows only)
         self._update_lock = threading.Lock()
-        self._update_mmf: Optional[mmap.mmap] = None
-        try:
-            _update_map_name = r"Local\KinectUpdateFlag"
-            self._update_mmf = mmap.mmap(-1, 1, tagname=_update_map_name, access=mmap.ACCESS_WRITE)
+        self._update_mmf = create_named_mmap(1, r"Local\KinectUpdateFlag")
+        if self._update_mmf is not None:
             try:
                 with self._update_lock:
                     self._update_mmf.seek(0)
                     self._update_mmf.write(b'\x00')
-            except Exception:
-                pass
-        except Exception as e:
-            # best-effort: print since this thread class doesn't have an error signal
-            try:
-                print(f"Could not create update MMF: {e}")
             except Exception:
                 pass
         
