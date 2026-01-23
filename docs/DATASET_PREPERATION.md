@@ -1,6 +1,6 @@
-## Dataset Preparation
+## Public Dataset Preparation
 
-This guide walks you through preparing the datasets required for the project. We cover three datasets: **MARS**, **MM-Fi**, and **mRI**. Each section explains how to download, organize, and generate the data.
+This guide walks you through preparing the datasets required for the project. Taking three datasets as example: **MARS**, **MM-Fi**, and **mRI**. Each section explains how to download, organize, and generate the data.
 
 ---
 

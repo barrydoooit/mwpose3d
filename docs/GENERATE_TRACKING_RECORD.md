@@ -1,6 +1,6 @@
 ## Generating (Offboard) Tracking Records
 
-For each dataset, we can apply the trackers from mmcore to generate tracked/detected positions of human body, which can be utilized in gaming and pose estimation.
+For each dataset, we can apply the trackers from mmcore to generate tracked/detected positions of human body, which can be utilized directly or as anchor points for pose estimation.
 
 ---
 
