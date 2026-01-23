@@ -1,5 +1,5 @@
-from .second import SECOND
+# from .second import SECOND
 
-__all__ = [
-    "SECOND",
-]
+# __all__ = [
+#     "SECOND",
+# ]

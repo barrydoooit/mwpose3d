@@ -1,0 +1,28 @@
+[project]
+name = "mwpose3d"
+version = "0.1.0"
+requires-python = ">=3.10"
+dependencies = [
+  "mwcore==0.1.0",
+  "pandas",
+  "pyquaternion",
+]
+
+[build-system]
+requires = [
+  "setuptools>=68",
+  "wheel",
+  "numpy",
+  "torch",  # imports torch.utils.cpp_extension at build time
+]
+build-backend = "setuptools.build_meta"
+
+[tool.uv]
+no-build-isolation = true
+
+[tool.setuptools]
+packages = { find = { include = ["mwpose3d*"] } }
+
+# Put the mwcore repo path here
+[tool.uv.sources]
+mwcore = { path = "../mwCore", editable = true }
