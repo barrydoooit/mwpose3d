@@ -8,6 +8,10 @@ mwpose3d is a 3D human pose estimation toolbox built on PyTorch, specifically de
 
 ## Getting Started
 
+### Installation
+
+mwpose3d can be installed as a Python package following the [installation guide](./docs/INSTALLATION.md).
+
 ### Train & Test
 
 The following documents describe the end-to-end workflow for dataset preparation, model training, and evaluation:
