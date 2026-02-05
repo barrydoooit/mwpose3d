@@ -8,21 +8,62 @@ dependencies = [
   "pyquaternion",
 ]
 
+[project.optional-dependencies]
+cpu   = ["torch", "torchvision",]
+cu118 = ["torch", "torchvision",]
+cu121 = ["torch", "torchvision",]
+cu124 = ["torch", "torchvision",]
+
 [build-system]
 requires = [
   "setuptools>=68",
   "wheel",
   "numpy",
-  "torch",  # imports torch.utils.cpp_extension at build time
+  "torch",  # setup.py imports torch.utils.cpp_extension
 ]
 build-backend = "setuptools.build_meta"
 
 [tool.uv]
 no-build-isolation = true
 
+conflicts = [
+  [
+    { extra = "cpu" },
+    { extra = "cu118" },
+    { extra = "cu121" },
+    { extra = "cu124" },
+  ],
+]
+
 [tool.setuptools]
 packages = { find = { include = ["mwpose3d*"] } }
 
-# Put the mwcore repo path here
 [tool.uv.sources]
 mwcore = { path = "../mwCore", editable = true }
+
+torch = [
+  { index = "pytorch-cpu",  extra = "cpu" },
+  { index = "pytorch-cu118", extra = "cu118" },
+  { index = "pytorch-cu121", extra = "cu121" },
+  { index = "pytorch-cu124", extra = "cu124" },
+]
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[[tool.uv.index]]
+name = "pytorch-cu118"
+url = "https://download.pytorch.org/whl/cu118"
+explicit = true
+
+[[tool.uv.index]]
+name = "pytorch-cu121"
+url = "https://download.pytorch.org/whl/cu121"
+explicit = true
+
+[[tool.uv.index]]
+name = "pytorch-cu124"
+url = "https://download.pytorch.org/whl/cu124"
+explicit = true
