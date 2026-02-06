@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Optional, Tuple
 
 from PySide6.QtCore import Qt, QCoreApplication, QObject, Slot, QMetaObject, QThread, Signal, QTimer
+QCoreApplication.setAttribute(Qt.AA_UseDesktopOpenGL)
 from PySide6.QtWidgets import QApplication
 
 from mwcore.apps import BaseMWOnlineApp
@@ -121,7 +122,7 @@ class RawRadarWorker(QObject):
         """
         Blocking capture loop running in a separate thread.
         """
-        logger.info(f"Starting raw radar capture to {self._current_file}")
+        logger.info(f"[UdpRawReader] Starting raw radar capture to {self._current_file}")
         
         try:
             # Prepare config for reader
@@ -130,24 +131,29 @@ class RawRadarWorker(QObject):
             if 'output_dir' in cfg: 
                 del cfg['output_dir']
             
+            logger.info(f"[UdpRawReader] Configuration: {cfg}")
+            
             # Initialize reader
             if UdpRawDataReader is None:
                 raise ImportError("UdpRawDataReader not available")
 
+            logger.info(f"[UdpRawReader] Creating UdpRawDataReader with save_to_file={self._current_file}")
             self.reader = UdpRawDataReader(
                 save_to_file=str(self._current_file),
                 **cfg
             )
             
+            logger.info("[UdpRawReader] Calling reader.connect() to start UDP capture thread...")
             self.reader.connect()
             self._running = True
             self.started.emit()
             
             frame_count = 0
+            no_data_count = 0
             start_time = time.time()
             last_log_time = start_time
             
-            logger.info("Radar capture started - waiting for data...")
+            logger.info("[UdpRawReader] Radar capture started - entering read loop...")
             
             while self._running:
                 # Read frame
@@ -155,8 +161,12 @@ class RawRadarWorker(QObject):
                 data_ok, frame_num, det_obj = self.reader.read()
                 
                 if data_ok:
+                    if frame_count == 0:
+                        logger.info(f"[UdpRawReader] First frame received! frame_num={frame_num}, points={det_obj.get('numObj', 0)}")
+                    
                     frame_count += 1
                     num_points = det_obj.get('numObj', 0)
+                    no_data_count = 0  # Reset no-data counter
                     
                     # Log stats every second
                     current_time = time.time()
@@ -164,15 +174,24 @@ class RawRadarWorker(QObject):
                         elapsed = current_time - start_time
                         fps = frame_count / elapsed if elapsed > 0 else 0
                         stats_msg = f"Frame: {frame_num} | FPS: {fps:.1f} | Pts: {num_points}"
+                        logger.info(f"[UdpRawReader] {stats_msg}")
                         self.frame_stats.emit(stats_msg)
                         last_log_time = current_time
                 else:
+                    no_data_count += 1
+                    # Log every 1000 attempts (roughly every second if sleeping 0.001s)
+                    if no_data_count == 1:
+                        logger.info(f"[UdpRawReader] No data yet (frame_num={frame_num}), waiting for radar UDP packets...")
+                    elif no_data_count % 1000 == 0:
+                        logger.warning(f"[UdpRawReader] Still no data after {no_data_count} attempts. Check if radar is transmitting to configured IP/port.")
+                    
                     # No data, small sleep
                     time.sleep(0.001)
                     
         except Exception as e:
-            logger.error(f"Error in raw radar capture loop: {e}", exc_info=True)
+            logger.error(f"[UdpRawReader] Error in raw radar capture loop: {e}", exc_info=True)
         finally:
+            logger.info(f"[UdpRawReader] Capture loop ending. Total frames captured: {frame_count}")
             self._cleanup_reader()
             self._running = False
             self.finished.emit()
@@ -180,9 +199,11 @@ class RawRadarWorker(QObject):
     def _cleanup_reader(self):
         if self.reader:
             try:
+                logger.info("[UdpRawReader] Closing reader and .bin file...")
                 self.reader.close()
+                logger.info("[UdpRawReader] Reader closed successfully")
             except Exception as e:
-                logger.error(f"Error closing reader: {e}")
+                logger.error(f"[UdpRawReader] Error closing reader: {e}")
             self.reader = None
 
     @Slot()
@@ -319,7 +340,11 @@ class _RawLoopController(QObject):
             lambda x: self.app.visualizer.update_label(x))
             
         # 2. Flow Control
-        # Init complete -> Check Kinect -> Start Radar
+        # Kinect startup signal -> Start radar and instructions
+        self.app.kinect_mgr_worker.captureProcessStartedSignal.connect(
+            self._on_kinect_started, Qt.ConnectionType.QueuedConnection)
+        
+        # Init complete -> Start Kinect
         self.app.instruction_worker.finishedOnInit.connect(
             self._on_init_stage_complete, Qt.ConnectionType.QueuedConnection)
             
@@ -336,30 +361,27 @@ class _RawLoopController(QObject):
     @Slot()
     def _on_init_stage_complete(self):
         app = self.app
-        # Start Kinect if not running
         if not app.kinect_mgr_worker._running:
+            logger.info("Starting Kinect Manager...")
             app.kinect_mgr_worker.startSkeletonCaptureSignal.emit()
-
-        # Check for Kinect ready
-        timer = QTimer(self)
-        timer.setInterval(2000)
+        else:
+            # Already running, just trigger the started handler
+            self._on_kinect_started()
+    
+    @Slot()
+    def _on_kinect_started(self):
+        """Called when Kinect process has successfully started."""
+        logger.info("Kinect Manager started successfully.")
+        app = self.app
         
-        def _check():
-            if app.kinect_mgr_worker._running:
-                timer.stop()
-                # Start Radar Capture
-                app.raw_radar_worker.startCaptureSignal.emit()
-                
-                # Resume Kinect capture (recording mode)
-                app.kinect_mgr_worker.resumeSkeletonCaptureSignal.emit()
-                
-                # Update Instructions
-                app.instruction_worker.instructionsOnStart.emit()
-            else:
-                logger.info("Waiting for Kinect Manager to start…")
-                
-        timer.timeout.connect(_check)
-        timer.start()
+        # Start Radar Capture
+        app.raw_radar_worker.startCaptureSignal.emit()
+        
+        # Resume Kinect capture (recording mode)
+        app.kinect_mgr_worker.resumeSkeletonCaptureSignal.emit()
+        
+        # Update Instructions
+        app.instruction_worker.instructionsOnStart.emit()
 
     @Slot()
     def _on_cycle_complete(self):

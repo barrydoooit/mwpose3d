@@ -42,21 +42,49 @@ class KinectManagerWorker(QObject):
     
     @Slot()
     def _on_start(self):
+        # Don't call refresh() here - it closes/recreates the mmap which conflicts
+        # with the subprocess trying to create the same named mmap
+        # refresh() should only be called when STOPPING to clean up stale state
         self._ct = threading.Thread(target=self._run_capture_loop, name="KinectCaptureLoop", daemon=True)
         self._ct.start()
     
     def _run_capture_loop(self):
         try:
+            logger.info("[Kinect] Starting Kinect subprocess...")
             self.kinect_mgr.start_skeleton_capture()
+            logger.info("[Kinect] Waiting for capture to start (checking for mmap data)...")
             self.kinect_mgr.wait_for_capture_starts()
             self.captureProcessStartedSignal.emit()
+            logger.info("[Kinect] Capture process started successfully!")
         except Exception as e:
-            logger.error(f"Error starting Kinect capture: {e}")
+            logger.error(f"[Kinect] Error starting Kinect capture: {e}")
             return
 
         self._running = self.kinect_mgr.running
         self._paused = False
         
+        # Start thread to monitor subprocess output
+        if self.kinect_mgr.process:
+            import threading
+            def log_subprocess_output():
+                if self.kinect_mgr.process.stdout:
+                    for line in iter(self.kinect_mgr.process.stdout.readline, b''):
+                        if line:
+                            logger.info(f"[Kinect stdout] {line.decode().strip()}")
+            
+            def log_subprocess_error():
+                if self.kinect_mgr.process.stderr:
+                    for line in iter(self.kinect_mgr.process.stderr.readline, b''):
+                        if line:
+                            logger.warning(f"[Kinect stderr] {line.decode().strip()}")
+            
+            stdout_thread = threading.Thread(target=log_subprocess_output, daemon=True)
+            stderr_thread = threading.Thread(target=log_subprocess_error, daemon=True)
+            stdout_thread.start()
+            stderr_thread.start()
+        
+        logger.info("[Kinect] Entering skeleton capture loop...")
+        skeleton_count = 0
         while self._running and not QThread.currentThread().isInterruptionRequested():
             if self._paused:
                 time.sleep(0.1)
@@ -64,14 +92,21 @@ class KinectManagerWorker(QObject):
             try:
                 new = self.kinect_mgr.get_new_records()
             except Exception as e:
-                logger.error(f"Error getting new records: {e}")
+                logger.error(f"[Kinect] Error getting new records: {e}")
                 break
 
             if new:
                 self.skeletons.extend(new)
+                skeleton_count += len(new)
+                if skeleton_count == 1:
+                    logger.info("[Kinect] First skeleton frame received!")
+                elif skeleton_count % 100 == 0:
+                    logger.info(f"[Kinect] Captured {skeleton_count} skeleton frames so far")
                 self.recentSkeletonJointCoordSignal.emit(self.skeletons[-1].flatten()[1][2:])  # Emit only the flattened data excluding timestamp and unix_ms
             
             time.sleep(0.01)
+        
+        logger.info(f"[Kinect] Capture loop ended. Total skeletons captured: {skeleton_count}")
 
     @Slot()
     def _on_pause(self):

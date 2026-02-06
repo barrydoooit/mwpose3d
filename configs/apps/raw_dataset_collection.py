@@ -32,7 +32,7 @@ reader_cfg = dict(
     enable_static_clutter_removal=True,
     energy_top_128=True,
     range_cut=True,
-    output_dir=f'{data_root}/radar_bin'
+    output_dir=f'{data_root}/radar_bin_2'
 )
 
 kinect_cfg = dict(
