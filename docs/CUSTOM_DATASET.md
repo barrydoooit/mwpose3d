@@ -29,6 +29,14 @@ python tools/run_app.py configs.apps/dataset_collection_and_hpe.py
 
 > **Note:** Documentation for generating `DumpKinectSkeleton.exe` is currently under development and will be provided in a future update.
 
+#### Raw Data Collection Mode
+
+This mode collects raw `.bin` radar frames instead of point clouds, utilizing the `UdpRawDataReader` for capturing raw ADC data.
+
+```python
+python tools/run_app.py configs.apps/raw_dataset_collection.py
+```
+
 ---
 
 ### Dataset Preparation

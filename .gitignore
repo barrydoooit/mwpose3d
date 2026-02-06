@@ -16,3 +16,5 @@ requirements.txt
 **.csv
 **.json
 traces
+
+apps/impl/dataset_collection/DumpKinectSkeleton
