@@ -19,12 +19,10 @@ from apps.impl.dataset_collection.metadata_input_dialog import InputPopupDialog
 from apps.impl.dataset_collection.instruction_thread import InstructionWorker
 from apps.impl.dataset_collection.kinect_manager_thread import KinectManagerWorker
 
+
 # Try to import UdpRawDataReader from mwcore as per user instruction
-try:
-    from mwcore.radario.readers.TI.DCA1000EVM.udp_raw_reader import UdpRawDataReader
-except ImportError:
-    # If not available, we define a dummy for type checking or fail later
-    UdpRawDataReader = None
+# REMOVED: In-process UdpRawDataReader import as we use external script now
+import subprocess
 
 logging.basicConfig(
     level=logging.INFO,
@@ -38,10 +36,11 @@ if TYPE_CHECKING:
     from mwpose3d.visualization.skel_online import OnlineSkeletonVisualizer
 
 
-class RawRadarWorker(QObject):
+
+class MwCoreRawRadarWorker(QObject):
     """
-    Worker to handle raw radar data capture using UdpRawDataReader.
-    Running in a separate thread (via QThread), and spawning a sub-thread for the blocking capture loop.
+    Worker to handle raw radar data capture by executing an external script via uv run.
+    Replaces the previous in-process UdpRawDataReader.
     """
     # Signals
     started = Signal()
@@ -51,14 +50,14 @@ class RawRadarWorker(QObject):
     # Signal to receive metadata from the UI
     recordMeta = Signal(dict)
     
-    # Internal signal to trigger start from controller
+    # Internal signals
     startCaptureSignal = Signal()
     stopCaptureSignal = Signal()
 
     def __init__(self, reader_cfg: dict):
         super().__init__()
         self.reader_cfg = reader_cfg
-        self.reader = None
+        self._process = None
         self._running = False
         
         # Output directory setup
@@ -66,8 +65,11 @@ class RawRadarWorker(QObject):
         self._output_dir.mkdir(parents=True, exist_ok=True)
         
         self._current_file = None
-        self._capture_thread: Optional[threading.Thread] = None
         self._metadata_file = self._output_dir / "metadata.csv"
+        
+        # Path to the external script
+        # Assuming fixed location based on workspace structure
+        self._script_path = Path("e:/Projects/mwCore/tools/capture_raw_data.py")
 
     @Slot(dict)
     def _on_record_meta(self, meta: dict):
@@ -86,7 +88,6 @@ class RawRadarWorker(QObject):
             logger.error(f"Failed to write metadata: {e}")
 
         # Construct filename based on metadata
-        # Convention: {ParticipantID}_{Game}_{Description}_{Timestamp}.bin
         pid = meta.get("Participant ID", "P00").replace(" ", "")
         game = meta.get("Game", "Game").replace(" ", "")
         desc = meta.get("Description", "").replace(" ", "")
@@ -102,137 +103,138 @@ class RawRadarWorker(QObject):
 
     @Slot()
     def _on_start_capture(self):
-        """
-        Start the capture process in a separate thread.
-        """
         if self._running:
             logger.warning("Capture already running")
             return
 
         if not self._current_file:
-            # Fallback filename if no metadata received
             timestamp = time.strftime("%Y%m%d_%H%M%S")
             self._current_file = self._output_dir / f"capture_{timestamp}.bin"
             logger.info(f"No metadata received, using fallback filename: {self._current_file}")
-
-        self._capture_thread = threading.Thread(target=self._capture_loop, name="RawRadarCapture", daemon=True)
-        self._capture_thread.start()
-
-    def _capture_loop(self):
-        """
-        Blocking capture loop running in a separate thread.
-        """
-        logger.info(f"[UdpRawReader] Starting raw radar capture to {self._current_file}")
+            
+        logger.info(f"Starting external radar capture script: {self._script_path}")
+        logger.info(f"Saving to: {self._current_file}")
         
         try:
-            # Prepare config for reader
-            cfg = self.reader_cfg.copy()
-            # Remove output_dir from cfg as it's not a UdpRawDataReader param
-            if 'output_dir' in cfg: 
-                del cfg['output_dir']
+            # Construct command: uv run <script> --save-file <file>
+            # Note: We don't pass other config params as arguments since the script 
+            # likely uses default or internal config for the reader. 
+            # If specific params are needed, they should be added here.
+            cmd = [
+                "uv", "run",
+                str(self._script_path),
+                "--save-file", str(self._current_file)
+            ]
             
-            logger.info(f"[UdpRawReader] Configuration: {cfg}")
+            # Start subprocess
+            # We use bufsize=1 for line buffering
+            # Start subprocess
+            # Use sys.executable to run directly, avoiding uv overhead/signals
+            cmd = [
+                sys.executable,
+                str(self._script_path),
+                "--save-file", str(self._current_file)
+            ]
             
-            # Initialize reader
-            if UdpRawDataReader is None:
-                raise ImportError("UdpRawDataReader not available")
-
-            logger.info(f"[UdpRawReader] Creating UdpRawDataReader with save_to_file={self._current_file}")
-            self.reader = UdpRawDataReader(
-                save_to_file=str(self._current_file),
-                **cfg
+            logger.info(f"Running command: {cmd}")
+            
+            self._process = subprocess.Popen(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE
+                # Default buffering, binary mode
             )
             
-            logger.info("[UdpRawReader] Calling reader.connect() to start UDP capture thread...")
-            self.reader.connect()
             self._running = True
             self.started.emit()
             
-            frame_count = 0
-            no_data_count = 0
-            start_time = time.time()
-            last_log_time = start_time
+            # Start threads to monitor stdout/stderr without blocking
+            self._start_log_threads()
             
-            logger.info("[UdpRawReader] Radar capture started - entering read loop...")
-            
-            while self._running:
-                # Read frame
-                # Note: read() might block, but we expect it to return reasonably often
-                data_ok, frame_num, det_obj = self.reader.read()
-                
-                if data_ok:
-                    if frame_count == 0:
-                        logger.info(f"[UdpRawReader] First frame received! frame_num={frame_num}, points={det_obj.get('numObj', 0)}")
-                    
-                    frame_count += 1
-                    num_points = det_obj.get('numObj', 0)
-                    no_data_count = 0  # Reset no-data counter
-                    
-                    # Log stats every second
-                    current_time = time.time()
-                    if current_time - last_log_time >= 1.0:
-                        elapsed = current_time - start_time
-                        fps = frame_count / elapsed if elapsed > 0 else 0
-                        stats_msg = f"Frame: {frame_num} | FPS: {fps:.1f} | Pts: {num_points}"
-                        logger.info(f"[UdpRawReader] {stats_msg}")
-                        self.frame_stats.emit(stats_msg)
-                        last_log_time = current_time
-                else:
-                    no_data_count += 1
-                    # Log every 1000 attempts (roughly every second if sleeping 0.001s)
-                    if no_data_count == 1:
-                        logger.info(f"[UdpRawReader] No data yet (frame_num={frame_num}), waiting for radar UDP packets...")
-                    elif no_data_count % 1000 == 0:
-                        logger.warning(f"[UdpRawReader] Still no data after {no_data_count} attempts. Check if radar is transmitting to configured IP/port.")
-                    
-                    # No data, small sleep
-                    time.sleep(0.001)
-                    
         except Exception as e:
-            logger.error(f"[UdpRawReader] Error in raw radar capture loop: {e}", exc_info=True)
-        finally:
-            logger.info(f"[UdpRawReader] Capture loop ending. Total frames captured: {frame_count}")
-            self._cleanup_reader()
+            logger.error(f"Failed to start external capture script: {e}")
             self._running = False
             self.finished.emit()
 
-    def _cleanup_reader(self):
-        if self.reader:
+    def _start_log_threads(self):
+        """Starts threads to read stdout and stderr from the subprocess."""
+        
+        def log_stdout():
+            if not self._process or not self._process.stdout:
+                return
             try:
-                logger.info("[UdpRawReader] Closing reader and .bin file...")
-                self.reader.close()
-                logger.info("[UdpRawReader] Reader closed successfully")
+                # Read binary lines
+                for line_bytes in iter(self._process.stdout.readline, b''):
+                    if line_bytes:
+                        try:
+                            line = line_bytes.decode('utf-8', errors='replace').strip()
+                        except:
+                            continue
+                            
+                        # Filtering: Reduce log spam to avoid blocking the pipe/GUI
+                        # Only log frame stats and errors/warnings
+                        is_stats = "Frame" in line and "|" in line
+                        
+                        if is_stats:
+                            logger.info(f"[RadarScript] {line}")
+                            self.frame_stats.emit(line)
+                        else:
+                            # Log other output as debug, or if it looks important
+                            if "Error" in line or "Warning" in line or "Exception" in line:
+                                logger.warning(f"[RadarScript Out] {line}")
+                            else:
+                                logger.debug(f"[RadarScript Debug] {line}")
             except Exception as e:
-                logger.error(f"[UdpRawReader] Error closing reader: {e}")
-            self.reader = None
+                logger.error(f"Error reading stdout: {e}")
+
+        def log_stderr():
+            if not self._process or not self._process.stderr:
+                return
+            try:
+                for line_bytes in iter(self._process.stderr.readline, b''):
+                    if line_bytes:
+                        try:
+                            line = line_bytes.decode('utf-8', errors='replace').strip()
+                            logger.warning(f"[RadarScript Error] {line}")
+                        except:
+                            pass
+            except Exception as e:
+                logger.error(f"Error reading stderr: {e}")
+
+        t_out = threading.Thread(target=log_stdout, daemon=True, name="RadarScriptStdout")
+        t_err = threading.Thread(target=log_stderr, daemon=True, name="RadarScriptStderr")
+        t_out.start()
+        t_err.start()
 
     @Slot()
     def _on_stop_capture(self):
-        """
-        Signal to stop the capture loop.
-        """
         if not self._running:
             return
             
-        logger.info("Stopping raw radar capture...")
+        logger.info("Stopping external radar capture...")
+        
+        if self._process:
+            # Try to terminate gracefully
+            self._process.terminate()
+            try:
+                self._process.wait(timeout=2.0)
+            except subprocess.TimeoutExpired:
+                logger.warning("Capture script did not exit in time, killing...")
+                self._process.kill()
+            
+            logger.info("External capture script stopped.")
+            self._process = None
+            
         self._running = False
-        
-        # Wait for thread to join if it's not the current thread
-        if self._capture_thread and self._capture_thread.is_alive():
-            if threading.current_thread() != self._capture_thread:
-                self._capture_thread.join(timeout=2.0)
-                if self._capture_thread.is_alive():
-                    logger.warning("Capture thread did not finish cleanly")
-        
-        self._capture_thread = None
+        self.finished.emit()
 
     @classmethod
-    def build_with_thread(cls, reader_cfg: dict) -> Tuple['RawRadarWorker', QThread]:
+    def build_with_thread(cls, reader_cfg: dict) -> Tuple['MwCoreRawRadarWorker', QThread]:
         worker = cls(reader_cfg)
         thread = QThread()
         worker.moveToThread(thread)
         
-        # Wiring signals to slots within the worker (queued connection by default across threads)
+        # Wiring signals/slots
         worker.startCaptureSignal.connect(worker._on_start_capture)
         worker.stopCaptureSignal.connect(worker._on_stop_capture)
         worker.recordMeta.connect(worker._on_record_meta)
@@ -243,6 +245,7 @@ class RawRadarWorker(QObject):
         thread.finished.connect(thread.deleteLater)
         
         return worker, thread
+
 
 
 @APPS.register_module()
@@ -270,7 +273,7 @@ class RawDatasetCollectionApp(BaseMWOnlineApp):
         
         # 3. Raw Radar Worker (Replaces standard reader and buffer)
         # We use the passed reader_cfg for our raw worker
-        self.raw_radar_worker, self.raw_radar_thread = RawRadarWorker.build_with_thread(reader_cfg)
+        self.raw_radar_worker, self.raw_radar_thread = MwCoreRawRadarWorker.build_with_thread(reader_cfg)
         
         # Stop the base class's reader thread if it exists and started (it shouldn't be started yet)
         if hasattr(self, 'reader_thread'):
