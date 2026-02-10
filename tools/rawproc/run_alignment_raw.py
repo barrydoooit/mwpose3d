@@ -1,11 +1,20 @@
 
 import argparse
+import sys
 from pathlib import Path
+import logging
+
+# Add project root to sys.path to ensure imports work correctly
+# This allows running the script directly from any directory
+FILE_PATH = Path(__file__).resolve()
+PROJECT_ROOT = FILE_PATH.parents[2]  # tools/rawproc/run_alignment_raw.py -> tools/rawproc -> tools -> root
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
 import pandas as pd
 import numpy as np
-from .episode import Episode
-from .alignment import AlignTraces
-import logging
+from tools.rawproc.episode import Episode
+from tools.rawproc.alignment import AlignTraces
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
