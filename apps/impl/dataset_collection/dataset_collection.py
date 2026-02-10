@@ -99,9 +99,9 @@ class _LoopController(QObject):
         self.metainfo_popup.submitted.connect(self.app.pcd_buffering_worker.recordMeta.emit)
 
         # Wire signals
-        self.app.reader_thread.array_data.connect(self.app.visualizer.on_new_cloud, Qt.ConnectionType.QueuedConnection)
+        self.app.reader_thread.array_data.connect(self.app.visualizer.on_new_cloud, Qt.ConnectionType.QueuedConnection) # cloud vis
         self.app.pcd_buffering_worker.frameCount.connect(lambda x: self.app.visualizer.update_label(f"Frames: {x:04d}"))
-        self.app.kinect_mgr_worker.recentSkeletonJointCoordSignal.connect(self.app.visualizer.update_skeleton, Qt.ConnectionType.QueuedConnection)
+        self.app.kinect_mgr_worker.recentSkeletonJointCoordSignal.connect(self.app.visualizer.update_skeleton, Qt.ConnectionType.QueuedConnection) # skeleton vis
         self.app.instruction_worker.finishedOnInit.connect(self._on_init_stage_complete, Qt.ConnectionType.QueuedConnection)
         self.app.pcd_buffering_worker.bufferFull.connect(self._on_buffer_full)
         self.app.pcd_buffering_worker.bufferDumped.connect(self.app.kinect_mgr_worker.dumpSkeletonsSignal.emit)

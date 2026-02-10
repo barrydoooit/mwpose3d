@@ -29,10 +29,14 @@ instructions = dict(
 data_root = 'apps/impl/dataset_collection/traces/raw_collection'
 
 reader_cfg = dict(
-    enable_static_clutter_removal=True,
-    energy_top_128=True,
-    range_cut=True,
-    output_dir=f'{data_root}/radar_bin_2'
+    type='UdpRawDataReader',
+    process_point_cloud=False, # causes much delay
+    save_to_file=f'{data_root}/raw/timed_frames.bin'
+)
+
+buffer_cfg = dict(
+    dump_dir=f'{data_root}/pointcloud',
+    buffer_size=5000
 )
 
 kinect_cfg = dict(

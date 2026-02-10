@@ -3,8 +3,8 @@ import argparse
 from pathlib import Path
 import pandas as pd
 import numpy as np
-from tools.rawproc.episode import Episode
-from tools.rawproc.alignment import AlignTraces
+from .episode import Episode
+from .alignment import AlignTraces
 import logging
 
 logging.basicConfig(level=logging.INFO)
@@ -12,15 +12,61 @@ logger = logging.getLogger(__name__)
 
 def main():
     parser = argparse.ArgumentParser(description="Align raw radar data (.bin) with Kinect data (.csv)")
-    parser.add_argument("--radar-bin", type=str, required=True, help="Path to radar .bin file")
-    parser.add_argument("--kinect-csv", type=str, required=True, help="Path to Kinect .csv file")
+
+    parser.add_argument("--radar-bin", type=str, help="Path to radar .bin file")
+    parser.add_argument("--kinect-csv", type=str, help="Path to Kinect .csv file")
+    parser.add_argument("--dir", type=str, help="Base directory containing 'raw' and 'kinect' subfolders. Overrides --radar-bin/--kinect-csv")
     parser.add_argument("--output-dir", type=str, required=True, help="Directory to save aligned output")
     parser.add_argument("--episode-name", type=str, help="Episode name (optional, defaults to filename stem)")
     
     args = parser.parse_args()
     
-    radar_path = Path(args.radar_bin)
-    kinect_path = Path(args.kinect_csv)
+    # Logic to resolve paths
+    radar_path = None
+    kinect_path = None
+    
+    if args.dir:
+        base_dir = Path(args.dir)
+        raw_dir = base_dir / 'raw'
+        kinect_dir = base_dir / 'kinect'
+        
+        if not raw_dir.exists():
+            # Fallback for "radar_bin" folder naming if "raw" doesn't exist?
+            # User specifically said "raw/", sticking to it strictly for now.
+            logger.error(f"Raw directory not found: {raw_dir}")
+            return
+        if not kinect_dir.exists():
+            logger.error(f"Kinect directory not found: {kinect_dir}")
+            return
+            
+        # Find files
+        # We'll take the first one found or error if multiple/none
+        radar_files = list(raw_dir.glob("*.bin"))
+        kinect_files = list(kinect_dir.glob("*.csv"))
+        
+        if len(radar_files) == 0:
+            logger.error(f"No .bin files found in {raw_dir}")
+            return
+        if len(kinect_files) == 0:
+            logger.error(f"No .csv files found in {kinect_dir}")
+            return
+            
+        if len(radar_files) > 1 or len(kinect_files) > 1:
+            logger.warning(f"Multiple files found in {args.dir}. Using the first pair found.")
+            # Optional: Implement matching logic here if needed (e.g. by timestamp)
+            # For now, simplistic approach:
+            
+        radar_path = radar_files[0]
+        kinect_path = kinect_files[0]
+        
+        logger.info(f"Auto-detected inputs:\nRadar: {radar_path}\nKinect: {kinect_path}")
+        
+    else:
+        if not args.radar_bin or not args.kinect_csv:
+            parser.error("If --dir is not specified, --radar-bin and --kinect-csv are required.")
+        radar_path = Path(args.radar_bin)
+        kinect_path = Path(args.kinect_csv)
+
     output_dir = Path(args.output_dir)
     
     if not radar_path.exists():
