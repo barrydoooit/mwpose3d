@@ -86,7 +86,7 @@ class Episode:
                         # point: [x, y, z, v, energy, r]
                         rows.append({
                             'seq': reader.current_frame_idx - 1, # 0-indexed seq
-                            'ts': ts * 1000, # Convert to ms if it's unix seconds, or keep as is?
+                            'ts': int(ts * 1000), # Convert to ms if it's unix seconds, or keep as is?
                                              # Usually pcd_df 'ts' is unix_ms or similar int.
                                              # If ts is float seconds, * 1000 -> ms.
                                              # User said "assume these are at the beginning (a float value)".

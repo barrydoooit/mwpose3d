@@ -34,46 +34,46 @@ def load_framed_skeleton_csv_to_df(csv_path: Path) -> pd.DataFrame:
 # NOTE: DEPRECATED: These functions below are used to process the csv from original BodyFrameDumper.cs. 
 # From now on the data is collected after organizing each frame to a single row.
 
-def clean_raw_skeleton_df(raw_skeleton_df: pd.DataFrame) -> pd.DataFrame:
-    raw_skeleton_df.rename(columns=lambda x: x.strip('#').strip(), inplace=True)
-    cleaned_df = raw_skeleton_df.groupby('timestamp').filter(lambda group: len(group) == len(kntk.kinectData.ALL_KEYPOINTS))
-    cleaned_df.reset_index(drop=True, inplace=True)
-    return cleaned_df
+# def clean_raw_skeleton_df(raw_skeleton_df: pd.DataFrame) -> pd.DataFrame:
+#     raw_skeleton_df.rename(columns=lambda x: x.strip('#').strip(), inplace=True)
+#     cleaned_df = raw_skeleton_df.groupby('timestamp').filter(lambda group: len(group) == len(kntk.kinectData.ALL_KEYPOINTS))
+#     cleaned_df.reset_index(drop=True, inplace=True)
+#     return cleaned_df
 
-def load_raw_skeleton_csv_to_df(csv_path: Path, parse: bool = True) -> pd.DataFrame:
-    raw_skeleton_df = clean_raw_skeleton_df(pd.read_csv(csv_path))
-    if not parse:
-        return raw_skeleton_df
+# def load_raw_skeleton_csv_to_df(csv_path: Path, parse: bool = True) -> pd.DataFrame:
+#     raw_skeleton_df = clean_raw_skeleton_df(pd.read_csv(csv_path))
+#     if not parse:
+#         return raw_skeleton_df
     
-    skeleton_list: List[kntk.Skeleton] = kntk.process_record(raw_skeleton_df)
-    rows = []
-    for skeleton in skeleton_list:
-        ts = skeleton.timestamp
-        # TODO: current column name unix_ms is not correct. Should be unix_s
-        row = {'timestamp': ts, 'unix_ms': skeleton.unix_ms * 1000}
-        for kp_type, kp in skeleton.keypoints.items():
-            kp_type_str = kp_type.name.lower()
-            row.update({f'{kp_type_str}.x': kp.x,
-                        f'{kp_type_str}.y': kp.y,
-                        f'{kp_type_str}.z': kp.z})
-        rows.append(row)
-    if rows:
-        tmp_df = pd.DataFrame(rows)
-        x_cols = [c for c in tmp_df.columns if c.endswith('.x')]
-        y_cols = [c for c in tmp_df.columns if c.endswith('.y')]
-        z_cols = [c for c in tmp_df.columns if c.endswith('.z')]
+#     skeleton_list: List[kntk.Skeleton] = kntk.process_record(raw_skeleton_df)
+#     rows = []
+#     for skeleton in skeleton_list:
+#         ts = skeleton.timestamp
+#         # TODO: current column name unix_ms is not correct. Should be unix_s
+#         row = {'timestamp': ts, 'unix_ms': skeleton.unix_ms * 1000}
+#         for kp_type, kp in skeleton.keypoints.items():
+#             kp_type_str = kp_type.name.lower()
+#             row.update({f'{kp_type_str}.x': kp.x,
+#                         f'{kp_type_str}.y': kp.y,
+#                         f'{kp_type_str}.z': kp.z})
+#         rows.append(row)
+#     if rows:
+#         tmp_df = pd.DataFrame(rows)
+#         x_cols = [c for c in tmp_df.columns if c.endswith('.x')]
+#         y_cols = [c for c in tmp_df.columns if c.endswith('.y')]
+#         z_cols = [c for c in tmp_df.columns if c.endswith('.z')]
 
-        def max_over(cols):
-            if not cols:
-                return None
-            return tmp_df[cols].apply(pd.to_numeric, errors='coerce').max().max()
+#         def max_over(cols):
+#             if not cols:
+#                 return None
+#             return tmp_df[cols].apply(pd.to_numeric, errors='coerce').max().max()
 
-        max_x = max_over(x_cols)
-        max_y = max_over(y_cols)
-        max_z = max_over(z_cols)
-        overall_max = max(v for v in (max_x, max_y, max_z) if v is not None)
+#         max_x = max_over(x_cols)
+#         max_y = max_over(y_cols)
+#         max_z = max_over(z_cols)
+#         overall_max = max(v for v in (max_x, max_y, max_z) if v is not None)
 
-        print(f"Max X: {max_x}, Max Y: {max_y}, Max Z: {max_z}, Overall max: {overall_max}")
-    else:
-        print("No skeleton rows to compute maxima.")
-    return pd.DataFrame(rows)
+#         print(f"Max X: {max_x}, Max Y: {max_y}, Max Z: {max_z}, Overall max: {overall_max}")
+#     else:
+#         print("No skeleton rows to compute maxima.")
+#     return pd.DataFrame(rows)

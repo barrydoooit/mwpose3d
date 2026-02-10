@@ -18,3 +18,5 @@ requirements.txt
 traces
 
 apps/impl/dataset_collection/DumpKinectSkeleton
+
+tmpraw/

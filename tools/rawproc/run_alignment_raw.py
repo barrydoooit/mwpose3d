@@ -117,7 +117,7 @@ def main():
         # Episode usually expects "framed_skeleton" (one row per frame, clean columns).
         # load_raw_skeleton_csv_to_df returns a DataFrame with 'unix_ms', 'timestamp', and 'joint.x/y/z' columns.
         
-        episode.skel_df = load_utils.load_raw_skeleton_csv_to_df(kinect_path)
+        episode.skel_df = load_utils.load_framed_skeleton_csv_to_df(kinect_path)
         logger.info(f"Loaded {len(episode.skel_df)} skeleton frames.")
     except Exception as e:
         logger.error(f"Failed to load Kinect data: {e}")
