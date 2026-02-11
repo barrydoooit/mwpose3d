@@ -73,32 +73,19 @@ class Episode:
                 if data is None:
                     break
                 
-                # Unpack timestamp and point cloud
-                # RawBinReader returns (ts, pcd) if has_timestamp=True
                 ts, pcd = data
-                
-                # pcd is expected to be (6, N) numpy array
-                # x, y, z, v, energy, r
-                if pcd.shape[1] > 0:
-                     # Transpose to (N, 6) for easier iteration or direct assignment
-                    pcd_t = pcd.T
-                    for point in pcd_t:
-                        # point: [x, y, z, v, energy, r]
-                        rows.append({
-                            'seq': reader.current_frame_idx - 1, # 0-indexed seq
-                            'ts': int(ts * 1000), # Convert to ms if it's unix seconds, or keep as is?
-                                             # Usually pcd_df 'ts' is unix_ms or similar int.
-                                             # If ts is float seconds, * 1000 -> ms.
-                                             # User said "assume these are at the beginning (a float value)".
-                                             # I'll assume it's Unix Seconds (float) and convert to ms (int) for consistency with other parts of the system if needed.
-                                             # Existing 'ts' in load_pcd seems to be int(ts) from json.
-                                             # Let's assume ms is standard.
+                assert pcd.shape[1] == 6, f'pcd shape is {pcd.shape}, expected (6, N)'
+
+                pcd_t = pcd.T
+                for point in pcd_t:
+                    rows.append({
+                        'seq': reader.current_frame_idx, # 0 ind
+                        'ts': int(ts * 1000), 
                             'x': point[0],
                             'y': point[1],
                             'z': point[2],
                             'vel': point[3],
                             'snr': point[4],
-                            # 'r': point[5] # Not usually in pcd_df schema but available
                         })
         finally:
             reader.close()

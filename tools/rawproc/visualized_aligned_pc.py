@@ -5,7 +5,7 @@ import pandas as pd
 import numpy as np
 from PySide6.QtWidgets import QApplication
 
-# Add project root to sys.path
+# ensures can run from mwpose3d/ root
 FILE_PATH = Path(__file__).resolve()
 PROJECT_ROOT = FILE_PATH.parents[2]
 if str(PROJECT_ROOT) not in sys.path:
@@ -23,8 +23,6 @@ def get_skeleton_columns():
     return cols
 
 def main():
-    # 1. Configuration
-    # Adjust these paths to match your data
     data_dir = Path(r"E:\Projects\mwpose3d\tmpraw")
     episode_name = "radar_bin"
     
@@ -42,48 +40,36 @@ def main():
 
     print(f"Loaded {len(pcd_df)} points and {len(skel_df)} skeleton frames.")
 
-    # 2. Prepare Point Clouds
+
     print("Preparing point clouds...")
-    # Ensure sorted by timestamp
     pcd_df = pcd_df.sort_values('ts')
     
-    # Group by timestamp to get one frame per step
-    # The visualizer expects a list of numpy arrays (N, 3)
+
     pcd_frames = []
-    # Note: Using 'ts' to group because it's the alignment key
     for ts, group in pcd_df.groupby('ts', sort=False):
         xyz = group[['x', 'y', 'z']].values
         pcd_frames.append(xyz)
 
-    # 3. Prepare Skeletons
     print("Preparing skeletons...")
     skel_cols = get_skeleton_columns()
     
-    # Filter columns that actually exist in the dataframe
     valid_cols = [c for c in skel_cols if c in skel_df.columns]
-    
-    # Extract values as a list of flat arrays (one row per frame)
     skel_frames = skel_df[valid_cols].values
-    # Convert to list of arrays for the visualizer
     skel_frames_list = [frame for frame in skel_frames]
 
-    # 4. Launch Visualizer
     print("Launching visualizer...")
     app = QApplication.instance()
     if not app:
         app = QApplication(sys.argv)
 
-    # Ensure equal length for playback (alignment should guarantee this, but safety first)
-    min_len = min(len(pcd_frames), len(skel_frames_list))
-    pcd_frames = pcd_frames[:min_len]
-    skel_frames_list = skel_frames_list[:min_len]
+    assert len(pcd_frames) == len(skel_frames_list), "PCD and skeleton frames length mismatch"
 
     visualizer = PointCloudOfflineVisualizerSK(
         point_clouds=pcd_frames,
         skeletons=skel_frames_list,
-        total_frames=min_len,
-        play_fps=10,  # Adjust playback speed here
-        tracking_mode='dot' # Optional: 'dot' or 'bbox' if you had tracking data
+        total_frames=len(pcd_frames),
+        play_fps=10, 
+        tracking_mode='dot'
     )
     
     visualizer.show()
