@@ -29,13 +29,6 @@ python tools/run_app.py configs.apps/dataset_collection_and_hpe.py
 
 > **Note:** Documentation for generating `DumpKinectSkeleton.exe` is currently under development and will be provided in a future update.
 
-#### Raw Data Collection Mode
-
-This mode collects raw `.bin` radar frames instead of point clouds, utilizing the `UdpRawDataReader` for capturing raw ADC data.
-
-```python
-python tools/run_app.py configs.apps/raw_dataset_collection.py
-```
 
 ---
 
@@ -62,3 +55,4 @@ To split the dataset into different partitions (e.g., train, val, test):
 1.  Specify the partition name in the top-right text box.
 2.  Select the corresponding traces in the bottom panel.
 3.  Click **Allocate to Info** to assign the selected traces to the specified partition.
+

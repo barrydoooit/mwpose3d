@@ -26,11 +26,11 @@ instructions = dict(
     ]
 )
 
-data_root = 'apps/impl/dataset_collection/traces/raw_collection'
+data_root = 'apps/impl/dataset_collection/traces/raw_collection_headless'
 
 reader_cfg = dict(
     type='UdpRawDataReader',
-    process_point_cloud=False, # causes much delay
+    process_point_cloud=True, # causes much delay
     save_to_file=f'{data_root}/raw/timed_frames.bin'
 )
 

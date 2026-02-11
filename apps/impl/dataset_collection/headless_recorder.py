@@ -34,10 +34,15 @@ class HeadlessRecorder(QObject):
         
         # 1. Setup Reader
         logger.info("Initializing Reader...")
-        # Ensure process_point_cloud is False for headless to verify low latency, 
-        # OR user might want it True. We respect config.
-        # But user said "make it properly dump data".
-        self.reader = READERS.build(cfg.reader_cfg)
+        # For headless recording we want the same per-frame detection
+        # structure (x, y, z, doppler/vel, peakVal/snr, timestamp)
+        # that `PointCloudBufferingWorker.enqueue_raw` expects.
+        # Some configs (e.g. `raw_dataset_collection.py`) set
+        # `process_point_cloud=False` to reduce latency, which can
+        # result in empty detection arrays. Here we override this flag
+        # to ensure processed point clouds are produced.
+        reader_cfg = dict(cfg.reader_cfg)
+        self.reader = READERS.build(reader_cfg)
         self.reader_thread = OnlineReaderThread(self.reader)
         
         # 2. Setup Kinect
@@ -76,9 +81,25 @@ class HeadlessRecorder(QObject):
 
     def _start_capture(self):
         logger.info("Starting capture...")
+
+        # Provide minimal placeholder meta so that a corresponding file is
+        # written under `meta/` and the episode is accepted by the
+        # downstream `tools/create_data.py` pipeline and GUI.
+        meta_data = {
+            "Participant ID": "headless",
+            "Game": "headless",
+            "Position X": "0",
+            "Position Y": "0",
+            "Speed": "unknown",
+            "Description": f"headless run at {time.strftime('%Y-%m-%d %H:%M:%S')}",
+        }
+        # `recordMeta` is a Qt signal already connected to the worker's
+        # `record_meta` slot in `PointCloudBufferingWorker.build_with_thread`.
+        self.pcd_buffering_worker.recordMeta.emit(meta_data)
+
         self.kinect_worker.startSkeletonCaptureSignal.emit()
         self.kinect_worker.resumeSkeletonCaptureSignal.emit()
-        
+
         logger.info(f"Recording for {self.duration_sec} seconds...")
         self.stop_timer.start(int(self.duration_sec * 1000))
 
@@ -100,7 +121,7 @@ class HeadlessRecorder(QObject):
         
         # 2. Explicit Dump Kinect (just in case)
         timestamp = time.strftime("%Y%m%d_%H%M%S")
-        self.kinect_worker.dumpSkeletonsSignal.emit(f"kinect_{timestamp}.csv")
+        # self.kinect_worker.dumpSkeletonsSignal.emit(f"kinect_{timestamp}.csv")
         
         # Safety timeout to force quit if dump hangs
         QTimer.singleShot(5000, QCoreApplication.instance().quit)
@@ -120,10 +141,16 @@ def main():
     parser.add_argument('--cfg-options', nargs='+', action=DictAction)
     args = parser.parse_args()
 
+    
+
     cfg = Config.fromfile(args.config)
     if args.cfg_options is not None:
         cfg.merge_from_dict(args.cfg_options)
-
+    os.makedirs(cfg.data_root, exist_ok=True)
+    os.makedirs(os.path.join(cfg.data_root, 'meta'), exist_ok=True)
+    os.makedirs(os.path.join(cfg.data_root, 'pointcloud'), exist_ok=True)
+    os.makedirs(os.path.join(cfg.data_root, 'kinect'), exist_ok=True)
+    os.makedirs(os.path.join(cfg.data_root, 'raw'), exist_ok=True)
     app = QCoreApplication(sys.argv)
     
     recorder = HeadlessRecorder(cfg, args.duration)
