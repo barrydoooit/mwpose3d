@@ -1,3 +1,7 @@
+"""
+uv run .\tools\create_data.py custom --root-path "E:\projects\mwpose3d\apps\impl\dataset_collection\traces\raw_new_pc" --out-dir "."
+"""
+
 import argparse
 from pathlib import Path
 from typing import List, Literal

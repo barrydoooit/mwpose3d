@@ -3,6 +3,7 @@ import sys
 import time
 from typing import Optional, Union, TYPE_CHECKING
 import logging
+import os
 
 from apps.impl.dataset_collection.metadata_input_dialog import InputPopupDialog
 from mwpose3d.utils.typing_utils import ConfigType
@@ -42,6 +43,14 @@ class RawDatasetCollectionApp(BaseMWOnlineApp):
                  buffer_cfg: dict,
                  kinect_cfg: dict,
                  cfg: ConfigType = None):
+        
+        
+        os.makedirs(cfg.data_root, exist_ok=True)
+        os.makedirs(os.path.join(cfg.data_root, 'meta'), exist_ok=True)
+        os.makedirs(os.path.join(cfg.data_root, 'pointcloud'), exist_ok=True)
+        os.makedirs(os.path.join(cfg.data_root, 'kinect'), exist_ok=True)
+        os.makedirs(os.path.join(cfg.data_root, 'raw'), exist_ok=True)
+        
         super().__init__(reader_cfg, vis_cfg, cfg)
         self.app = QApplication(sys.argv)
         # Thread for displaying text instructions

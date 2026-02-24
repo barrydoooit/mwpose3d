@@ -3,14 +3,6 @@ name = "mwpose3d"
 version = "0.1.0"
 requires-python = ">=3.10"
 dependencies = [
-   # Core ML frameworks
-    "torch>=2.0",
-    "numpy>=1.24",
-    # OpenMMLab ecosystem
-    "mmengine>=0.10.0",
-    "mmcv>=2.0.0",
-    # Sparse convolution (optional, for SECOND backbone)
-    # "spconv-cu118>=2.3.0",  # Uncomment and adjust CUDA version as needed
     # Visualization
     "pyqtgraph>=0.13.0",
     "PySide6>=6.5.0",
@@ -34,6 +26,7 @@ dependencies = [
     "orjson>=3.9.0",
  
 ]
+
 
 [project.optional-dependencies]
 cpu   = ["torch", "torchvision",]
@@ -61,11 +54,6 @@ conflicts = [
     { extra = "cu124" },
   ],
 ]
-
-[tool.uv.extra-build-dependencies]                                                                                                            
-mwcore = ["setuptools"] 
-filterpy = ["setuptools"]
-
 
 [tool.setuptools]
 packages = { find = { include = ["mwpose3d*"] } }

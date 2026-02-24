@@ -42,23 +42,26 @@ class OnlineSkeletonVisualizer(OnlinePointCloudVisualizer):
 
         if self.cnxn_matrix is None:
             return
-        
-        for line in self._skel_lines:
-            self.plot3d.plot_3d.removeItem(line)
-        self._skel_lines.clear()
 
+        line_idx = 0
         for start, end in self.cnxn_matrix:
             if start not in self._joint_set or end not in self._joint_set:
                 continue
             i = self.joint_indices.index(start)
             j = self.joint_indices.index(end)
             pts = np.vstack((joints[i], joints[j]))
-            line_item = gl.GLLinePlotItem(
-                pos=pts,
-                color=(1,1,1,1),
-                width=2,
-                antialias=True,
-                mode='lines'
-            )
-            self.plot3d.plot_3d.addItem(line_item)
-            self._skel_lines.append(line_item)
+            if line_idx < len(self._skel_lines):
+                # Reuse existing line item
+                self._skel_lines[line_idx].setData(pos=pts)
+            else:
+                # First call: create line items
+                line_item = gl.GLLinePlotItem(
+                    pos=pts,
+                    color=(1,1,1,1),
+                    width=2,
+                    antialias=True,
+                    mode='lines'
+                )
+                self.plot3d.plot_3d.addItem(line_item)
+                self._skel_lines.append(line_item)
+            line_idx += 1
