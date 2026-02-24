@@ -185,6 +185,20 @@ class _LoopController(QObject):
         self.before_init()
 
     def stop_all(self):
+        # ── Dump captured data before shutting down (mirrors headless_recorder) ──
+        logger.info("Dumping captured data before exit...")
+        try:
+            self.app.pcd_buffering_worker.dump_buffer()
+        except Exception as e:
+            logger.error(f"Error dumping point cloud buffer on exit: {e}")
+
+        try:
+            timestamp = time.strftime("%Y%m%d_%H%M%S")
+            self.app.kinect_mgr_worker._on_dump(f"kinect_{timestamp}.csv")
+        except Exception as e:
+            logger.error(f"Error dumping kinect skeletons on exit: {e}")
+
+        # ── Tear down threads ──
         for tn in (
             "reader_thread",
             "kinect_mgr_thread",
