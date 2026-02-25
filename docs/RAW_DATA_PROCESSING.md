@@ -31,8 +31,9 @@ uv run .\tools\create_data.py --root-path "E:\Projects\mwpose3d\apps\impl\datase
 If you prefer to use process_point_cloud=False, you can use the scripts in `tools/rawproc`: `run_alignment_raw.py` and `visualized_aligned_pc.py`
 
 TODO:
-[] fix raw .bin filenames in output dir
+[x] fix raw .bin filenames in output dir
 [x] integrate with the current alignment pipeline.
-[] finish cleaning code
-[] separate raw processing -> point cloud dump pipeline to avoid delays in data collection
-
+[x] separate raw processing -> point cloud dump pipeline to avoid delays in data collection
+[] remove tools\rawproc\visualized_aligned_pc.py when not needed anymore
+[] finish cleaning code for online collection app apps\impl\dataset_collection\raw_dataset_collection.py
+[] script for offline processing of raw data to point clouds (@barrydooit)
