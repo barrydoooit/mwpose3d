@@ -24,13 +24,21 @@ reader_cfg = dict(
 )
 ```
 
-```python
+```bash
 uv run .\tools\create_data.py --root-path "E:\Projects\mwpose3d\apps\impl\dataset_collection\traces\raw_collection" --out-dir "/tmpraw2" custom
+```
+
+## Visualizing aligned data
+
+After creating the dataset, can run
+```bash
+uv run .\tools\inspect_dataset.py projects\rawpose\configs\dca1000evm_default_config.py --vis
 ```
 
 If you prefer to use process_point_cloud=False, you can use the scripts in `tools/rawproc`: `run_alignment_raw.py` and `visualized_aligned_pc.py`
 
-TODO:
+## TODOs:
+
 [x] fix raw .bin filenames in output dir
 [x] integrate with the current alignment pipeline.
 [x] separate raw processing -> point cloud dump pipeline to avoid delays in data collection
