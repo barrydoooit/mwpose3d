@@ -5,7 +5,7 @@ custom_imports = dict(
     imports=['mwpose3d', 'projects.mmmesh'], allow_failed_imports=False)
 
 # Dataset path and prefix
-data_root = 'tmp/dataset_1'
+data_root = 'tmp/try_1'
 train_info = 'info_all.pkl'
 
 data_prefix = dict(
@@ -53,11 +53,11 @@ train_pipeline = [
     # ==========================================================
     dict(
         type='SkeletonCoordinateTransform',
-        tran_xyz=(0.0, -1.74, 0.0)
+        tran_xyz=(0.0, -1.685, 0.0)
     ),
     dict(
         type='PointCloudCoordinateTransform',
-        tran_xyz=(0.0, -0.74, 0.0), # Example: translating the point cloud 1.0m up 
+        tran_xyz=(0.0, -0.49, 0.0), # Example: translating the point cloud 1.0m up 
     ),
     
     dict(

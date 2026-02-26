@@ -11,7 +11,8 @@ vis_cfg = dict(
                 (2, 8), (8, 9), (9, 10), (10, 11), 
                 (2, 12), (12, 13), (13, 14), (14, 15), 
                 (2, 16), (16, 17), (17, 18), (18, 19)),
-    joint_indices=list(range(20))
+    joint_indices=list(range(20)),
+    highlight_pointing=True
 )
 
 instructions = dict(
@@ -26,11 +27,11 @@ instructions = dict(
     ]
 )
 
-data_root = 'apps/impl/dataset_collection/traces/raw_new_pc_viz_last'
+data_root = 'apps/impl/dataset_collection/traces/try_1_raw'
 
 reader_cfg = dict(
     type='UdpRawDataReader',
-    process_point_cloud=True, # causes much delay
+    process_point_cloud=True,
     save_to_file=f'{data_root}/raw/timed_frames.bin'
 )
 
