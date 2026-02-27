@@ -1,0 +1,341 @@
+from contextlib import contextmanager
+import json
+import os
+from pathlib import Path
+import threading
+from typing import Deque, Optional, Union
+from collections import deque
+import time
+
+from PySide6.QtCore import (
+    QThread,
+    QObject,
+    Signal,
+    Slot,
+)
+
+from mwpose3d.utils.pointcloud_toolkits.structures import PointCloudFrame, SimplePointCloud5D
+
+
+
+class PointCloudBuffer:
+    def __init__(self,
+                 max_buffer_size: int = 1000):
+        self.max_buffer_size = max_buffer_size
+        self._container: Deque[PointCloudFrame] = deque(maxlen=max_buffer_size)
+
+        self._frame_counter = 0   
+
+        self._meta_data = dict()
+        self.refusing_new_frames = False
+
+    @property
+    def buffer_lock(self) -> threading.Lock:
+        if not hasattr(self, '_buffer_lock'):
+            self._buffer_lock = threading.Lock()
+        return self._buffer_lock
+    
+    @contextmanager
+    def lock(self):
+        with self.buffer_lock:
+            yield self._container
+    
+    def __getitem__(self, index: int) -> PointCloudFrame:
+        with self.lock() as container:
+            return container[index]
+    
+    def __len__(self) -> int:
+        with self.lock() as container:
+            return len(container)
+    
+    def _counter_increment(self):
+        self._frame_counter += 1
+    
+    def _check_full(self) -> bool:
+        if len(self) >= self.max_buffer_size:
+            return True
+        return False
+    
+    def expand(self, new_size: int):
+        if self._container.maxlen is None or new_size > self._container.maxlen:
+            return
+        with self.lock() as container:
+            self._container = deque(container, maxlen=new_size)
+    
+    def append(self, point_cloud: SimplePointCloud5D, timestamp: float = None):
+        if self._check_full():
+            return 
+        if isinstance(point_cloud, PointCloudFrame):
+            with self.lock() as container:
+                if timestamp is not None:
+                    point_cloud.timestamp = timestamp
+                container.append(point_cloud)
+                self._counter_increment()
+            return
+        
+        with self.lock() as container:
+            ts_ms = timestamp if timestamp is not None else int(time.time() * 1000)
+            frame = PointCloudFrame.from_pcd(point_cloud, self._frame_counter, ts_ms)
+            container.append(frame)
+            self._counter_increment()
+        return
+    
+    def record_meta(self, key: str, value: any):
+        self._meta_data[key] = value
+
+    def clear(self):
+        with self.lock() as container:
+            container.clear()
+        self._frame_counter = 0
+        self._meta_data = dict()
+    
+    def dump_to_json(self, json_file: Union[str, Path]):
+        with self.lock() as container:
+            frames = list(container)
+        meta_data = self._meta_data.copy()
+
+        if not frames:
+            return None
+
+        jf = Path(json_file)
+        is_dir_like = (not jf.suffix) or (jf.exists() and jf.is_dir())
+
+        if is_dir_like:
+            given_dir = jf
+            first_ts = frames[0].timestamp
+            last_ts = frames[-1].timestamp
+            first_time_str = time.strftime('%Y%m%d_%H%M%S', time.localtime(first_ts / 1000))
+            last_time_str  = time.strftime('%H%M%S',        time.localtime(last_ts  / 1000))
+            out_path = given_dir / f"{first_time_str}-{last_time_str}_f{len(frames)}.json"
+        else:
+            out_path = jf
+            given_dir = out_path.parent  # the directory that will hold the trace file
+        given_dir.mkdir(parents=True, exist_ok=True)
+
+        data = {
+            "frame_keys": ['seq', 'ts', 'points'],
+            "point_keys": ['x', 'y', 'z', 'vel', 'snr'],
+            "frames": [frame.serialize(compact=True) for frame in frames],
+        }
+        tmp_path = out_path.with_suffix(out_path.suffix + ".tmp")
+        with open(tmp_path, 'w', encoding='utf-8') as f:
+            json.dump(data, f)
+        os.replace(tmp_path, out_path)
+        if meta_data:
+            meta_dir = given_dir.parent / 'meta'
+            meta_dir.mkdir(parents=True, exist_ok=True)
+            meta_path = meta_dir / out_path.with_suffix('.meta.json').name
+            tmp_meta = meta_path.with_suffix(meta_path.suffix + ".tmp")
+            with open(tmp_meta, 'w', encoding='utf-8') as f:
+                json.dump(meta_data, f)
+            os.replace(tmp_meta, meta_path)
+        self.clear()
+        print(str(out_path))
+        return str(out_path)
+
+
+class RawBinaryBuffer:
+    def __init__(self, max_buffer_size: int = 1000):
+        self.max_buffer_size = max_buffer_size
+        self._container: Deque[tuple[float, bytes]] = deque(maxlen=max_buffer_size)
+        self._frame_counter = 0
+        self._meta_data = dict()
+
+    @property
+    def buffer_lock(self) -> threading.Lock:
+        if not hasattr(self, '_buffer_lock'):
+            self._buffer_lock = threading.Lock()
+        return self._buffer_lock
+
+    @contextmanager
+    def lock(self):
+        with self.buffer_lock:
+            yield self._container
+
+    def __len__(self) -> int:
+        with self.lock() as container:
+            return len(container)
+
+    def _counter_increment(self):
+        self._frame_counter += 1
+
+    def _check_full(self) -> bool:
+        return len(self) >= self.max_buffer_size
+
+    def append(self, raw_bytes: Union[bytes, bytearray, memoryview], timestamp: Optional[float] = None):
+        if self._check_full():
+            return
+        ts_ms = float(timestamp) if timestamp is not None else float(int(time.time() * 1000))
+        payload = bytes(raw_bytes)
+        with self.lock() as container:
+            container.append((ts_ms, payload))
+            self._counter_increment()
+
+    def record_meta(self, key: str, value: any):
+        self._meta_data[key] = value
+
+    def clear(self):
+        with self.lock() as container:
+            container.clear()
+        self._frame_counter = 0
+        self._meta_data = dict()
+
+    def dump_to_bin(self, bin_file: Union[str, Path]):
+        with self.lock() as container:
+            frames = list(container)
+        meta_data = self._meta_data.copy()
+
+        if not frames:
+            return None
+
+        bf = Path(bin_file)
+        is_dir_like = (not bf.suffix) or (bf.exists() and bf.is_dir())
+        if is_dir_like:
+            given_dir = bf
+            first_ts = frames[0][0]
+            last_ts = frames[-1][0]
+            first_time_str = time.strftime('%Y%m%d_%H%M%S', time.localtime(first_ts / 1000))
+            last_time_str = time.strftime('%H%M%S', time.localtime(last_ts / 1000))
+            out_path = given_dir / f"{first_time_str}-{last_time_str}_f{len(frames)}.bin"
+        else:
+            out_path = bf
+            given_dir = out_path.parent
+
+        given_dir.mkdir(parents=True, exist_ok=True)
+
+        tmp_path = out_path.with_suffix(out_path.suffix + ".tmp")
+        with open(tmp_path, 'wb') as f:
+            for _, raw_bytes in frames:
+                f.write(raw_bytes)
+        os.replace(tmp_path, out_path)
+
+        if meta_data:
+            meta_dir = given_dir.parent / 'meta'
+            meta_dir.mkdir(parents=True, exist_ok=True)
+            meta_path = meta_dir / out_path.with_suffix('.meta.json').name
+            tmp_meta = meta_path.with_suffix(meta_path.suffix + ".tmp")
+            with open(tmp_meta, 'w', encoding='utf-8') as f:
+                json.dump(meta_data, f)
+            os.replace(tmp_meta, meta_path)
+
+        self.clear()
+        print(str(out_path))
+        return str(out_path)
+    
+class PointCloudBufferingWorker(QObject):
+    bufferFull = Signal()
+    bufferDumped = Signal(str) # dumped file name (e.g., .json or .bin)
+    recordMeta = Signal(dict)
+    frameCount = Signal(int)
+
+    def __init__(
+        self,
+        dump_dir: Union[str, Path],
+        buffer_size: int = 1000,
+        storage_format: str = 'pointcloud_json',
+    ):
+        super().__init__()
+        self.storage_format = storage_format
+        if self.storage_format == 'pointcloud_json':
+            self.buffer = PointCloudBuffer(max_buffer_size=buffer_size)
+        elif self.storage_format == 'raw_bin':
+            self.buffer = RawBinaryBuffer(max_buffer_size=buffer_size)
+        else:
+            raise ValueError(
+                f"Unsupported storage_format '{self.storage_format}'. "
+                "Expected one of ['pointcloud_json', 'raw_bin']."
+            )
+        self.dump_dir = Path(dump_dir)
+        self.refusing_new_frames = False
+
+    def _emit_count_and_full_if_needed(self):
+        length = len(self.buffer)
+        self.frameCount.emit(length)
+        if self.buffer._check_full():
+            self.bufferFull.emit()
+
+    @Slot(object, float)
+    def enqueue(self, point_cloud: 'SimplePointCloud5D', timestamp: Optional[float] = None):
+        if self.storage_format != 'pointcloud_json':
+            return
+        self.buffer.append(point_cloud, timestamp)
+        self._emit_count_and_full_if_needed()
+
+    @Slot(object)
+    def enqueue_frame(self, frame: object):
+        if self.refusing_new_frames or self.storage_format != 'raw_bin':
+            return
+
+        raw_bytes = None
+        timestamp = None
+        if hasattr(frame, 'raw_bytes'):
+            raw_bytes = getattr(frame, 'raw_bytes', None)
+            timestamp = getattr(frame, 'frame_start_timestamp_ms', None)
+        elif isinstance(frame, dict):
+            raw_bytes = frame.get('raw_bytes', None)
+            timestamp = frame.get('timestamp', None)
+        elif isinstance(frame, (bytes, bytearray, memoryview)):
+            raw_bytes = frame
+
+        if raw_bytes is None:
+            return
+
+        self.buffer.append(raw_bytes, timestamp)
+        self._emit_count_and_full_if_needed()
+    
+    @Slot(dict)
+    def enqueue_raw(self, data: dict):
+        if self.refusing_new_frames:
+            return
+        if self.storage_format == 'raw_bin':
+            raw_bytes = data.get('raw_bytes', None)
+            if raw_bytes is None:
+                return
+            timestamp = data.get('timestamp', None)
+            self.buffer.append(raw_bytes, timestamp)
+            self._emit_count_and_full_if_needed()
+            return
+        point_cloud = SimplePointCloud5D.from_dict(data)
+        timestamp = data.get('timestamp', None)
+        self.enqueue(point_cloud, timestamp)
+
+    @Slot(str)
+    def dump_buffer(self, json_file: Optional[str] = None):
+        self.refusing_new_frames = True
+        dump_path = self.dump_dir / json_file if json_file else self.dump_dir
+        if self.storage_format == 'pointcloud_json':
+            final_path = self.buffer.dump_to_json(dump_path)
+        else:
+            final_path = self.buffer.dump_to_bin(dump_path)
+        if final_path is not None:
+            self.bufferDumped.emit(Path(final_path).name)
+        self.refusing_new_frames = False
+    
+    @Slot(dict)
+    def record_meta(self, meta_data: dict):
+        for key, value in meta_data.items():
+            self.buffer.record_meta(key, value)
+
+    @Slot()
+    def clear_buffer(self):
+        self.buffer.clear()
+    
+    def run(self):
+        self.exec_()
+
+    @classmethod
+    def build_with_thread(cls, **kwargs):
+        dump_dir = kwargs.get('dump_dir', None)
+        if dump_dir is None:
+            raise ValueError("Missing directory to store point cloud traces.")
+        buffer_size = kwargs.get('buffer_size', 1000)
+        storage_format = kwargs.get('storage_format', 'pointcloud_json')
+
+        thread = QThread()
+        worker = cls(dump_dir=dump_dir, buffer_size=buffer_size, storage_format=storage_format)
+        worker.moveToThread(thread)
+        worker.recordMeta.connect(worker.record_meta)
+        thread.finished.connect(worker.deleteLater)
+        thread.finished.connect(thread.deleteLater)
+
+        return worker, thread
