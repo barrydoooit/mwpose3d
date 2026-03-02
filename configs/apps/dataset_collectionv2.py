@@ -1,5 +1,5 @@
 _base_ = [
-    '../../../../2025/mwCore/configs/dsp/ti-mobile-tracker_xWR1843.py',
+    '../../../mwCore/configs/dsp/ti-mobile-tracker_xWR1843.py',
 ]
 
 custom_imports = dict(
@@ -56,7 +56,7 @@ instructions = dict(
 data_root = 'apps/impl/dataset_collectionv2/traces/rawbin_v1'
 buffer_cfg = dict(
     dump_dir=f'{data_root}/raw',
-    buffer_size=5000,
+    buffer_size=500,
     storage_format='raw_bin',
 )
 

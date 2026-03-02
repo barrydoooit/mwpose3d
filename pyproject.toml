@@ -3,30 +3,11 @@ name = "mwpose3d"
 version = "0.1.0"
 requires-python = ">=3.10"
 dependencies = [
-    # Visualization
-    "pyqtgraph>=0.13.0",
-    "PySide6>=6.5.0",
-    "pyopengl>=3.1.0",
-    "matplotlib>=3.7.0",
-    # Data processing
-    "h5py>=3.9.0",
-    "pandas>=2.0.0",
-    "scipy>=1.11.0",
-    "scikit-learn>=1.3.0",
-    "filterpy>=1.4.5",
-    "pyquaternion>=0.9.9",
-    # Serial communication (for IWR6843)
-    "pyserial>=3.5",
-    # Input handling (for dataset collection)
-    "pynput>=1.7.6",
-    # Utilities
-    "tqdm>=4.65.0",
-    "debugpy>=1.6.0",
-    "networkx>=3.0",
-    "orjson>=3.9.0",
- 
+  "mwcore==0.1.0",
+  "pandas",
+  "pyquaternion",
+  "pynput"
 ]
-
 
 [project.optional-dependencies]
 cpu   = ["torch", "torchvision",]
@@ -44,7 +25,7 @@ requires = [
 build-backend = "setuptools.build_meta"
 
 [tool.uv]
-no-build-isolation = true
+no-build-isolation = false
 
 conflicts = [
   [
