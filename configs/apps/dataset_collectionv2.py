@@ -57,7 +57,8 @@ data_root = 'apps/impl/dataset_collectionv2/traces/rawbin_v1'
 buffer_cfg = dict(
     dump_dir=f'{data_root}/raw',
     buffer_size=500,
-    storage_format='raw_bin',
+    storage_format='raw_bin_and_pointcloud_json',
+    save_with_timestamp=True,
 )
 
 kinect_cfg = dict(

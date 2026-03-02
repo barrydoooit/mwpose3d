@@ -6,6 +6,8 @@ import threading
 from typing import Deque, Optional, Union
 from collections import deque
 import time
+import numpy as np
+import struct
 
 from PySide6.QtCore import (
     QThread,
@@ -89,7 +91,7 @@ class PointCloudBuffer:
         self._frame_counter = 0
         self._meta_data = dict()
     
-    def dump_to_json(self, json_file: Union[str, Path]):
+    def dump_to_json(self, json_file: Union[str, Path], write_meta: bool = True):
         with self.lock() as container:
             frames = list(container)
         meta_data = self._meta_data.copy()
@@ -121,7 +123,7 @@ class PointCloudBuffer:
         with open(tmp_path, 'w', encoding='utf-8') as f:
             json.dump(data, f)
         os.replace(tmp_path, out_path)
-        if meta_data:
+        if write_meta and meta_data:
             meta_dir = given_dir.parent / 'meta'
             meta_dir.mkdir(parents=True, exist_ok=True)
             meta_path = meta_dir / out_path.with_suffix('.meta.json').name
@@ -135,11 +137,12 @@ class PointCloudBuffer:
 
 
 class RawBinaryBuffer:
-    def __init__(self, max_buffer_size: int = 1000):
+    def __init__(self, max_buffer_size: int = 1000, save_with_timestamp: bool = False):
         self.max_buffer_size = max_buffer_size
         self._container: Deque[tuple[float, bytes]] = deque(maxlen=max_buffer_size)
         self._frame_counter = 0
         self._meta_data = dict()
+        self.save_with_timestamp = bool(save_with_timestamp)
 
     @property
     def buffer_lock(self) -> threading.Lock:
@@ -170,6 +173,17 @@ class RawBinaryBuffer:
         with self.lock() as container:
             container.append((ts_ms, payload))
             self._counter_increment()
+
+    def suggest_filename(self, suffix: str = ".bin") -> Optional[str]:
+        with self.lock() as container:
+            frames = list(container)
+        if not frames:
+            return None
+        first_ts = frames[0][0]
+        last_ts = frames[-1][0]
+        first_time_str = time.strftime('%Y%m%d_%H%M%S', time.localtime(first_ts / 1000))
+        last_time_str = time.strftime('%H%M%S', time.localtime(last_ts / 1000))
+        return f"{first_time_str}-{last_time_str}_f{len(frames)}{suffix}"
 
     def record_meta(self, key: str, value: any):
         self._meta_data[key] = value
@@ -205,7 +219,9 @@ class RawBinaryBuffer:
 
         tmp_path = out_path.with_suffix(out_path.suffix + ".tmp")
         with open(tmp_path, 'wb') as f:
-            for _, raw_bytes in frames:
+            for ts_ms, raw_bytes in frames:
+                if self.save_with_timestamp:
+                    f.write(struct.pack("<d", float(ts_ms)))
                 f.write(raw_bytes)
         os.replace(tmp_path, out_path)
 
@@ -233,37 +249,88 @@ class PointCloudBufferingWorker(QObject):
         dump_dir: Union[str, Path],
         buffer_size: int = 1000,
         storage_format: str = 'pointcloud_json',
+        pointcloud_dump_dir: Optional[Union[str, Path]] = None,
+        save_with_timestamp: bool = False,
     ):
         super().__init__()
         self.storage_format = storage_format
         if self.storage_format == 'pointcloud_json':
             self.buffer = PointCloudBuffer(max_buffer_size=buffer_size)
         elif self.storage_format == 'raw_bin':
-            self.buffer = RawBinaryBuffer(max_buffer_size=buffer_size)
+            self.buffer = RawBinaryBuffer(
+                max_buffer_size=buffer_size,
+                save_with_timestamp=save_with_timestamp,
+            )
+        elif self.storage_format == 'raw_bin_and_pointcloud_json':
+            self.raw_buffer = RawBinaryBuffer(
+                max_buffer_size=buffer_size,
+                save_with_timestamp=save_with_timestamp,
+            )
+            self.pcd_buffer = PointCloudBuffer(max_buffer_size=buffer_size)
+            self.buffer = self.raw_buffer  # backward-compatible fallback accessor
         else:
             raise ValueError(
                 f"Unsupported storage_format '{self.storage_format}'. "
-                "Expected one of ['pointcloud_json', 'raw_bin']."
+                "Expected one of ['pointcloud_json', 'raw_bin', 'raw_bin_and_pointcloud_json']."
             )
         self.dump_dir = Path(dump_dir)
+        if self.storage_format == 'raw_bin_and_pointcloud_json':
+            if pointcloud_dump_dir is None:
+                self.pointcloud_dump_dir = self.dump_dir.parent / 'pointcloud'
+            else:
+                self.pointcloud_dump_dir = Path(pointcloud_dump_dir)
+        else:
+            self.pointcloud_dump_dir = None
         self.refusing_new_frames = False
 
+    def _buffer_length(self) -> int:
+        if self.storage_format == 'raw_bin_and_pointcloud_json':
+            return len(self.raw_buffer)
+        return len(self.buffer)
+
+    def _buffer_full(self) -> bool:
+        if self.storage_format == 'raw_bin_and_pointcloud_json':
+            return self.raw_buffer._check_full()
+        return self.buffer._check_full()
+
     def _emit_count_and_full_if_needed(self):
-        length = len(self.buffer)
+        length = self._buffer_length()
         self.frameCount.emit(length)
-        if self.buffer._check_full():
+        if self._buffer_full():
             self.bufferFull.emit()
+
+    @staticmethod
+    def _radar_frame_to_simple_pcd(frame: object) -> SimplePointCloud5D:
+        point_cloud = getattr(frame, 'point_cloud', None)
+        if point_cloud is None:
+            return SimplePointCloud5D([])
+
+        arr = np.asarray(point_cloud)
+        if arr.ndim != 2:
+            return SimplePointCloud5D([])
+        # Accept both (6, N)/(5, N) and (N, 6)/(N, 5)
+        if arr.shape[0] in (5, 6):
+            arr = arr.T
+        elif arr.shape[1] not in (5, 6):
+            return SimplePointCloud5D([])
+
+        if arr.shape[1] < 5:
+            return SimplePointCloud5D([])
+        return SimplePointCloud5D.from_numpy(arr[:, :5])
 
     @Slot(object, float)
     def enqueue(self, point_cloud: 'SimplePointCloud5D', timestamp: Optional[float] = None):
-        if self.storage_format != 'pointcloud_json':
+        if self.storage_format not in ('pointcloud_json', 'raw_bin_and_pointcloud_json'):
             return
-        self.buffer.append(point_cloud, timestamp)
+        if self.storage_format == 'raw_bin_and_pointcloud_json':
+            self.pcd_buffer.append(point_cloud, timestamp)
+        else:
+            self.buffer.append(point_cloud, timestamp)
         self._emit_count_and_full_if_needed()
 
     @Slot(object)
     def enqueue_frame(self, frame: object):
-        if self.refusing_new_frames or self.storage_format != 'raw_bin':
+        if self.refusing_new_frames or self.storage_format not in ('raw_bin', 'raw_bin_and_pointcloud_json'):
             return
 
         raw_bytes = None
@@ -280,19 +347,32 @@ class PointCloudBufferingWorker(QObject):
         if raw_bytes is None:
             return
 
-        self.buffer.append(raw_bytes, timestamp)
+        if self.storage_format == 'raw_bin_and_pointcloud_json':
+            pcd = self._radar_frame_to_simple_pcd(frame)
+            self.raw_buffer.append(raw_bytes, timestamp)
+            self.pcd_buffer.append(pcd, timestamp)
+        else:
+            self.buffer.append(raw_bytes, timestamp)
         self._emit_count_and_full_if_needed()
     
     @Slot(dict)
     def enqueue_raw(self, data: dict):
         if self.refusing_new_frames:
             return
-        if self.storage_format == 'raw_bin':
+        if self.storage_format in ('raw_bin', 'raw_bin_and_pointcloud_json'):
             raw_bytes = data.get('raw_bytes', None)
             if raw_bytes is None:
                 return
             timestamp = data.get('timestamp', None)
-            self.buffer.append(raw_bytes, timestamp)
+            if self.storage_format == 'raw_bin_and_pointcloud_json':
+                self.raw_buffer.append(raw_bytes, timestamp)
+                try:
+                    pcd = SimplePointCloud5D.from_dict(data.copy())
+                except Exception:
+                    pcd = SimplePointCloud5D([])
+                self.pcd_buffer.append(pcd, timestamp)
+            else:
+                self.buffer.append(raw_bytes, timestamp)
             self._emit_count_and_full_if_needed()
             return
         point_cloud = SimplePointCloud5D.from_dict(data)
@@ -305,19 +385,42 @@ class PointCloudBufferingWorker(QObject):
         dump_path = self.dump_dir / json_file if json_file else self.dump_dir
         if self.storage_format == 'pointcloud_json':
             final_path = self.buffer.dump_to_json(dump_path)
-        else:
+        elif self.storage_format == 'raw_bin':
             final_path = self.buffer.dump_to_bin(dump_path)
+        else:
+            if json_file:
+                stem = Path(json_file).stem
+                raw_name = f"{stem}.bin"
+            else:
+                raw_name = self.raw_buffer.suggest_filename(".bin")
+            if raw_name is None:
+                final_path = None
+            else:
+                raw_path = self.dump_dir / raw_name
+                pcd_path = self.pointcloud_dump_dir / f"{Path(raw_name).stem}.json"
+                final_path = self.raw_buffer.dump_to_bin(raw_path)
+                # Meta is already written by raw dump using the shared stem.
+                self.pcd_buffer.dump_to_json(pcd_path, write_meta=False)
         if final_path is not None:
             self.bufferDumped.emit(Path(final_path).name)
         self.refusing_new_frames = False
     
     @Slot(dict)
     def record_meta(self, meta_data: dict):
+        if self.storage_format == 'raw_bin_and_pointcloud_json':
+            for key, value in meta_data.items():
+                self.raw_buffer.record_meta(key, value)
+                self.pcd_buffer.record_meta(key, value)
+            return
         for key, value in meta_data.items():
             self.buffer.record_meta(key, value)
 
     @Slot()
     def clear_buffer(self):
+        if self.storage_format == 'raw_bin_and_pointcloud_json':
+            self.raw_buffer.clear()
+            self.pcd_buffer.clear()
+            return
         self.buffer.clear()
     
     def run(self):
@@ -330,9 +433,17 @@ class PointCloudBufferingWorker(QObject):
             raise ValueError("Missing directory to store point cloud traces.")
         buffer_size = kwargs.get('buffer_size', 1000)
         storage_format = kwargs.get('storage_format', 'pointcloud_json')
+        pointcloud_dump_dir = kwargs.get('pointcloud_dump_dir', None)
+        save_with_timestamp = kwargs.get('save_with_timestamp', False)
 
         thread = QThread()
-        worker = cls(dump_dir=dump_dir, buffer_size=buffer_size, storage_format=storage_format)
+        worker = cls(
+            dump_dir=dump_dir,
+            buffer_size=buffer_size,
+            storage_format=storage_format,
+            pointcloud_dump_dir=pointcloud_dump_dir,
+            save_with_timestamp=save_with_timestamp,
+        )
         worker.moveToThread(thread)
         worker.recordMeta.connect(worker.record_meta)
         thread.finished.connect(worker.deleteLater)
