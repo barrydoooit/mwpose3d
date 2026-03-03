@@ -19,6 +19,15 @@ from PySide6.QtCore import (
 from mwpose3d.utils.pointcloud_toolkits.structures import PointCloudFrame, SimplePointCloud5D
 
 
+def _json_default(obj):
+    """Convert NumPy/Python numeric containers to JSON-serializable types."""
+    if isinstance(obj, np.generic):
+        return obj.item()
+    if isinstance(obj, np.ndarray):
+        return obj.tolist()
+    raise TypeError(f"Object of type {obj.__class__.__name__} is not JSON serializable")
+
+
 
 class PointCloudBuffer:
     def __init__(self,
@@ -121,7 +130,7 @@ class PointCloudBuffer:
         }
         tmp_path = out_path.with_suffix(out_path.suffix + ".tmp")
         with open(tmp_path, 'w', encoding='utf-8') as f:
-            json.dump(data, f)
+            json.dump(data, f, default=_json_default)
         os.replace(tmp_path, out_path)
         if write_meta and meta_data:
             meta_dir = given_dir.parent / 'meta'
@@ -129,7 +138,7 @@ class PointCloudBuffer:
             meta_path = meta_dir / out_path.with_suffix('.meta.json').name
             tmp_meta = meta_path.with_suffix(meta_path.suffix + ".tmp")
             with open(tmp_meta, 'w', encoding='utf-8') as f:
-                json.dump(meta_data, f)
+                json.dump(meta_data, f, default=_json_default)
             os.replace(tmp_meta, meta_path)
         self.clear()
         print(str(out_path))
@@ -231,7 +240,7 @@ class RawBinaryBuffer:
             meta_path = meta_dir / out_path.with_suffix('.meta.json').name
             tmp_meta = meta_path.with_suffix(meta_path.suffix + ".tmp")
             with open(tmp_meta, 'w', encoding='utf-8') as f:
-                json.dump(meta_data, f)
+                json.dump(meta_data, f, default=_json_default)
             os.replace(tmp_meta, meta_path)
 
         self.clear()
