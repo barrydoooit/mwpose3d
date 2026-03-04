@@ -6,9 +6,9 @@ from PySide6.QtCore import QCoreApplication, QObject, QMetaObject, QThread, QTim
 from PySide6.QtWidgets import QApplication
 
 from apps.impl.dataset_collection.instruction_thread import InstructionWorker
-from apps.impl.dataset_collection.kinect_manager_thread import KinectManagerWorker
 from apps.impl.dataset_collection.metadata_input_dialog import InputPopupDialog
 from .buffer_thread import PointCloudBufferingWorker
+from .kinect_manager_thread import KinectManagerWorker
 from mwcore.apps import BaseMWApp
 from mwcore.registry import APPS
 from mwpose3d.registry import VISUALIZERS
