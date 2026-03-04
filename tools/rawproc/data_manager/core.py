@@ -19,7 +19,7 @@ import sys
 import os
 sys.path.append(os.path.join(os.path.dirname(__file__), '../..'))
 
-from .widgets import CheckList, MultiColumnCheckList
+from .widgets import CheckList, HoverTooltip, MultiColumnCheckList
 from ...rawproc.episode import Episode
 from ...rawproc.hdf5_dumper import ToHdf5
 
@@ -39,7 +39,13 @@ class DataProcessorProtocol(Protocol):
     def update_episode(self, name: str, new_episode: Episode): ...
 
     @abstractmethod
-    def handle_create_data(self, episodes: list, suffix: str, pointcloud_subdir: str): ...
+    def handle_create_data(
+        self,
+        episodes: list,
+        suffix: str,
+        pointcloud_subdir: str,
+        mmwave_path_as_dict: bool,
+    ): ...
     @abstractmethod
     def handle_delete_raw(self, episodes: list): ...
     @abstractmethod
@@ -70,6 +76,7 @@ class DataProcessorGUI(tk.Tk):
         self.processor = processor
 
         self._buttons: Dict[str, ttk.Button] = {}
+        self._tooltips: List[HoverTooltip] = []
 
         self.create_widgets()
         self.processor.load_processed_episodes()
@@ -108,15 +115,54 @@ class DataProcessorGUI(tk.Tk):
         param_frame = ttk.LabelFrame(control_frame, text="Alignment / Output Params")
         param_frame.pack(fill=tk.X, pady=5)
 
-        ttk.Label(param_frame, text="skeleton_ts_offset_ms:").pack(anchor=tk.W)
+        offset_row = ttk.Frame(param_frame)
+        offset_row.pack(fill=tk.X)
+        ttk.Label(offset_row, text="skeleton_ts_offset_ms:").pack(side=tk.LEFT)
+        offset_info = ttk.Label(offset_row, text="ⓘ", foreground="#1f6aa5", cursor="question_arrow")
+        offset_info.pack(side=tk.LEFT, padx=(4, 0))
+        self._tooltips.append(HoverTooltip(
+            offset_info,
+            "Time shift (ms) to be applied when clicking Align Data. "
+            "Use Calibrate Time to estimate this value, or type it manually."
+            "+X means skeleton frame arrives X ms before radar frame;"
+            "-X means skeleton frame arrives X ms after radar frame."
+        ))
         self.skeleton_offset_entry = ttk.Entry(param_frame)
-        self.skeleton_offset_entry.insert(0, "60")
+        self.skeleton_offset_entry.insert(0, "0")
         self.skeleton_offset_entry.pack(fill=tk.X, pady=2)
 
-        ttk.Label(param_frame, text="pointcloud_subdir:").pack(anchor=tk.W)
+        subdir_row = ttk.Frame(param_frame)
+        subdir_row.pack(fill=tk.X)
+        ttk.Label(subdir_row, text="pointcloud_subdir:").pack(side=tk.LEFT)
+        subdir_info = ttk.Label(subdir_row, text="ⓘ", foreground="#1f6aa5", cursor="question_arrow")
+        subdir_info.pack(side=tk.LEFT, padx=(4, 0))
+        self._tooltips.append(HoverTooltip(
+            subdir_info,
+            "Subfolder under mmwave/pointcloud/ for created H5 files "
+            "(for example: default, newdsp)."
+        ))
         self.pointcloud_subdir_entry = ttk.Entry(param_frame)
         self.pointcloud_subdir_entry.insert(0, "default")
         self.pointcloud_subdir_entry.pack(fill=tk.X, pady=2)
+
+        structured_row = ttk.Frame(param_frame)
+        structured_row.pack(fill=tk.X)
+        self.mmwave_path_mode_var = tk.BooleanVar(value=True)
+        self.mmwave_path_mode_check = ttk.Checkbutton(
+            structured_row,
+            text="Structured mmwave_path (dict)",
+            variable=self.mmwave_path_mode_var,
+            command=self._on_mmwave_path_mode_changed,
+        )
+        self.mmwave_path_mode_check.pack(side=tk.LEFT, pady=2)
+        structured_info = ttk.Label(structured_row, text="ⓘ", foreground="#1f6aa5", cursor="question_arrow")
+        structured_info.pack(side=tk.LEFT, padx=(4, 0))
+        self._tooltips.append(HoverTooltip(
+            structured_info,
+            "Checked: save to mmwave/pointcloud/<pointcloud_subdir>/ and store mmwave_path as dict.\n"
+            "Unchecked: save to mmwave/pointcloud/ and store mmwave_path as string."
+        ))
+        self._on_mmwave_path_mode_changed()
 
         self.create_control_buttons(control_frame)
 
@@ -161,8 +207,18 @@ class DataProcessorGUI(tk.Tk):
     def create_data(self):
         episodes = self.get_selected_episodes(lazy=False)
         suffix = self.info_suffix_entry.get().strip()
-        pointcloud_subdir = self.pointcloud_subdir_entry.get().strip() or "default"
-        self.processor.handle_create_data(episodes, suffix, pointcloud_subdir)
+        mmwave_path_as_dict = bool(self.mmwave_path_mode_var.get())
+        if mmwave_path_as_dict:
+            pointcloud_subdir = self.pointcloud_subdir_entry.get().strip() or "default"
+        else:
+            # Flat output mode: write to mmwave/pointcloud directly.
+            pointcloud_subdir = ""
+        self.processor.handle_create_data(
+            episodes,
+            suffix,
+            pointcloud_subdir,
+            mmwave_path_as_dict=mmwave_path_as_dict,
+        )
 
     def delete_raw(self):
         episode_names = self.get_selected_episodes(lazy=True)
@@ -201,6 +257,12 @@ class DataProcessorGUI(tk.Tk):
     def set_skeleton_ts_offset(self, offset_ms: int):
         self.skeleton_offset_entry.delete(0, tk.END)
         self.skeleton_offset_entry.insert(0, str(int(offset_ms)))
+
+    def _on_mmwave_path_mode_changed(self):
+        if self.mmwave_path_mode_var.get():
+            self.pointcloud_subdir_entry.config(state=tk.NORMAL)
+        else:
+            self.pointcloud_subdir_entry.config(state=tk.DISABLED)
 
     # ---- ----
 
@@ -336,7 +398,13 @@ class DataProcessorDelegate(DataProcessorProtocol):
         if self._gui_refresh_callabck:
             self._gui_refresh_callabck()
 
-    def handle_create_data(self, episodes: list, suffix: str, pointcloud_subdir: str):
+    def handle_create_data(
+        self,
+        episodes: list,
+        suffix: str,
+        pointcloud_subdir: str,
+        mmwave_path_as_dict: bool,
+    ):
         def task():
             suffixes = ["all"]
             if suffix:
@@ -348,6 +416,7 @@ class DataProcessorDelegate(DataProcessorProtocol):
                         episode,
                         self.output_dir,
                         pointcloud_subdir=pointcloud_subdir,
+                        mmwave_path_as_dict=mmwave_path_as_dict,
                     )
                     hdf5_maker.save(suffixes)
                     self._processed_episode_names.add(name)

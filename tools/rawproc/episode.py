@@ -132,7 +132,7 @@ class Episode:
     def align_traces(self,
                      use_interp_skel: bool = True,
                      skeleton_ts_type: Literal['real_ts', 'unix_ms'] = 'unix_ms',
-                     skeleton_ts_offset_ms: int = 60):
+                     skeleton_ts_offset_ms: int = 0):
         aligner = AlignTraces(
             self,
             use_interp_skel=use_interp_skel,

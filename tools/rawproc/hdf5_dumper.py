@@ -11,10 +11,39 @@ class ToHdf5:
     def __init__(self,
                  alligned_episode: 'Episode',
                  output_dir: Path,
-                 pointcloud_subdir: str = 'default'):
+                 pointcloud_subdir: str = 'default',
+                 mmwave_path_as_dict: bool = True):
         self.alligned_episode = alligned_episode
         self.output_dir = output_dir
-        self.pointcloud_subdir = pointcloud_subdir.strip() or 'default'
+        self.mmwave_path_as_dict = bool(mmwave_path_as_dict)
+        subdir = (pointcloud_subdir or '').strip()
+        if self.mmwave_path_as_dict:
+            self.pointcloud_subdir = subdir or 'default'
+        else:
+            # Flat mode: save directly under mmwave/pointcloud.
+            self.pointcloud_subdir = subdir
+
+    def _mmwave_rel_path(self, file_key: str) -> str:
+        if self.pointcloud_subdir:
+            return f'pointcloud/{self.pointcloud_subdir}/{file_key}.h5'
+        return f'pointcloud/{file_key}.h5'
+
+    @staticmethod
+    def _extract_mmwave_pointcloud_map(mmwave_value) -> dict:
+        if isinstance(mmwave_value, str):
+            parts = Path(mmwave_value).parts
+            if 'pointcloud' in parts:
+                i = parts.index('pointcloud')
+                if len(parts) >= i + 3:
+                    variant = parts[i + 1]
+                    return {variant: mmwave_value}
+            return {'default': mmwave_value}
+        if not isinstance(mmwave_value, dict):
+            return {}
+        pointcloud = mmwave_value.get('pointcloud', None)
+        if isinstance(pointcloud, dict):
+            return dict(pointcloud)
+        return {}
 
     def check_na(self):
         pcd_nok, skel_nok = self.alligned_episode.check_na()
@@ -28,7 +57,9 @@ class ToHdf5:
         frame_ids = self.alligned_episode.pcd_df['seq'].unique()
         assert (np.diff(frame_ids) == 1).all() and frame_ids[0] == 0, ValueError("'seq' column is not ascending from 0.")
         
-        mmwave_dir = self.output_dir / 'mmwave' / 'pointcloud' / self.pointcloud_subdir
+        mmwave_dir = self.output_dir / 'mmwave' / 'pointcloud'
+        if self.pointcloud_subdir:
+            mmwave_dir = mmwave_dir / self.pointcloud_subdir
         skeleton_dir = self.output_dir / 'skeleton'
         mmwave_dir.mkdir(parents=True, exist_ok=True)
         skeleton_dir.mkdir(parents=True, exist_ok=True)
@@ -89,9 +120,28 @@ class ToHdf5:
             meta,
             frame_count=frame_count,
             id=file_key,
-            mmwave_path=f'pointcloud/{self.pointcloud_subdir}/{file_key}.h5',
             skeleton_path=f'{file_key}.h5',
         )
+        old_entry = None
+        for info in info_all:
+            if info['id'] == file_key:
+                old_entry = info
+                break
+
+        mmwave_rel_path = self._mmwave_rel_path(file_key)
+        if self.mmwave_path_as_dict:
+            old_mmwave = None
+            if old_entry is not None:
+                old_mmwave = old_entry.get('mmwave_path', old_entry.get('mmwave', None))
+            pointcloud_map = self._extract_mmwave_pointcloud_map(old_mmwave)
+            variant = self.pointcloud_subdir or 'default'
+            pointcloud_map[variant] = mmwave_rel_path
+            mmwave_value = {'pointcloud': pointcloud_map}
+            new_info_entry['mmwave_path'] = mmwave_value
+            new_info_entry.pop('mmwave', None)
+        else:
+            new_info_entry['mmwave_path'] = mmwave_rel_path
+            new_info_entry.pop('mmwave', None)
         meta_data = self.alligned_episode.pcd_meta
         if meta_data is not None:
             new_info_entry = dict(new_info_entry, **meta_data)

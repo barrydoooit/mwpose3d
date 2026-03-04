@@ -6,6 +6,115 @@ from typing import Dict, List, Optional, Set
 import pandas as pd
 
 
+class HoverTooltip:
+    """Reusable hover tooltip with a small triangular pointer."""
+
+    def __init__(self, widget, text: str, hide_delay_ms: int = 500, wraplength: int = 320):
+        self.widget = widget
+        self.text = text
+        self.hide_delay_ms = hide_delay_ms
+        self.wraplength = wraplength
+        self._tipwindow = None
+        self._hide_job = None
+
+        self.widget.bind("<Enter>", self._on_enter, add="+")
+        self.widget.bind("<Leave>", self._on_leave, add="+")
+        self.widget.bind("<ButtonPress>", self._on_leave, add="+")
+        self.widget.bind("<Destroy>", self._on_destroy, add="+")
+
+    def _on_enter(self, _event=None):
+        self._cancel_hide()
+        self._show()
+
+    def _on_leave(self, _event=None):
+        self._schedule_hide()
+
+    def _on_destroy(self, _event=None):
+        self._cancel_hide()
+        self._hide_immediate()
+
+    def _schedule_hide(self):
+        self._cancel_hide()
+        self._hide_job = self.widget.after(self.hide_delay_ms, self._hide_immediate)
+
+    def _cancel_hide(self):
+        if self._hide_job is not None:
+            try:
+                self.widget.after_cancel(self._hide_job)
+            except Exception:
+                pass
+            self._hide_job = None
+
+    def _show(self):
+        if self._tipwindow is not None:
+            return
+
+        icon_center_x = self.widget.winfo_rootx() + self.widget.winfo_width() // 2
+        y = self.widget.winfo_rooty() + self.widget.winfo_height() + 8
+
+        tw = tk.Toplevel(self.widget)
+        tw.wm_overrideredirect(True)
+        # Temporary position; corrected after measuring final tooltip width.
+        tw.wm_geometry(f"+{icon_center_x}+{y}")
+        tw.attributes("-topmost", True)
+
+        # Triangle on top, pointing to the info icon.
+        pointer = tk.Canvas(
+            tw,
+            width=24,
+            height=10,
+            bg=tw.cget("bg"),
+            highlightthickness=0,
+            bd=0,
+        )
+        pointer.pack(anchor="w")
+        pointer.create_polygon(12, 1, 4, 9, 20, 9, fill="#fefce8", outline="#8f8f8f")
+
+        bubble = tk.Frame(tw, bg="#fefce8", bd=1, relief="solid")
+        bubble.pack()
+
+        label = tk.Label(
+            bubble,
+            text=self.text,
+            bg="#fefce8",
+            justify="left",
+            anchor="w",
+            padx=8,
+            pady=6,
+            wraplength=self.wraplength,
+        )
+        label.pack()
+
+        # Keep tooltip visible while hovering either icon or tooltip.
+        self._bind_tip_hover(tw)
+        self._bind_tip_hover(pointer)
+        self._bind_tip_hover(bubble)
+        self._bind_tip_hover(label)
+
+        # Reposition so triangle apex aligns horizontally with info icon center.
+        tw.update_idletasks()
+        tw_w = tw.winfo_width()
+        x = icon_center_x - 12  # 12 == triangle apex x in pointer canvas
+        # Keep tooltip reasonably on-screen.
+        screen_w = tw.winfo_screenwidth()
+        x = max(4, min(x, screen_w - tw_w - 4))
+        tw.wm_geometry(f"+{x}+{y}")
+
+        self._tipwindow = tw
+
+    def _bind_tip_hover(self, widget):
+        widget.bind("<Enter>", lambda _e: self._cancel_hide(), add="+")
+        widget.bind("<Leave>", lambda _e: self._schedule_hide(), add="+")
+
+    def _hide_immediate(self):
+        if self._tipwindow is not None:
+            try:
+                self._tipwindow.destroy()
+            except Exception:
+                pass
+            self._tipwindow = None
+
+
 class CheckList(ttk.LabelFrame):
     """(Kept for backward compatibility) Simple single-column checklist with scrolling."""
     def __init__(self, parent, title, callback):

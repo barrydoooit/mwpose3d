@@ -45,8 +45,27 @@ python tools/create_data.py {your_dataset_name} \
 A graphical user interface (GUI) will open automatically.
 
 1.  Select the traces you want to include in the dataset.
-2.  Click **Align Data** to synchronize radar and Kinect data.
-3.  Once the aligned traces appear in the bottom panel, select them and click **Create Data**.
+2.  (Optional) click **Calibrate Time** on one selected trace to estimate Kinect/Radar offset.  
+    The calibrated value is written into `skeleton_ts_offset_ms` automatically (you can also type this value manually).
+3.  Click **Align Data** to synchronize radar and Kinect data using `skeleton_ts_offset_ms`.
+4.  Once aligned traces appear in the bottom panel, select them and click **Create Data**.  
+    Before creating, set output options in the right panel:
+    - `pointcloud_subdir`: subfolder under `mmwave/pointcloud/` (e.g., `default`, `newdsp`).
+    - `Structured mmwave_path (dict)`:
+      - checked (default): save to `mmwave/pointcloud/<pointcloud_subdir>/`, `mmwave_path` is a dict.
+      - unchecked: save to `mmwave/pointcloud/`, `mmwave_path` is a string.
+
+For quick help, hover the `ⓘ` icon next to each field in `Alignment / Output Params`.
+
+> **For Training Config (later step, not data creation):**
+> Use `data_prefix` in your model config. Dotted prefix `A.B.C` means path `A/B/C`.
+>
+> ```python
+> data_prefix = dict(
+>     pcd='mmwave.pointcloud.default',  # -> mmwave/pointcloud/default
+>     skel='skeleton',
+> )
+> ```
 
 #### Data Partitioning
 
@@ -55,4 +74,3 @@ To split the dataset into different partitions (e.g., train, val, test):
 1.  Specify the partition name in the top-right text box.
 2.  Select the corresponding traces in the bottom panel.
 3.  Click **Allocate to Info** to assign the selected traces to the specified partition.
-

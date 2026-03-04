@@ -14,7 +14,7 @@ class AlignTraces:
                  episode: 'Episode',
                  use_interp_skel: bool = False,
                  skeleton_ts_type: Literal['real_ts', 'unix_ms'] = 'unix_ms', # real_ts is calculated in calibrator as start unix_ms + timestamp
-                 skeleton_ts_offset_ms: int = 60, # default value for kinect-based collection
+                 skeleton_ts_offset_ms: int = 0, # default value for kinect-based collection
                  ): 
         self.use_interp_skel = use_interp_skel
         self.episode = episode
