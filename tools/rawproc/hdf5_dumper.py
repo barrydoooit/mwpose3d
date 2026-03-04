@@ -10,9 +10,11 @@ from .episode import Episode
 class ToHdf5:
     def __init__(self,
                  alligned_episode: 'Episode',
-                 output_dir: Path):
+                 output_dir: Path,
+                 pointcloud_subdir: str = 'default'):
         self.alligned_episode = alligned_episode
         self.output_dir = output_dir
+        self.pointcloud_subdir = pointcloud_subdir.strip() or 'default'
 
     def check_na(self):
         pcd_nok, skel_nok = self.alligned_episode.check_na()
@@ -26,7 +28,7 @@ class ToHdf5:
         frame_ids = self.alligned_episode.pcd_df['seq'].unique()
         assert (np.diff(frame_ids) == 1).all() and frame_ids[0] == 0, ValueError("'seq' column is not ascending from 0.")
         
-        mmwave_dir = self.output_dir / 'mmwave'
+        mmwave_dir = self.output_dir / 'mmwave' / 'pointcloud' / self.pointcloud_subdir
         skeleton_dir = self.output_dir / 'skeleton'
         mmwave_dir.mkdir(parents=True, exist_ok=True)
         skeleton_dir.mkdir(parents=True, exist_ok=True)
@@ -87,7 +89,7 @@ class ToHdf5:
             meta,
             frame_count=frame_count,
             id=file_key,
-            mmwave_path=f'{file_key}.h5',
+            mmwave_path=f'pointcloud/{self.pointcloud_subdir}/{file_key}.h5',
             skeleton_path=f'{file_key}.h5',
         )
         meta_data = self.alligned_episode.pcd_meta

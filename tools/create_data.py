@@ -131,6 +131,9 @@ def main():
         help='specify the output directory')
     parser.add_argument('--debug', action='store_true', help='enable debug mode')
     args = parser.parse_args()
+    if not args.out_dir:
+        args.out_dir = str(Path('data') / args.dataset)
+
     if args.debug:
         debugpy.listen(5678)
         print('Waiting for debugger attach')

@@ -127,10 +127,18 @@ class Episode:
         else:
             calibrator_gui = CalibrateTimeWindow(self)
             calibrator_gui.wait_window()
-            return calibrator_gui.result_episode
+            return calibrator_gui.result_offset_ms
             
-    def align_traces(self, use_interp_skel: bool = True):
-        aligner = AlignTraces(self, use_interp_skel)
+    def align_traces(self,
+                     use_interp_skel: bool = True,
+                     skeleton_ts_type: Literal['real_ts', 'unix_ms'] = 'unix_ms',
+                     skeleton_ts_offset_ms: int = 60):
+        aligner = AlignTraces(
+            self,
+            use_interp_skel=use_interp_skel,
+            skeleton_ts_type=skeleton_ts_type,
+            skeleton_ts_offset_ms=skeleton_ts_offset_ms,
+        )
         aligner.align()
         return aligner.make_episode(self.episode_name)
     

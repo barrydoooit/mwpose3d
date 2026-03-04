@@ -39,7 +39,7 @@ class DataProcessorProtocol(Protocol):
     def update_episode(self, name: str, new_episode: Episode): ...
 
     @abstractmethod
-    def handle_create_data(self, episodes: list, suffix: str): ...
+    def handle_create_data(self, episodes: list, suffix: str, pointcloud_subdir: str): ...
     @abstractmethod
     def handle_delete_raw(self, episodes: list): ...
     @abstractmethod
@@ -51,7 +51,7 @@ class DataProcessorProtocol(Protocol):
     @abstractmethod
     def handle_reload_raw(self, episodes: list): ...
     @abstractmethod
-    def handle_data_align(self, episodes: list): ...
+    def handle_data_align(self, episodes: list, skeleton_ts_offset_ms: int): ...
 
 
 class DataProcessorGUI(tk.Tk):
@@ -75,6 +75,7 @@ class DataProcessorGUI(tk.Tk):
         self.processor.load_processed_episodes()
         self.refresh_episode_lists()
         self.processor._gui_refresh_callabck = self.refresh_episode_lists
+        self.processor._gui_set_offset_callback = self.set_skeleton_ts_offset
 
     def create_widgets(self):
         # Two-column layout
@@ -103,6 +104,19 @@ class DataProcessorGUI(tk.Tk):
         ttk.Label(control_frame, text="Info Suffix:").pack(anchor=tk.W)
         self.info_suffix_entry = ttk.Entry(control_frame)
         self.info_suffix_entry.pack(fill=tk.X, pady=5)
+
+        param_frame = ttk.LabelFrame(control_frame, text="Alignment / Output Params")
+        param_frame.pack(fill=tk.X, pady=5)
+
+        ttk.Label(param_frame, text="skeleton_ts_offset_ms:").pack(anchor=tk.W)
+        self.skeleton_offset_entry = ttk.Entry(param_frame)
+        self.skeleton_offset_entry.insert(0, "60")
+        self.skeleton_offset_entry.pack(fill=tk.X, pady=2)
+
+        ttk.Label(param_frame, text="pointcloud_subdir:").pack(anchor=tk.W)
+        self.pointcloud_subdir_entry = ttk.Entry(param_frame)
+        self.pointcloud_subdir_entry.insert(0, "default")
+        self.pointcloud_subdir_entry.pack(fill=tk.X, pady=2)
 
         self.create_control_buttons(control_frame)
 
@@ -147,7 +161,8 @@ class DataProcessorGUI(tk.Tk):
     def create_data(self):
         episodes = self.get_selected_episodes(lazy=False)
         suffix = self.info_suffix_entry.get().strip()
-        self.processor.handle_create_data(episodes, suffix)
+        pointcloud_subdir = self.pointcloud_subdir_entry.get().strip() or "default"
+        self.processor.handle_create_data(episodes, suffix, pointcloud_subdir)
 
     def delete_raw(self):
         episode_names = self.get_selected_episodes(lazy=True)
@@ -176,7 +191,16 @@ class DataProcessorGUI(tk.Tk):
 
     def align_data(self):
         episode_names = self.get_selected_episodes(lazy=True)
-        self.processor.handle_data_align(episode_names)
+        try:
+            skeleton_ts_offset_ms = int(self.skeleton_offset_entry.get().strip())
+        except ValueError:
+            messagebox.showerror("Invalid Parameter", "skeleton_ts_offset_ms must be an integer.")
+            return
+        self.processor.handle_data_align(episode_names, skeleton_ts_offset_ms=skeleton_ts_offset_ms)
+
+    def set_skeleton_ts_offset(self, offset_ms: int):
+        self.skeleton_offset_entry.delete(0, tk.END)
+        self.skeleton_offset_entry.insert(0, str(int(offset_ms)))
 
     # ---- ----
 
@@ -272,6 +296,7 @@ class DataProcessorDelegate(DataProcessorProtocol):
         self._processed_episode_names = set()
         self._episodes: Dict[str, Episode] = {}
         self._gui_refresh_callabck = None
+        self._gui_set_offset_callback = None
         self._status_df = pd.DataFrame(columns=["Calibrated", "Aligned"], dtype=bool)
 
     @property
@@ -311,7 +336,7 @@ class DataProcessorDelegate(DataProcessorProtocol):
         if self._gui_refresh_callabck:
             self._gui_refresh_callabck()
 
-    def handle_create_data(self, episodes: list, suffix: str):
+    def handle_create_data(self, episodes: list, suffix: str, pointcloud_subdir: str):
         def task():
             suffixes = ["all"]
             if suffix:
@@ -319,7 +344,11 @@ class DataProcessorDelegate(DataProcessorProtocol):
             for name in episodes:
                 try:
                     episode = self.get_episode(name)
-                    hdf5_maker = ToHdf5(episode, self.output_dir)
+                    hdf5_maker = ToHdf5(
+                        episode,
+                        self.output_dir,
+                        pointcloud_subdir=pointcloud_subdir,
+                    )
                     hdf5_maker.save(suffixes)
                     self._processed_episode_names.add(name)
                 except Exception as e:
@@ -332,9 +361,11 @@ class DataProcessorDelegate(DataProcessorProtocol):
         def task():
             for name in episodes:
                 try:
-                    paths = [
-                        self.raw_dir / "pointcloud" / f"{name}.json",
+                    pointcloud_candidates = [self.raw_dir / "pointcloud" / f"{name}.json"]
+                    pointcloud_candidates += list((self.raw_dir / "pointcloud").glob(f"*/{name}.json"))
+                    paths = pointcloud_candidates + [
                         self.raw_dir / "meta" / f"{name}.json",
+                        self.raw_dir / "meta" / f"{name}.meta.json",
                         self.raw_dir / "kinect" / f"{name}.csv",
                     ]
                     for p in paths:
@@ -391,20 +422,23 @@ class DataProcessorDelegate(DataProcessorProtocol):
         threading.Thread(target=task, daemon=True).start()
 
     def handle_calibrate_time(self, episodes: list):
-        def task():
-            for name in episodes:
-                try:
-                    episode = self.get_episode(name)
-                    calibrated = episode.calibrate_time(manual=True)
-                    if calibrated is not None:
-                        self.episodes[name] = calibrated
-                    self.status_df.loc[name, "Calibrated"] = True
-                except Exception as e:
-                    logger.error(f"Failed to calibrate time: {e}")
-                    traceback.print_exc()
+        if not episodes:
+            return
+        # Calibrate only on the first selected episode and return offset only.
+        name = episodes[0]
+        try:
+            episode = self.get_episode(name)
+            offset_ms = episode.calibrate_time(manual=True)
+            if offset_ms is None:
+                return
+            self.status_df.loc[name, "Calibrated"] = True
+            if self._gui_set_offset_callback is not None:
+                self._gui_set_offset_callback(int(offset_ms))
+            logger.info("Manual calibration finished on %s. skeleton_ts_offset_ms=%s", name, offset_ms)
             self.gui_refresh_callback()
-
-        threading.Thread(target=task, daemon=True).start()
+        except Exception as e:
+            logger.error(f"Failed to calibrate time: {e}")
+            traceback.print_exc()
 
     def handle_remove_processed(self, episodes, also_data):
         def task():
@@ -446,12 +480,16 @@ class DataProcessorDelegate(DataProcessorProtocol):
 
         threading.Thread(target=task, daemon=True).start()
 
-    def handle_data_align(self, episodes):
+    def handle_data_align(self, episodes, skeleton_ts_offset_ms: int):
         def task():
             try:
                 for name in episodes:
                     episode = self.get_episode(name)
-                    aligned = episode.align_traces(use_interp_skel=True)
+                    aligned = episode.align_traces(
+                        use_interp_skel=True,
+                        skeleton_ts_type='unix_ms',
+                        skeleton_ts_offset_ms=skeleton_ts_offset_ms,
+                    )
                     self.update_episode(name, aligned)
                     self.status_df.loc[name, "Aligned"] = True
                 self.gui_refresh_callback()

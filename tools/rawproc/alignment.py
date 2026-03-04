@@ -1,4 +1,5 @@
 from typing import TYPE_CHECKING, Literal
+from copy import deepcopy
 
 import numpy as np
 import pandas as pd
@@ -35,7 +36,7 @@ class AlignTraces:
             raise ValueError(f'Aligned data length mismatch: {len(self.output_skel_df)} != {len(self.output_pcd_df)}')
         
     def fetch_aligned_skel(self):
-        df_skel = self.episode.skel_df
+        df_skel = self.episode.skel_df.copy()
         df_pcd = self.episode.pcd_df
         
         aligned_skels = []
@@ -59,10 +60,11 @@ class AlignTraces:
         return None
     
     def interpolate_aligned_skel(self):
-        df_skel = self.episode.skel_df
+        df_skel = self.episode.skel_df.copy()
         df_pcd = self.episode.pcd_df
         
         aligned_skels = []
+        df_skel[self.skeleton_ts_type] += self.skeleton_ts_offset_ms
         
         unique_radar_ts = np.sort(df_pcd['ts'].unique())
         skel_ts_values = df_skel[self.skeleton_ts_type].values
@@ -127,6 +129,8 @@ class AlignTraces:
         new_episode = Episode(episode_name, length)
         new_episode.skel_df = self.output_skel_df
         new_episode.pcd_df = self.output_pcd_df
-        new_episode.pcd_meta = self.episode.pcd_meta
+        pcd_meta = deepcopy(self.episode.pcd_meta) if self.episode.pcd_meta is not None else {}
+        pcd_meta['alignment_offset_ms'] = int(self.skeleton_ts_offset_ms)
+        new_episode.pcd_meta = pcd_meta
         new_episode.clean_skel_df()
         return new_episode
