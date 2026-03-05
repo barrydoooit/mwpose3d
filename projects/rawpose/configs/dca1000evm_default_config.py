@@ -44,20 +44,17 @@ train_pipeline = [
         type='SkeletonKeypointFilter',
         keypoints_involved=keypoints_involved,
     ),
-    # ==========================================================
-    # TRANSLATION CONFIGURATION
-    # You mentioned Radar is 74cm (0.74m) and Kinect is 174cm (1.74m) above ground.
-    # To prevent everything from rendering below ground (Z=0, Y=0), we bring the 
-    # Kinect center (1.74m) down to the origin line, and shift the radar down accordingly
-    # preserving the exactly 1.0m relative offset.
-    # ==========================================================
+
+
     dict(
         type='SkeletonCoordinateTransform',
-        tran_xyz=(0.0, -1.685, 0.0)
+        tran_xyz=(0.0, 0.0, +1.685) # calculate precise tilt
+        rotate_xyz=(-10.0, 0.0, 0.0),
     ),
     dict(
         type='PointCloudCoordinateTransform',
-        tran_xyz=(0.0, -0.49, 0.0), # Example: translating the point cloud 1.0m up 
+        tran_xyz=(0.0, 0.0,+0.49), 
+        rotate_xyz=(21.0, 0.0, 0.0),
     ),
     
     dict(
