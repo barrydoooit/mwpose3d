@@ -37,6 +37,20 @@ uv run .\tools\inspect_dataset.py projects\rawpose\configs\dca1000evm_default_co
 
 If you prefer to use process_point_cloud=False, you can use the scripts in `tools/rawproc`: `run_alignment_raw.py` and `visualized_aligned_pc.py`
 
+## Physical setup
+
+For a 174 cm tall person, the "arms and torso" region stretches roughly from the waist (~85 cm) to the top of the head/shoulders (~150–174 cm). The center of this area is the mid-chest, which sits at approximately **125 cm (1.25 m)** off the ground.
+Radar is mounted low at **49 cm (0.49 m)**, so the height difference ($\Delta h$) is **76 cm (0.76 m)**.
+
+The optimal tilt depends entirely on how far away the person is standing:
+$\theta = \arctan(\frac{\Delta h}{d})$
+
+### Recommended Tilt Angles by Distance
+
+* **Standing 1.0 m away:** Tilt the radar upward by **$37^\circ$**
+* **Standing 1.5 m away:** Tilt the radar upward by **$27^\circ$**
+* **Standing 2.0 m away:** Tilt the radar upward by **$21^\circ$**
+
 ## TODOs:
 [x] fix raw .bin filenames in output dir
 [x] integrate with the current alignment pipeline.
@@ -46,7 +60,7 @@ If you prefer to use process_point_cloud=False, you can use the scripts in `tool
 [] script for offline processing of raw data to point clouds (@barrydooit)
 
 ## TODOS (26/02)
-[] annotate valid pointing gestures in data (using kinect skeleton data)
-[] verify point cloud generation matches mmmesh algorithm
-[] find precise FOV of radar and calculate minimum range for capturing arm joints
+[x] annotate valid pointing gestures in data (using kinect skeleton data)
+[] verify point cloud generation matches mmmesh algorithm (@barrydooit)
+[x] find precise FOV of radar and calculate minimum range for capturing arm joints
 [] calculate precise transformation from kinect and radar to common coordinate system considering both translation and tilt
