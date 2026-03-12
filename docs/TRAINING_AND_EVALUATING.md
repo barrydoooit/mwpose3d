@@ -10,6 +10,10 @@ python tools/train.py ${CONFIG_FILE}
 ```
 where `${CONFIG_FILE}` specifies the full training configuration, including model architecture, dataset settings, and optimization parameters.
 
+For a detailed explanation of how configuration files work, the difference between data creation configs and training configs, and the essential fields required for training configs, please see [CONFIGS.md](CONFIGS.md). 
+
+For a complete working training configuration template that you can modify for your custom dataset, check: `projects/rawpose/configs/rawpose_training_example.py`.
+
 ### Evaluation
 
 To evaluate a trained model, run:
