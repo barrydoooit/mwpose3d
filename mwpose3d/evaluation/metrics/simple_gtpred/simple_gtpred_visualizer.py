@@ -106,6 +106,7 @@ class SimpleGTPredVisualizerQT:
         self.window_size = max(10, int(window_size))
         self.follow = bool(follow)
         self.max_points_per_frame = max_points_per_frame
+        self.show_point_cloud = show_point_cloud
 
         self.app = _ensure_qapp()
 
@@ -115,8 +116,55 @@ class SimpleGTPredVisualizerQT:
         except Exception:
             pass
 
+        # ---------- Data buffers (persist across window rebuilds) ----------
+        self.gt_data: List = []
+        self.pred_data: List = []
+        self.pc_data: List = []
+        self.report: List[Dict] = []
+        self.centroids: List[Optional[np.ndarray]] = []
+        self._bbox_half = 0.05
+        self._bbox_zmin = -1.0
+        self._bbox_zmax = 1.0
+        self.stats_errors: Dict[KeypointType, List[float]] = {kp: [] for kp in self.keypoint_for_stats}
+        self.num_frames: int = 0
+
+        # bone connectivity pairs
+        self._bone_pairs: List[tuple[int, int]] = []
+        for kp in self.keypoints_involved:
+            if kp in Connectivity:
+                for connected in Connectivity[kp]:
+                    if connected in self.keypoints_involved:
+                        i1 = self.keypoints_involved.index(kp)
+                        i2 = self.keypoints_involved.index(connected)
+                        self._bone_pairs.append((i1, i2))
+
+        # Colors
+        self._color_gt = (0.2, 0.2, 1.0, 1.0)
+        self._color_pred = (1.0, 0.2, 0.2, 1.0)
+
+        # Slider state
+        self._user_dragging = False
+        self._drag_multiplier = 2.0
+        self._drag_origin_value: Optional[int] = None
+        self._drag_dx_accum: float = 0.0
+
+        self._build_window()
+
+    def _build_window(self):
+        """Create the Qt window once. Uses hide-on-close so GL contexts are never destroyed."""
+        outer = self
+
+        class _HideOnClose(QtWidgets.QMainWindow):
+            """Close button hides the window rather than destroying it."""
+            closed = QtCore.Signal()
+
+            def closeEvent(self, event):
+                event.ignore()
+                self.hide()
+                self.closed.emit()
+
         # ---------- Main window & layout ----------
-        self.win = QtWidgets.QMainWindow()
+        self.win = _HideOnClose()
         self.win.setWindowTitle("3D Skeleton Visualizer (Qt)")
         central = QtWidgets.QWidget()
         self.win.setCentralWidget(central)
@@ -145,7 +193,6 @@ class SimpleGTPredVisualizerQT:
         self.view_pc.addItem(self.pc_item)
         self.pc_bbox_item = gl.GLLinePlotItem(pos=np.zeros((0, 3), dtype=np.float32), color=(0.0, 1.0, 0.0, 1.0), width=2.5, mode='lines')
         self.view_pc.addItem(self.pc_bbox_item)
-
         splitter.addWidget(self.view_pc)
 
         # Pred
@@ -164,12 +211,11 @@ class SimpleGTPredVisualizerQT:
         controls.addWidget(self.chk_follow)
 
         self.chk_show_pc = QtWidgets.QCheckBox("Show Point Cloud")
-        self.chk_show_pc.setChecked(show_point_cloud)
+        self.chk_show_pc.setChecked(self.show_point_cloud)
         self.chk_show_pc.toggled.connect(self._on_toggle_pointcloud)
         controls.addWidget(self.chk_show_pc)
 
         controls.addStretch(1)
-        # Keep a small label in controls (slider itself is now at the bottom, full width)
         lbl = QtWidgets.QLabel("Frame:")
         controls.addWidget(lbl)
 
@@ -180,7 +226,6 @@ class SimpleGTPredVisualizerQT:
                 vbself._on_drag_cb = on_drag_cb
 
             def mouseDragEvent(vbself, ev, axis=None):
-                # Left-button drag drives scrubbing; others fall back to default behavior
                 if ev.button() == QtCore.Qt.LeftButton:
                     ev.accept()
                     if ev.isStart():
@@ -193,10 +238,6 @@ class SimpleGTPredVisualizerQT:
                 else:
                     super().mouseDragEvent(ev, axis=axis)
 
-        self._drag_multiplier = 2.0  # tuneable factor for scrub speed
-        self._drag_origin_value: Optional[int] = None
-        self._drag_dx_accum: float = 0.0
-
         self._err_vb = _DragViewBox(self._on_errplot_drag)
         self.err_plot = pg.PlotWidget(viewBox=self._err_vb, enableMenu=False)
         self.err_plot.setBackground('w')
@@ -205,21 +246,20 @@ class SimpleGTPredVisualizerQT:
         self.err_plot.setLabel('bottom', 'Frame')
         root_layout.addWidget(self.err_plot, 3)
 
-        # Error lines (one per KP) — thicker pens and distinct colors
+        # Error lines (one per KP)
         self.err_curves: Dict[KeypointType, pg.PlotDataItem] = {}
         n_kps = max(1, len(self.keypoint_for_stats))
         for i, kp in enumerate(self.keypoint_for_stats):
-            color = pg.intColor(i, hues=max(8, n_kps))  # distinct hues
-            pen = pg.mkPen(color=color, width=3)        # thicker lines
+            color = pg.intColor(i, hues=max(8, n_kps))
+            pen = pg.mkPen(color=color, width=3)
             curve = self.err_plot.plot(pen=pen, name=str(kp.name))
             self.err_curves[kp] = curve
 
         self.err_vline = pg.InfiniteLine(angle=90, movable=False, pen=pg.mkPen('r', width=2))
         self.err_plot.addItem(self.err_vline)
-        # Add legend
         self.err_plot.addLegend(offset=(10, 10))
 
-        # --- Full-width bottom slider (progress bar) ---
+        # --- Full-width bottom slider ---
         self.slider = QtWidgets.QSlider(QtCore.Qt.Horizontal)
         self.slider.setRange(0, 0)
         self.slider.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Fixed)
@@ -230,36 +270,7 @@ class SimpleGTPredVisualizerQT:
         root_layout.addWidget(self.slider)
 
         # Initial PC visibility
-        self.view_pc.setVisible(show_point_cloud)
-
-        # ---------- Data buffers ----------
-        self.gt_data: List[torch.Tensor] = []
-        self.pred_data: List[torch.Tensor] = []
-        self.pc_data: List[Optional[torch.Tensor]] = []
-        self.report: List[Dict] = []
-        self.centroids: List[Optional[np.ndarray]] = []
-        self._bbox_half = 0.05
-        self._bbox_zmin = -1.0
-        self._bbox_zmax = 1.0
-        self.stats_errors: Dict[KeypointType, List[float]] = {kp: [] for kp in self.keypoint_for_stats}
-        self.num_frames: int = 0
-
-        # connectivity segments index mapping (pairs of indices)
-        self._bone_pairs: List[tuple[int, int]] = []
-        for kp in self.keypoints_involved:
-            if kp in Connectivity:
-                for connected in Connectivity[kp]:
-                    if connected in self.keypoints_involved:
-                        i1 = self.keypoints_involved.index(kp)
-                        i2 = self.keypoints_involved.index(connected)
-                        self._bone_pairs.append((i1, i2))
-
-        # Colors
-        self._color_gt = (0.2, 0.2, 1.0, 1.0)
-        self._color_pred = (1.0, 0.2, 0.2, 1.0)
-
-        # Slider state
-        self._user_dragging = False
+        self.view_pc.setVisible(self.show_point_cloud)
 
         # Show window immediately
         self.win.resize(1400, 900)
@@ -279,12 +290,16 @@ class SimpleGTPredVisualizerQT:
         self.report.clear()
         self.centroids.clear()
         self.num_frames = 0
+        # Re-show the window for the next validation epoch (window is hidden, not destroyed)
+        self.win.setWindowTitle("3D Skeleton Visualizer (Qt)")
         self.slider.setRange(0, 0)
-        self._draw_frame(None)  # clears
+        self._draw_frame(None)  # clears display
         self._update_error_plot()
+        self.win.show()
+        self.win.raise_()
 
     def update(self, gt_tensor, pred_tensor, pc_tensor=None, frame_report=None, track_centroid=None):
-        # Store references (CPU tensors or numpy-friendly)
+        # Always accumulate data (needed for the metrics report even if GUI is gone)
         self.gt_data.append(gt_tensor)
         self.pred_data.append(pred_tensor)
         self.pc_data.append(pc_tensor)
@@ -294,6 +309,10 @@ class SimpleGTPredVisualizerQT:
         
         self._append_errors(gt_tensor, pred_tensor, frame_report)
         self.num_frames = len(next(iter(self.stats_errors.values()))) if self.stats_errors else len(self.gt_data)
+
+        # Guard: skip all Qt widget calls if the window was closed
+        if self.win is None:
+            return
 
         # Update slider maximum; if following and not dragging, keep it at newest
         self.slider.setMaximum(max(0, self.num_frames - 1))
@@ -307,40 +326,27 @@ class SimpleGTPredVisualizerQT:
 
     def finalize(self, *args, **kwargs):
         """
-        Keep the visualizer responsive and open until the user closes the window.
+        Keep the visualizer responsive until the user closes (hides) the window.
 
-        This spins a nested Qt event loop tied to the window's lifetime, so callers
-        (e.g., evaluate()) return only after the user closes the visualizer.
+        The window uses hide-on-close, so clicking X just hides it and emits
+        `closed`. This spins a nested Qt event loop that exits on that signal.
         """
         try:
-            from PySide6 import QtCore
-
-            # If the window is already gone, nothing to do.
-            if not hasattr(self, "win") or self.win is None or not callable(getattr(self.win, "isVisible", None)):
-                return
+            # Ensure the window is visible
             if not self.win.isVisible():
-                return
+                self.win.show()
+                self.win.raise_()
 
-            # Ensure the window emits `destroyed` when closed by the user
-            self.win.setAttribute(QtCore.Qt.WA_DeleteOnClose, True)
-
-            # Nested event loop that exits when the window is destroyed
+            # Nested event loop that exits when the user clicks X
             loop = QtCore.QEventLoop()
-            self.win.destroyed.connect(loop.quit)
-
-            # Run until user closes the window
+            self.win.closed.connect(loop.quit)
             loop.exec()
+            self.win.closed.disconnect(loop.quit)
 
         except Exception:
             # Fallback: lightweight polling loop that keeps the UI alive
             import time
-            while (
-                hasattr(self, "win")
-                and self.win is not None
-                and callable(getattr(self.win, "isVisible", None))
-                and self.win.isVisible()
-            ):
-                # Non-blocking UI pump
+            while self.win.isVisible():
                 try:
                     self.idle()
                 except Exception:
@@ -515,38 +521,41 @@ class SimpleGTPredVisualizerQT:
             self.pc_bbox_item.setData(pos=np.zeros((0, 3), dtype=np.float32)) 
 
     def _extract_pc_positions(self, pc_tensor) -> Optional[np.ndarray]:
-        """Accept [1,F,N,C], [F,N,C], [N,C]; show up to 2 temporal slices with a gradient."""
+        """Accept numpy array or torch.Tensor of shapes [1,F,N,C], [F,N,C], or [N,C];
+        shows the most recent frame's XYZ positions."""
         if pc_tensor is None:
             return None
-        if not isinstance(pc_tensor, torch.Tensor):
-            return None
-        t = pc_tensor.detach().cpu().float()
 
-        def decimate(xyz: torch.Tensor) -> torch.Tensor:
+        # Normalize to numpy
+        if isinstance(pc_tensor, torch.Tensor):
+            arr = pc_tensor.detach().cpu().float().numpy()
+        elif isinstance(pc_tensor, np.ndarray):
+            arr = pc_tensor.astype(np.float32)
+        else:
+            return None
+
+        def decimate(xyz: np.ndarray) -> np.ndarray:
             N = xyz.shape[0]
             if self.max_points_per_frame and N > self.max_points_per_frame:
-                idx = torch.randperm(N)[: self.max_points_per_frame]
+                idx = np.random.choice(N, self.max_points_per_frame, replace=False)
                 return xyz[idx]
             return xyz
 
-        if t.dim() == 4:
+        if arr.ndim == 4:
             # [B,F,N,C] -> take first B, last up to 2 frames and stack
-            B, F, N, C = t.shape
+            B, F, N, C = arr.shape
             f_take = min(2, F)
-            frames = [t[0, F - i - 1, :, :3] for i in range(f_take)]
-            xyz = torch.cat([decimate(fr) for fr in frames], dim=0)
-            return xyz.numpy()
-        elif t.dim() == 3:
+            frames = [arr[0, F - i - 1, :, :3] for i in range(f_take)]
+            return np.concatenate([decimate(fr) for fr in frames], axis=0)
+        elif arr.ndim == 3:
             # [F,N,C] -> last up to 2 frames
-            F, N, C = t.shape
+            F, N, C = arr.shape
             f_take = min(2, F)
-            frames = [t[F - i - 1, :, :3] for i in range(f_take)]
-            xyz = torch.cat([decimate(fr) for fr in frames], dim=0)
-            return xyz.numpy()
-        elif t.dim() == 2:
+            frames = [arr[F - i - 1, :, :3] for i in range(f_take)]
+            return np.concatenate([decimate(fr) for fr in frames], axis=0)
+        elif arr.ndim == 2:
             # [N,C]
-            xyz = decimate(t[:, :3])
-            return xyz.numpy()
+            return decimate(arr[:, :3])
         return None
 
     def _update_error_plot(self):

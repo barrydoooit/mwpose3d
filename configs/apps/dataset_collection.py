@@ -30,10 +30,10 @@ instructions = dict(
 )
 
 # data_root = 'apps/impl/dataset_collection/traces'
-data_root = 'apps/impl/dataset_collection/traces/down15'
+data_root = 'apps/impl/dataset_collection/traces/joaquin_collection_2_v1'
 buffer_cfg = dict(
     dump_dir=f'{data_root}/pointcloud',
-    buffer_size=5000
+    buffer_size=500
 )
 
 kinect_cfg = dict(

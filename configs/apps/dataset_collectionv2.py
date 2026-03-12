@@ -1,7 +1,7 @@
 _base_ = [
-    '../../../mwCore/configs/dsp/ti-mobile-tracker_xWR1843.py',
+    '../../../mwCore/configs/dsp/mmmesh_xWR1843.py', # simple top 128 energy
 ]
-
+# mmmesh_xWR1843.py
 custom_imports = dict(
     imports=['mwpose3d', 'apps.impl.dataset_collectionv2'],
     allow_failed_imports=False,
@@ -53,7 +53,7 @@ instructions = dict(
 )
 
 # data_root = 'apps/impl/dataset_collectionv2/traces'
-data_root = 'apps/impl/dataset_collectionv2/traces/rawbin_v1'
+data_root = 'apps/impl/dataset_collectionv2/traces/joaquin_collection_2'
 buffer_cfg = dict(
     dump_dir=f'{data_root}/raw',
     buffer_size=500,
@@ -63,7 +63,7 @@ buffer_cfg = dict(
 
 kinect_cfg = dict(
     kinect_mgr_cfg=dict(
-        exe_path='apps/impl/dataset_collectionv2/DumpKinectSkeleton/bin/Release/DumpKinectSkeleton.exe',
+        exe_path='apps/impl/dataset_collection/DumpKinectSkeleton/bin/Release/DumpKinectSkeleton.exe',
         output_dir=f'{data_root}/kinect',
         mode=['capture', 'control'],
     )

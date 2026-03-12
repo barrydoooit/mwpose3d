@@ -1,5 +1,5 @@
 _base_ = [
-    '../configs/__base__/default_runtime.py',
+    '../../../configs/__base__/default_runtime.py',
 ]
 custom_imports = dict(
     imports=['mwpose3d', 'projects.mmmesh'], allow_failed_imports=False)
@@ -9,7 +9,7 @@ data_root = 'tmp/try_1'
 train_info = 'info_all.pkl'
 
 data_prefix = dict(
-    pcd='mmwave',
+    pcd='mmwave.pointcloud.default',
     skel='skeleton'
 )
 
@@ -36,6 +36,10 @@ train_pipeline = [
         empty_frame_op='prev',
     ),
     dict(
+        type='AddRangeDimension',
+        insert_idx=5,
+    ),
+    dict(
         type='SequenceClip',
         mode='last',
         sequence_length=num_frames
@@ -48,7 +52,7 @@ train_pipeline = [
 
     dict(
         type='SkeletonCoordinateTransform',
-        tran_xyz=(0.0, 0.0, +1.685) # calculate precise tilt
+        tran_xyz=(0.0, 0.0, +1.685), # calculate precise tilt
         rotate_xyz=(-10.0, 0.0, 0.0),
     ),
     dict(
@@ -86,12 +90,44 @@ train_dataloader = dict(
     )
 )
 
+val_dataloader = dict(
+    batch_size=1,
+    num_workers=0,
+    shuffle=False,
+    drop_last=False,
+    dataset=dict(
+        type='MotionDataset',
+        data_root=data_root,
+        info_path=f"{data_root}/{train_info}",
+        data_prefix=data_prefix,
+        pipeline=train_pipeline,
+        sequence_length=total_frames,
+        allow_pad_sequence=False
+    )
+)
+
+test_dataloader = dict(
+    batch_size=1,
+    num_workers=0,
+    shuffle=False,
+    drop_last=False,
+    dataset=dict(
+        type='MotionDataset',
+        data_root=data_root,
+        info_path=f"{data_root}/{train_info}",
+        data_prefix=data_prefix,
+        pipeline=train_pipeline,
+        sequence_length=total_frames,
+        allow_pad_sequence=False
+    )
+)
+
 # Dummy configurations that tools might expect, but we don't strictly use for just visualization
 model = dict(
     type="MmMeshPredictor",
     point_cloud_size=point_cloud_size,
     frame_len=num_frames,
-    criterion='sdtw',
+    criterion='MSELoss',
     base_pointnet_cfg=dict(
         type="BasePointNet",
         channels=[6, 8, 16, 24],

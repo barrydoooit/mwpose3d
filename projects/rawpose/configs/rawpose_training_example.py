@@ -10,7 +10,7 @@ custom_imports = {
 # DATASET CONFIGURATION
 # ----------------------------------------------------------------------------
 # Set this to the path where your dataset is stored.
-data_root = './data/my_dataset' 
+data_root = './data/joaquin_3' 
 
 # Define exactly which info files to use for train, val, and test splits.
 train_info = 'info_train.pkl'
@@ -26,7 +26,7 @@ keypoints_involved = list(range(0, 20))
 
 # data_prefix is inherited from dca1000evm_default_config.py
 # If your point clouds or skeletons are named differently inside the HDF5, update this.
-# data_prefix = dict(pcd='mmwave', skel='skeleton')
+data_prefix = dict(pcd='mmwave.pointcloud.default', skel='skeleton')
 
 # ----------------------------------------------------------------------------
 # DATALOADERS
@@ -50,16 +50,8 @@ val_dataloader = dict(
     num_workers=4,
     shuffle=False,       # No shuffling during validation
     dataset=dict(
-        type='MotionDataset',
         data_root=data_root,
         info_path=f"{data_root}/{val_info}",
-        data_prefix=dict(pcd='mmwave', skel='skeleton'),
-        # Inherit the exact same pipeline used for training for correct scaling
-        # NOTE: Ideally, remove purely random augmentations from the validation pipeline 
-        # but for this example, we fallback to the default pipeline.
-        # (This relies on the dataset loading the pipeline correctly through Config inheritance)
-        sequence_length=total_frames,
-        allow_pad_sequence=False
     )
 )
 
@@ -69,12 +61,8 @@ test_dataloader = dict(
     num_workers=4,
     shuffle=False,
     dataset=dict(
-        type='MotionDataset',
         data_root=data_root,
         info_path=f"{data_root}/{test_info}",
-        data_prefix=dict(pcd='mmwave', skel='skeleton'),
-        sequence_length=total_frames,
-        allow_pad_sequence=False
     )
 )
 
@@ -101,9 +89,18 @@ metric = dict(
     keypoints_involved=keypoints_involved,
 )
 
+visualizer_cfg = {
+    "keypoints_involved": keypoints_involved,
+    "keypoint_for_stats": [5, 6],   # e.g., Left/Right Wrist
+    "error_type": "abs_error",
+    "window_size": 100,
+    "follow": True,
+    "max_points_per_frame": point_cloud_size,
+}
+
 val_cfg = dict(
     type='ValLoop',
-    metric_cfg=metric
+    metric_cfg=dict(metric, visualizer_cfg=visualizer_cfg)
 )
 
 # Postprocessing logic to run before metric evaluation
@@ -116,17 +113,7 @@ postprocess = [
 
 test_cfg = dict(
     type='TestLoop',
-    metric_cfg=dict(
-        metric,
-        visualizer_cfg={
-            "keypoints_involved": keypoints_involved,
-            "keypoint_for_stats": [5, 6],   # e.g., Left/Right Wrist
-            "error_type": "abs_error",
-            "window_size": 100,
-            "follow": True,
-            "max_points_per_frame": point_cloud_size,
-        }
-    ),
+    metric_cfg=dict(metric, visualizer_cfg=visualizer_cfg),
     postprocess=postprocess,
 )
 

@@ -4,11 +4,11 @@ from typing import Optional
 import numpy as np
 import torch
 
-from mwpose3d.evaluation.metrics.simple_gtpred.simple_gtpred_visualizer import SimpleGTPredVisualizerQT
 try:
-    from .simple_gtpred_visualizer import SimpleGTPredVisualizer
-except Exception as e:
-    print("Visualizer not available.")
+    from mwpose3d.evaluation.metrics.simple_gtpred.simple_gtpred_visualizer import SimpleGTPredVisualizerQT
+except ImportError as e:
+    SimpleGTPredVisualizerQT = None
+    print(f"Visualizer not available: {e}")
 from ..base import BaseMetric
 from mwpose3d.registry import METRICS
 

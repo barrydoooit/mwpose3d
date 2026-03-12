@@ -1,5 +1,8 @@
 """
 uv run .\tools\create_data.py custom --root-path "E:\projects\mwpose3d\apps\impl\dataset_collection\traces\raw_new_pc" --out-dir "."
+
+uv run .\tools\create_data.py joaquin_v2_att2 --root-path "E:\projects\mwpose3d\apps\impl\dataset_collectionv2\traces\joaquin_collection_2" --out-dir "./data/joaquin_3"
+
 """
 
 import argparse
