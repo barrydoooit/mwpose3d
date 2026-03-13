@@ -13,7 +13,6 @@ from tools.rawproc.alignment import AlignTraces
 from tools.rawproc.time_calib_manual import CalibrateTimeWindow
 from mwpose3d.utils.kinect_toolkits.kinectData import Skeleton
 
-from mwcore.radario.readers.offlineReaders.raw_bin_reader import RawBinReader
 from . import load_utils
 
 class Episode:
@@ -59,44 +58,6 @@ class Episode:
         if not raw_data_file.exists():
             return None
         self.pcd_df = load_utils.load_radar_schema_json_to_df(raw_data_file)
-
-    def load_pcd_bin(self, bin_path: Path):
-        if not bin_path.exists():
-            raise FileNotFoundError(f'{bin_path} does not exist.')
-        
-        reader = RawBinReader(str(bin_path), has_timestamp=True)
-        
-        rows = []
-        try:
-            while True:
-                data = reader.read()
-                if data is None:
-                    break
-                
-                ts, pcd = data
-                assert pcd.shape[1] == 6, f'pcd shape is {pcd.shape}, expected (6, N)'
-
-                pcd_t = pcd.T
-                for point in pcd_t:
-                    rows.append({
-                        'seq': reader.current_frame_idx, # 0 ind
-                        'ts': int(ts * 1000), 
-                            'x': point[0],
-                            'y': point[1],
-                            'z': point[2],
-                            'vel': point[3],
-                            'snr': point[4],
-                        })
-        finally:
-            reader.close()
-            
-        if rows:
-            self.pcd_df = pd.DataFrame(rows)
-            self.pcd_df['ts'] = self.pcd_df['ts'].astype(pd.Int64Dtype())
-        else:
-             # Create empty DF with correct columns
-            self.pcd_df = pd.DataFrame(columns=['seq', 'ts', 'x', 'y', 'z', 'vel', 'snr'])
-
          
     def load_pcd_meta(self, meta_data_dir: Path, allow_missing: bool = False):
         meta_data_file = meta_data_dir / f'{self.episode_name}.json'
