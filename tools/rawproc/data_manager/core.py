@@ -45,6 +45,7 @@ class DataProcessorProtocol(Protocol):
         suffix: str,
         pointcloud_subdir: str,
         mmwave_path_as_dict: bool,
+        missing_frame_strategy: str,
     ): ...
     @abstractmethod
     def handle_delete_raw(self, episodes: list): ...
@@ -164,6 +165,26 @@ class DataProcessorGUI(tk.Tk):
         ))
         self._on_mmwave_path_mode_changed()
 
+        missing_frame_row = ttk.Frame(param_frame)
+        missing_frame_row.pack(fill=tk.X)
+        ttk.Label(missing_frame_row, text="missing_frame_strategy:").pack(side=tk.LEFT)
+        missing_frame_info = ttk.Label(missing_frame_row, text="ⓘ", foreground="#1f6aa5", cursor="question_arrow")
+        missing_frame_info.pack(side=tk.LEFT, padx=(4, 0))
+        self._tooltips.append(HoverTooltip(
+            missing_frame_info,
+            "How to repair missing radar frames caused by empty pointcloud entries.\n"
+            "duplicate: copy the previous non-empty frame.\n"
+            "remove: compress the sequence and renumber remaining frames."
+        ))
+        self.missing_frame_strategy_var = tk.StringVar(value="duplicate")
+        self.missing_frame_strategy_box = ttk.Combobox(
+            param_frame,
+            textvariable=self.missing_frame_strategy_var,
+            values=("duplicate", "remove"),
+            state="readonly",
+        )
+        self.missing_frame_strategy_box.pack(fill=tk.X, pady=2)
+
         self.create_control_buttons(control_frame)
 
         # Status bar
@@ -218,6 +239,7 @@ class DataProcessorGUI(tk.Tk):
             suffix,
             pointcloud_subdir,
             mmwave_path_as_dict=mmwave_path_as_dict,
+            missing_frame_strategy=self.missing_frame_strategy_var.get().strip() or "duplicate",
         )
 
     def delete_raw(self):
@@ -404,6 +426,7 @@ class DataProcessorDelegate(DataProcessorProtocol):
         suffix: str,
         pointcloud_subdir: str,
         mmwave_path_as_dict: bool,
+        missing_frame_strategy: str,
     ):
         def task():
             suffixes = ["all"]
@@ -417,6 +440,7 @@ class DataProcessorDelegate(DataProcessorProtocol):
                         self.output_dir,
                         pointcloud_subdir=pointcloud_subdir,
                         mmwave_path_as_dict=mmwave_path_as_dict,
+                        missing_frame_strategy=missing_frame_strategy,
                     )
                     hdf5_maker.save(suffixes)
                     self._processed_episode_names.add(name)
