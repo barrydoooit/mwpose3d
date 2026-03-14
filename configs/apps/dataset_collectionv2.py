@@ -1,5 +1,5 @@
 _base_ = [
-    '../../../mwCore/configs/dsp/mmmesh_xWR1843.py', # simple top 128 energy
+        '../../../mwCore/configs/dsp/mmmesh_xWR1843.py', # simple top 128 energy
 ]
 # mmmesh_xWR1843.py
 custom_imports = dict(
@@ -53,7 +53,7 @@ instructions = dict(
 )
 
 # data_root = 'apps/impl/dataset_collectionv2/traces'
-data_root = 'apps/impl/dataset_collectionv2/traces/joaquin_collection_2'
+data_root = 'apps/impl/dataset_collectionv2/traces/joaquin_simple_point'
 buffer_cfg = dict(
     dump_dir=f'{data_root}/raw',
     buffer_size=500,

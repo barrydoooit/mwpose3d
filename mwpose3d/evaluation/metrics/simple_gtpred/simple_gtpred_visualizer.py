@@ -6,14 +6,12 @@ from mwpose3d.utils.kinect_toolkits.kinectData import KeypointType, Connectivity
 import math
 from typing import Dict, List, Optional
 
-import numpy as np
-import torch
-
-from PySide6 import QtCore, QtWidgets
+from PySide6 import QtCore, QtWidgets, QtGui
 import pyqtgraph as pg
 import pyqtgraph.opengl as gl
-
 from mwpose3d.utils.kinect_toolkits.kinectData import KeypointType, Connectivity
+import numpy as np
+import torch
 
 
 def _ensure_qapp() -> QtWidgets.QApplication:
@@ -28,6 +26,9 @@ def _to_numpy_1d(t: torch.Tensor) -> np.ndarray:
         t = t.detach().cpu().float()
         return t.numpy()
     return np.asarray(t, dtype=np.float32)
+
+
+
 
 
 class _SkeletonView:
@@ -88,6 +89,7 @@ class SimpleGTPredVisualizerQT:
         follow: bool, keep viewport following newest frame
         max_points_per_frame: int, decimate point cloud for speed
         show_point_cloud: bool, initial visibility for point cloud panel
+        dataset_connectivity: dict mapping parent joint idx to list of child joint idxs
     """
     def __init__(
         self,
@@ -98,6 +100,7 @@ class SimpleGTPredVisualizerQT:
         follow: bool = True,
         max_points_per_frame: int = 50_000,
         show_point_cloud: bool = True,
+        dataset_connectivity: Optional[Dict[int, List[int]]] = None,
     ):
         # Normalize to KeypointType
         self.keypoints_involved = [KeypointType(kp) for kp in keypoints_involved]
@@ -130,13 +133,27 @@ class SimpleGTPredVisualizerQT:
 
         # bone connectivity pairs
         self._bone_pairs: List[tuple[int, int]] = []
-        for kp in self.keypoints_involved:
-            if kp in Connectivity:
-                for connected in Connectivity[kp]:
-                    if connected in self.keypoints_involved:
-                        i1 = self.keypoints_involved.index(kp)
-                        i2 = self.keypoints_involved.index(connected)
-                        self._bone_pairs.append((i1, i2))
+        
+        if dataset_connectivity is not None:
+            # Use the provided connectivity dict (keys and values are raw integers)
+            # We assume the user passed indices that match the order of `keypoints_involved`
+            # or joint IDs directly. We map them internally.
+            for parent_idx, children in dataset_connectivity.items():
+                if parent_idx in keypoints_involved:
+                    i1 = keypoints_involved.index(parent_idx)
+                    for child_idx in children:
+                        if child_idx in keypoints_involved:
+                            i2 = keypoints_involved.index(child_idx)
+                            self._bone_pairs.append((i1, i2))
+        else:
+            # Fallback to the default Kinect connectivity logic using Enums
+            for kp in self.keypoints_involved:
+                if kp in Connectivity:
+                    for connected in Connectivity[kp]:
+                        if connected in self.keypoints_involved:
+                            i1 = self.keypoints_involved.index(kp)
+                            i2 = self.keypoints_involved.index(connected)
+                            self._bone_pairs.append((i1, i2))
 
         # Colors
         self._color_gt = (0.2, 0.2, 1.0, 1.0)
@@ -475,9 +492,15 @@ class SimpleGTPredVisualizerQT:
         self.view_gt.set_scatter(gt_xyz, color=self._color_gt, size=6.0)
         self.view_pred.set_scatter(pred_xyz, color=self._color_pred, size=6.0)
 
-        # Build bone segments as [2,3] arrays
-        gt_segments = [np.vstack([gt_xyz[i1], gt_xyz[i2]]) for (i1, i2) in self._bone_pairs]
-        pr_segments = [np.vstack([pred_xyz[i1], pred_xyz[i2]]) for (i1, i2) in self._bone_pairs]
+        # Build bone segments as [2,3] arrays only if we have bone pairs
+        if self._bone_pairs:
+            gt_segments = [np.vstack([gt_xyz[i1], gt_xyz[i2]]) for (i1, i2) in self._bone_pairs]
+            pr_segments = [np.vstack([pred_xyz[i1], pred_xyz[i2]]) for (i1, i2) in self._bone_pairs]
+            self.view_gt.set_bones(gt_segments, color=self._color_gt, width=2.0)
+            self.view_pred.set_bones(pr_segments, color=self._color_pred, width=2.0)
+        else:
+            self.view_gt.set_bones([])
+            self.view_pred.set_bones([])
 
         self.view_gt.set_bones(gt_segments, color=self._color_gt, width=2.0)
         self.view_pred.set_bones(pr_segments, color=self._color_pred, width=2.0)

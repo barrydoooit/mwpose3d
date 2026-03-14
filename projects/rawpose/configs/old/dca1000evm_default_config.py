@@ -25,6 +25,7 @@ total_frames = num_frames + backup_frames
 
 # Kinect V2 typically uses 20 or 25 joints. The custom capture defaults to 20 joints.
 keypoints_involved = list(range(0, 20))
+# TR_NormalizePointAttr = dict(type='NormalizePointAttr', attr_indices=(3, 4,), means=(0.0430, 9.4746), stds=(1.3270, 9.2075))
 
 # Dataset processing pipeline
 train_pipeline = [
@@ -50,16 +51,7 @@ train_pipeline = [
     ),
 
 
-    dict(
-        type='SkeletonCoordinateTransform',
-        tran_xyz=(0.0, 0.0, +1.685), # calculate precise tilt
-        rotate_xyz=(-10.0, 0.0, 0.0),
-    ),
-    dict(
-        type='PointCloudCoordinateTransform',
-        tran_xyz=(0.0, 0.0,+0.49), 
-        rotate_xyz=(21.0, 0.0, 0.0),
-    ),
+    
     
     dict(
         type='PointDuplicator',
@@ -71,6 +63,7 @@ train_pipeline = [
         sort_dim=4,  # Sort by SNR dimension
         sort_order='desc'
     ),
+    # TR_NormalizePointAttr
 ]
 
 # We attach this inside a dataloader dictionary so `inspect_dataset.py` can load it

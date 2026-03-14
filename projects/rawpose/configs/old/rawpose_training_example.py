@@ -10,12 +10,12 @@ custom_imports = {
 # DATASET CONFIGURATION
 # ----------------------------------------------------------------------------
 # Set this to the path where your dataset is stored.
-data_root = './data/joaquin_3' 
+data_root = './data/barry' 
 
 # Define exactly which info files to use for train, val, and test splits.
-train_info = 'info_train.pkl'
-val_info = 'info_val.pkl'
-test_info = 'info_test.pkl'
+train_info = 'info_all.pkl'
+val_info = 'info_all.pkl'
+test_info = 'info_all.pkl'
 
 # Important baseline variables inherited from dca1000evm_default_config:
 point_cloud_size = 128
