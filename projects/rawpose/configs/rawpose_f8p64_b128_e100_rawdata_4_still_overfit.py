@@ -8,16 +8,20 @@ data_prefix = dict(
     pcd='mmwave_filtered',
     skel='skeleton'
 )
-data_root = './data/joaquin_simple_pointing'
+data_root = './data/barry_complex_arm_movements_and_test_movements'
 train_info = 'info_all.pkl'
 val_info = 'info_all.pkl'
-test_info = 'info_all.pkl'
+test_info = 'info_test_arms.pkl'
+
+# train_info = 'info_all.pkl'
+# val_info = 'info_all.pkl'
+# test_info = 'info_all.pkl'
 
 keypoints_involved = list(range(0, 20))
 data_prefix = dict(pcd='mmwave.pointcloud.default', skel='skeleton')
 
 
-num_frames = 8
+num_frames = 16
 backup_frames = 5
 total_frames = num_frames + backup_frames
 point_cloud_size = 64
@@ -42,7 +46,7 @@ model = dict(
             hidden_size=64,
             num_layers=3,
             batch_first=True,
-            dropout=0.1,
+            dropout=0.0, # overfitting test
             fc_channels=[64, 16, 2],
             learnable_init_state=True,
         )
@@ -68,7 +72,7 @@ model = dict(
             hidden_size=64,
             num_layers=3,
             batch_first=True,
-            dropout=0.1,
+            dropout=0.0, # overfitting test
             bidirectional=False,
             learnable_init_state=True,
         )
@@ -99,7 +103,7 @@ TR_Pcd_Setup =   dict(
 train_pipeline = [
     dict(
         type='LoadMultiFrameFromH5',
-        load_pcd_dim=3,
+        load_pcd_dim=5,
         num_frames=num_frames,
         backup_frames=backup_frames,
         empty_frame_op='prev',
@@ -122,7 +126,7 @@ train_pipeline = [
     TR_Pcd_Setup,
     dict(
         type='RandomTransform',
-        transform_prob=0.8,
+        transform_prob=0.5,
         sigma_xyz=(0.02, 0.02, 0.02),
         max_d_xyz=(0.1, 0.1, 0.1)
     ),
@@ -139,8 +143,8 @@ train_pipeline = [
     # dict(
     #     type='NormalizePointAttr', # TODO: change to predicted values
     #     attr_indices=(3, 4,),
-    #     means=(-0.00047, 16.56169),
-    #     stds=(0.79512, 3.88067)
+    #     means=(1.7304, 0.0137),
+    #     stds=(0.6146, 0.2745)
     # ),
     dict(
         type='AddRangeDimension',
@@ -149,9 +153,9 @@ train_pipeline = [
 ]
 
 train_dataloader = dict(
-    batch_size=128,
+    batch_size=16, # overfitting test
     num_workers=16,
-    shuffle=True,
+    shuffle=False, # overfitting test
     drop_last=True,
     dataset=dict(
         type='MotionDataset',
@@ -161,20 +165,20 @@ train_dataloader = dict(
         pipeline=train_pipeline,
         sequence_length=total_frames,
         allow_pad_sequence=False,
-        max_sequences=1
+        # max_sequences=1
     )
 )
 
 optimizer_cfg = dict(
     type='AdamW',
-    lr = 0.0005,
-    weight_decay=0.01
+    lr = 0.005,
+    weight_decay=0.0
 )
 
 train_cfg = dict(
     type='EpochBasedTrainLoop',
-    max_epochs=50,
-    val_interval=10
+    max_epochs=100,
+    val_interval=25
 )
 
 
@@ -183,7 +187,7 @@ train_cfg = dict(
 val_pipeline = [
     dict(
         type='LoadMultiFrameFromH5',
-        load_pcd_dim=3,
+        load_pcd_dim=5,
         num_frames=num_frames,
         backup_frames=backup_frames,
         empty_frame_op='prev',
@@ -210,10 +214,10 @@ val_pipeline = [
         sort_order='desc'
     ),
     # dict(
-    #     type='NormalizePointAttr',
+    #     type='NormalizePointAttr', # TODO: change to predicted values
     #     attr_indices=(3, 4,),
-    #     means=(0.9411, -0.0102),
-    #     stds=(1.2123, 0.9358)
+    #     means=(1.7304, 0.0137),
+    #     stds=(0.6146, 0.2745)
     # ),
     dict(
         type='AddRangeDimension',
@@ -233,7 +237,7 @@ val_dataloader = dict(
         pipeline=val_pipeline,
         sequence_length=total_frames,
         allow_pad_sequence=False,
-        max_sequences=1
+        # max_sequences=1
     )
 )
 """
@@ -270,14 +274,19 @@ visualizer_cfg = {
 }
 # add vis
 
-metric=dict(
+metric_train=dict(
+    type='SimpleGTPredAnalyzer',
+    keypoints_involved=keypoints_involved,
+)
+
+metric_test=dict(
     type='SimpleGTPredAnalyzer',
     keypoints_involved=keypoints_involved,
     visualizer_cfg=visualizer_cfg,
 )
 val_cfg = dict(
     type='ValLoop',
-    metric_cfg=metric
+    metric_cfg=metric_train
 )
 test_pipeline = val_pipeline
 test_dataloader = dict(
@@ -297,7 +306,7 @@ test_dataloader = dict(
 
 test_cfg = dict(
     type='TestLoop',
-    metric_cfg=metric,
-    checkpoints=list(range(10, 101, 10)),
+    metric_cfg=metric_test,
+    # checkpoints=list(range(10, 101, 10)),
 )
 

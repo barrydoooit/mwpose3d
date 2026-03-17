@@ -53,7 +53,9 @@ instructions = dict(
 )
 
 # data_root = 'apps/impl/dataset_collectionv2/traces'
+# data_root = 'apps/impl/dataset_collectionv2/traces/joaquin_lazo_pointing'
 data_root = 'apps/impl/dataset_collectionv2/traces/joaquin_simple_point'
+
 buffer_cfg = dict(
     dump_dir=f'{data_root}/raw',
     buffer_size=500,

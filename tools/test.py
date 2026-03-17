@@ -1,3 +1,7 @@
+"""
+ uv run .\tools\test.py .\projects\rawpose\configs\rawpose_f8p64_b128_e100_rawdata_2.py .\work_dirs\rawpose_f8p64_b128_e100_rawdata_2\epoch_200.pth
+"""
+
 import argparse
 import logging
 import os
