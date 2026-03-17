@@ -25,25 +25,24 @@ class SkeletonFigure:
         self.ax.set_ylabel("Y")
         self.ax.set_zlabel("Z")
         self.ax.grid(True)
-        self.ax.set_xlim(2, -2)
-        self.ax.set_ylim(2, 0)
+        self._set_axes_limits()
+
+    def _set_axes_limits(self):
+        self.ax.set_xlim(-2, 2)
+        self.ax.set_ylim(0, 5) 
         self.ax.set_zlim(-2, 2)
         
     def update_skeleton(self, skeleton: Skeleton):
-        # # Cache coordinate conversion results to avoid duplicate work.
+        # Cache coordinate conversion results to avoid duplicate work.
         coords = {}
         for key, keypoint in skeleton.keypoints.items():
-            coords[key] = kinect_coord_to_radar(keypoint.x, keypoint.y, keypoint.z)
+            coords[key] = (keypoint.x, keypoint.y, keypoint.z)
         
-        # # Update scatter plot data.
-        # xs, ys, zs = zip(*coords.values())
-        # # Note: For 3D scatter, you may need to remove and redraw if set_data methods are limited.
-        # self.scatter._offsets3d = (xs, ys, zs)
         red_keypoints =  kntk.LEFT_KEYPOINTS
         xs, ys, zs, colors = [], [], [], []
         for key, keypoint in skeleton.keypoints.items():
-            # Convert coordinates
-            x, y, z = kinect_coord_to_radar(keypoint.x, keypoint.y, keypoint.z)
+            # Use coordinates directly (already in radar frame)
+            x, y, z = keypoint.x, keypoint.y, keypoint.z
             xs.append(x)
             ys.append(y)
             zs.append(z)
@@ -53,7 +52,6 @@ class SkeletonFigure:
             else:
                 colors.append('b')
         # Update the scatter plot with new data and colors.
-        # Note: In 3D scatter plots, updating colors dynamically might require re-plotting.
         self.scatter.remove()
         self.scatter = self.ax.scatter(xs, ys, zs, c=colors, marker='o')
         # Update or create line objects for connections.
@@ -72,7 +70,6 @@ class SkeletonFigure:
                     else:
                         # Create a new line and store it.
                         line_obj = self.ax.plot([k1x, k2x], [k1y, k2y], [k1z, k2z], 'r-')[0]
-                        print(type(line_obj))
                         self.lines[line_key] = line_obj
 
 class SkeletonFigureFrame(tk.Frame):

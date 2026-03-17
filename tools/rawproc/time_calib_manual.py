@@ -1,10 +1,39 @@
 import tkinter as tk
 from tkinter import ttk
 from typing import TYPE_CHECKING, List
-
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+from mwpose3d.utils.kinect_toolkits.kinectVis import SkeletonFigure
 
 from mwpose3d.utils.pointcloud_toolkits.pcdVis import PointCloudFigureFrame
 from mwpose3d.utils.kinect_toolkits.kinectVis import SkeletonFigureFrame
+
+class CombinedFigureFrame(tk.Frame):
+    def __init__(self, master=None, figure_cfg: dict={}, **kwargs):
+        super().__init__(master, **kwargs)
+        figure_cfg.setdefault('figsize', (5, 5))
+        figure_cfg.setdefault('dpi', 100)
+        # We reuse SkeletonFigure because it handles the complicated skeleton connections 
+        # and we can just add a separate scatter plot for point clouds.
+        self.figure = SkeletonFigure(**figure_cfg)
+        self.pcd_scatter = self.figure.ax.scatter([], [], [], c='g', marker='x', alpha=0.5)
+        
+        self.canvas = FigureCanvasTkAgg(self.figure.figure, master=self)
+        self.canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
+
+    def update(self, skeleton, points):
+        self.figure.update_skeleton(skeleton)
+        
+        # Update point cloud scatter
+        xs = [point.x for point in points]
+        ys = [point.y for point in points]
+        zs = [point.z for point in points]
+        self.pcd_scatter._offsets3d = (xs, ys, zs)
+        
+        self.canvas.draw()
+    
+    def reset(self):
+        self.figure.ax.clear()
+        self.canvas.draw()
 
 if TYPE_CHECKING:
     from mwpose3d.utils.pointcloud_toolkits.structures import SimplePoint5D
@@ -29,17 +58,23 @@ class CalibrateTimeWindow(tk.Toplevel):
         plot_frame = ttk.Frame(main_frame)
         plot_frame.pack(side=tk.TOP, fill=tk.BOTH, expand=True)
         
-        # Radar Point Cloud
-        radar_frame= ttk.LabelFrame(plot_frame, text="Radar Point Cloud")
+        # 1. Radar Point Cloud (Left)
+        radar_frame = ttk.LabelFrame(plot_frame, text="Radar Point Cloud")
         radar_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=5, pady=5)
         self.radar_plot = PointCloudFigureFrame(radar_frame,figure_cfg={
             'figsize': (5, 5), 'dpi': 100
         })
         self.radar_plot.pack(fill=tk.BOTH, expand=True)
+
+        # 2. Combined Visualization (Center)
+        combined_frame = ttk.LabelFrame(plot_frame, text="Combined Visualizer")
+        combined_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=5, pady=5)
+        self.combined_plot = CombinedFigureFrame(combined_frame, figure_cfg={'figsize': (5, 5), 'dpi': 100})
+        self.combined_plot.pack(fill=tk.BOTH, expand=True)
         
-        # Skeleton Visualization
+        # 3. Skeleton Visualization (Right)
         skel_frame = ttk.LabelFrame(plot_frame, text="Skeleton Visualization")
-        skel_frame.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True, padx=5, pady=5)
+        skel_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=5, pady=5)
         self.skel_plot = SkeletonFigureFrame(skel_frame, figure_cfg={'figsize': (5, 5), 'dpi': 100})
         self.skel_plot.pack(fill=tk.BOTH, expand=True)
         
@@ -94,6 +129,7 @@ class CalibrateTimeWindow(tk.Toplevel):
         # Update the figures.
         self.radar_plot.update(radar_frame_points)
         self.skel_plot.update(skeleton_frame)
+        self.combined_plot.update(skeleton_frame, radar_frame_points)
     
     def apply_calibration(self):
         radar_ts = self.radar_progress.get_current_value()
