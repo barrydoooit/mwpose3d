@@ -14,6 +14,7 @@ cpu   = ["torch", "torchvision",]
 cu118 = ["torch", "torchvision",]
 cu121 = ["torch", "torchvision",]
 cu124 = ["torch", "torchvision",]
+cu126 = ["torch", "torchvision",]
 
 [build-system]
 requires = [
@@ -33,6 +34,7 @@ conflicts = [
     { extra = "cu118" },
     { extra = "cu121" },
     { extra = "cu124" },
+    { extra = "cu126" },
   ],
 ]
 
@@ -47,6 +49,7 @@ torch = [
   { index = "pytorch-cu118", extra = "cu118" },
   { index = "pytorch-cu121", extra = "cu121" },
   { index = "pytorch-cu124", extra = "cu124" },
+  { index = "pytorch-cu126", extra = "cu126" },
 ]
 
 [[tool.uv.index]]
@@ -67,4 +70,9 @@ explicit = true
 [[tool.uv.index]]
 name = "pytorch-cu124"
 url = "https://download.pytorch.org/whl/cu124"
+explicit = true
+
+[[tool.uv.index]]
+name = "pytorch-cu126"
+url = "https://download.pytorch.org/whl/cu126"
 explicit = true
