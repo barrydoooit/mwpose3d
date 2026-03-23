@@ -42,15 +42,5 @@ def main():
         else:
             trec_grt.generate()
 
-    if args.pointing:
-        pointing_ann = PointingGestureAnnotator(
-            hpe_cfg_f=args.hpe_cfg,
-            elbow_angle_threshold=args.pointing_angle,
-            stability_window=args.pointing_window,
-            stability_max_variance=args.pointing_var,
-        )
-        pointing_ann.generate()
-
-
 if __name__ == '__main__':
     main()

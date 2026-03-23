@@ -126,8 +126,8 @@ class AnchorRNN(nn.Module):
         dir_mult = 2 if self.bidirectional else 1
         if h0 is None or c0 is None:
             if self.learnable_init_state:
-                h0 = self.h0.expand(self.num_layers * dir_mult, batch_size, self.hidden_size)
-                c0 = self.c0.expand(self.num_layers * dir_mult, batch_size, self.hidden_size)
+                h0 = self.h0.expand(self.num_layers * dir_mult, batch_size, self.hidden_size).contiguous()
+                c0 = self.c0.expand(self.num_layers * dir_mult, batch_size, self.hidden_size).contiguous()
             else:
                 h0 = x.new_zeros(self.rnn.num_layers * dir_mult, batch_size, self.rnn.hidden_size)
                 c0 = x.new_zeros_like(h0)
