@@ -52,9 +52,7 @@ instructions = dict(
     ]
 )
 
-# data_root = 'apps/impl/dataset_collectionv2/traces'
-# data_root = 'apps/impl/dataset_collectionv2/traces/joaquin_lazo_pointing'
-data_root = 'apps/impl/dataset_collectionv2/traces/joaquin_simple_point'
+data_root = 'apps/impl/dataset_collectionv2/traces'
 
 buffer_cfg = dict(
     dump_dir=f'{data_root}/raw',
@@ -65,9 +63,9 @@ buffer_cfg = dict(
 
 kinect_cfg = dict(
     kinect_mgr_cfg=dict(
-        exe_path='apps/impl/dataset_collection/DumpKinectSkeleton/bin/Release/DumpKinectSkeleton.exe',
+        exe_path='apps/impl/dataset_collectionv2/DumpKinectSkeleton/bin/Release/DumpKinectSkeleton.exe',
         output_dir=f'{data_root}/kinect',
-        mode=['capture', 'control'],
+        mode=['capture'],
     )
 )
 
