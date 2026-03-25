@@ -95,9 +95,6 @@ class EpochBasedTrainLoop(BaseLoop):
             
         self.runner.call_hook('after_train_epoch')
         self._epoch += 1
-            
-        self.runner.call_hook('after_train_epoch')
-        self._epoch += 1
     
     def _run_iter(self, idx: int, data_batch: dict) -> None:
         self.runner.call_hook('before_train_iter', batch_idx=idx, data_batch=data_batch)
