@@ -16,8 +16,6 @@ def main():
     stage1.add_argument('dataset', help='name of the dataset')
     stage1.add_argument('--debug', action='store_true', help='enable debug mode')
     stage1.add_argument('--trec', action='store_true', help='generate tracking records')
-    stage1.add_argument('--pointing', action='store_true',
-                        help='generate pointing gesture annotations')
     stage1.add_argument('--pcd', action='store_true',
                         help='generate alternative point cloud variants from raw ADC data')
     stage1.add_argument('-h', '--help', action='store_true',
