@@ -125,9 +125,12 @@ class InstructionWorker(QObject):
                         raise ValueError("Length mismatch between 'content' and 'duration'.")
         
         worker = cls(on_init=on_init, on_start=on_start, on_stop=on_stop)
+        # Create popup on the main thread BEFORE moveToThread.
+        # QWidgets must live on the GUI thread.
+        worker._prepare_popup()
         thread = QThread()
-        thread.finished.connect(worker.popup.close)
-        thread.finished.connect(worker.popup.deleteLater)
+        thread.finished.connect(worker._popup.close)
+        thread.finished.connect(worker._popup.deleteLater)
         worker.moveToThread(thread)
         thread.finished.connect(worker.deleteLater)
         thread.finished.connect(thread.deleteLater)
@@ -158,7 +161,6 @@ class InstructionWorker(QObject):
 
     @Slot()
     def _run_init(self):
-        _ = self.popup  # Ensure popup is created
         self._run_stage('init')
 
     @Slot()

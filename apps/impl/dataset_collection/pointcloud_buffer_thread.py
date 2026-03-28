@@ -166,7 +166,8 @@ class PointCloudBufferingWorker(QObject):
         self.refusing_new_frames = True
         dump_path = self.dump_dir / json_file if json_file else self.dump_dir
         final_path = self.buffer.dump_to_json(dump_path)
-        self.bufferDumped.emit(Path(final_path).name)
+        if final_path is not None:
+            self.bufferDumped.emit(Path(final_path).name)
         self.refusing_new_frames = False
     
     @Slot(dict)

@@ -1,8 +1,6 @@
 from statistics import median
 from typing import Any, Dict, List, Tuple
 import numpy as np
-from mwpose3d.runner.hooks.pre_inference_hook import PreInferenceHook
-from mwpose3d.runner.inference_engine import InferenceEngine
 
 from ..base import BaseTransform, OnlineEnabled
 from mwpose3d.registry import TRANSFORMS
@@ -72,6 +70,7 @@ class TrackingCentroidCalibration(BaseTransform):
         if not do_calib:
             return input
         try:
+            from mwpose3d.runner.hooks.pre_inference_hook import PreInferenceHook
             preds: Tuple[np.ndarray, ...] = input[PreInferenceHook.PREINFERENCE_RESULTS]
         except KeyError:
             return input
@@ -80,6 +79,7 @@ class TrackingCentroidCalibration(BaseTransform):
 
     def transform_online(self, input: Dict[str, Any]) -> Dict[str, Any]:
         track_centroid = input["track_centroid"][:-1]  # Exclude current frame
+        from mwpose3d.runner.inference_engine import InferenceEngine
         skel_pred_history: List[np.ndarray] = InferenceEngine.get_current_instance().get_pred_history()
         if len(skel_pred_history) < len(track_centroid):
             return input

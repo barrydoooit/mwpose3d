@@ -19,7 +19,7 @@ import sys
 import os
 sys.path.append(os.path.join(os.path.dirname(__file__), '../..'))
 
-from .widgets import CheckList, MultiColumnCheckList
+from .widgets import CheckList, HoverTooltip, MultiColumnCheckList
 from ...rawproc.episode import Episode
 from ...rawproc.hdf5_dumper import ToHdf5
 
@@ -39,7 +39,14 @@ class DataProcessorProtocol(Protocol):
     def update_episode(self, name: str, new_episode: Episode): ...
 
     @abstractmethod
-    def handle_create_data(self, episodes: list, suffix: str): ...
+    def handle_create_data(
+        self,
+        episodes: list,
+        suffix: str,
+        pointcloud_subdir: str,
+        mmwave_path_as_dict: bool,
+        missing_frame_strategy: str,
+    ): ...
     @abstractmethod
     def handle_delete_raw(self, episodes: list): ...
     @abstractmethod
@@ -51,7 +58,7 @@ class DataProcessorProtocol(Protocol):
     @abstractmethod
     def handle_reload_raw(self, episodes: list): ...
     @abstractmethod
-    def handle_data_align(self, episodes: list): ...
+    def handle_data_align(self, episodes: list, skeleton_ts_offset_ms: int): ...
 
 
 class DataProcessorGUI(tk.Tk):
@@ -70,11 +77,13 @@ class DataProcessorGUI(tk.Tk):
         self.processor = processor
 
         self._buttons: Dict[str, ttk.Button] = {}
+        self._tooltips: List[HoverTooltip] = []
 
         self.create_widgets()
         self.processor.load_processed_episodes()
         self.refresh_episode_lists()
         self.processor._gui_refresh_callabck = self.refresh_episode_lists
+        self.processor._gui_set_offset_callback = self.set_skeleton_ts_offset
 
     def create_widgets(self):
         # Two-column layout
@@ -103,6 +112,78 @@ class DataProcessorGUI(tk.Tk):
         ttk.Label(control_frame, text="Info Suffix:").pack(anchor=tk.W)
         self.info_suffix_entry = ttk.Entry(control_frame)
         self.info_suffix_entry.pack(fill=tk.X, pady=5)
+
+        param_frame = ttk.LabelFrame(control_frame, text="Alignment / Output Params")
+        param_frame.pack(fill=tk.X, pady=5)
+
+        offset_row = ttk.Frame(param_frame)
+        offset_row.pack(fill=tk.X)
+        ttk.Label(offset_row, text="skeleton_ts_offset_ms:").pack(side=tk.LEFT)
+        offset_info = ttk.Label(offset_row, text="ⓘ", foreground="#1f6aa5", cursor="question_arrow")
+        offset_info.pack(side=tk.LEFT, padx=(4, 0))
+        self._tooltips.append(HoverTooltip(
+            offset_info,
+            "Time shift (ms) to be applied when clicking Align Data. "
+            "Use Calibrate Time to estimate this value, or type it manually."
+            "+X means skeleton frame arrives X ms before radar frame;"
+            "-X means skeleton frame arrives X ms after radar frame."
+        ))
+        self.skeleton_offset_entry = ttk.Entry(param_frame)
+        self.skeleton_offset_entry.insert(0, "0")
+        self.skeleton_offset_entry.pack(fill=tk.X, pady=2)
+
+        subdir_row = ttk.Frame(param_frame)
+        subdir_row.pack(fill=tk.X)
+        ttk.Label(subdir_row, text="pointcloud_subdir:").pack(side=tk.LEFT)
+        subdir_info = ttk.Label(subdir_row, text="ⓘ", foreground="#1f6aa5", cursor="question_arrow")
+        subdir_info.pack(side=tk.LEFT, padx=(4, 0))
+        self._tooltips.append(HoverTooltip(
+            subdir_info,
+            "Subfolder under mmwave/pointcloud/ for created H5 files "
+            "(for example: default, newdsp)."
+        ))
+        self.pointcloud_subdir_entry = ttk.Entry(param_frame)
+        self.pointcloud_subdir_entry.insert(0, "default")
+        self.pointcloud_subdir_entry.pack(fill=tk.X, pady=2)
+
+        structured_row = ttk.Frame(param_frame)
+        structured_row.pack(fill=tk.X)
+        self.mmwave_path_mode_var = tk.BooleanVar(value=True)
+        self.mmwave_path_mode_check = ttk.Checkbutton(
+            structured_row,
+            text="Structured mmwave_path (dict)",
+            variable=self.mmwave_path_mode_var,
+            command=self._on_mmwave_path_mode_changed,
+        )
+        self.mmwave_path_mode_check.pack(side=tk.LEFT, pady=2)
+        structured_info = ttk.Label(structured_row, text="ⓘ", foreground="#1f6aa5", cursor="question_arrow")
+        structured_info.pack(side=tk.LEFT, padx=(4, 0))
+        self._tooltips.append(HoverTooltip(
+            structured_info,
+            "Checked: save to mmwave/pointcloud/<pointcloud_subdir>/ and store mmwave_path as dict.\n"
+            "Unchecked: save to mmwave/pointcloud/ and store mmwave_path as string."
+        ))
+        self._on_mmwave_path_mode_changed()
+
+        missing_frame_row = ttk.Frame(param_frame)
+        missing_frame_row.pack(fill=tk.X)
+        ttk.Label(missing_frame_row, text="missing_frame_strategy:").pack(side=tk.LEFT)
+        missing_frame_info = ttk.Label(missing_frame_row, text="ⓘ", foreground="#1f6aa5", cursor="question_arrow")
+        missing_frame_info.pack(side=tk.LEFT, padx=(4, 0))
+        self._tooltips.append(HoverTooltip(
+            missing_frame_info,
+            "How to repair missing radar frames caused by empty pointcloud entries.\n"
+            "duplicate: copy the previous non-empty frame.\n"
+            "remove: compress the sequence and renumber remaining frames."
+        ))
+        self.missing_frame_strategy_var = tk.StringVar(value="duplicate")
+        self.missing_frame_strategy_box = ttk.Combobox(
+            param_frame,
+            textvariable=self.missing_frame_strategy_var,
+            values=("duplicate", "remove"),
+            state="readonly",
+        )
+        self.missing_frame_strategy_box.pack(fill=tk.X, pady=2)
 
         self.create_control_buttons(control_frame)
 
@@ -147,7 +228,19 @@ class DataProcessorGUI(tk.Tk):
     def create_data(self):
         episodes = self.get_selected_episodes(lazy=False)
         suffix = self.info_suffix_entry.get().strip()
-        self.processor.handle_create_data(episodes, suffix)
+        mmwave_path_as_dict = bool(self.mmwave_path_mode_var.get())
+        if mmwave_path_as_dict:
+            pointcloud_subdir = self.pointcloud_subdir_entry.get().strip() or "default"
+        else:
+            # Flat output mode: write to mmwave/pointcloud directly.
+            pointcloud_subdir = ""
+        self.processor.handle_create_data(
+            episodes,
+            suffix,
+            pointcloud_subdir,
+            mmwave_path_as_dict=mmwave_path_as_dict,
+            missing_frame_strategy=self.missing_frame_strategy_var.get().strip() or "duplicate",
+        )
 
     def delete_raw(self):
         episode_names = self.get_selected_episodes(lazy=True)
@@ -176,7 +269,22 @@ class DataProcessorGUI(tk.Tk):
 
     def align_data(self):
         episode_names = self.get_selected_episodes(lazy=True)
-        self.processor.handle_data_align(episode_names)
+        try:
+            skeleton_ts_offset_ms = int(self.skeleton_offset_entry.get().strip())
+        except ValueError:
+            messagebox.showerror("Invalid Parameter", "skeleton_ts_offset_ms must be an integer.")
+            return
+        self.processor.handle_data_align(episode_names, skeleton_ts_offset_ms=skeleton_ts_offset_ms)
+
+    def set_skeleton_ts_offset(self, offset_ms: int):
+        self.skeleton_offset_entry.delete(0, tk.END)
+        self.skeleton_offset_entry.insert(0, str(int(offset_ms)))
+
+    def _on_mmwave_path_mode_changed(self):
+        if self.mmwave_path_mode_var.get():
+            self.pointcloud_subdir_entry.config(state=tk.NORMAL)
+        else:
+            self.pointcloud_subdir_entry.config(state=tk.DISABLED)
 
     # ---- ----
 
@@ -272,6 +380,7 @@ class DataProcessorDelegate(DataProcessorProtocol):
         self._processed_episode_names = set()
         self._episodes: Dict[str, Episode] = {}
         self._gui_refresh_callabck = None
+        self._gui_set_offset_callback = None
         self._status_df = pd.DataFrame(columns=["Calibrated", "Aligned"], dtype=bool)
 
     @property
@@ -311,7 +420,14 @@ class DataProcessorDelegate(DataProcessorProtocol):
         if self._gui_refresh_callabck:
             self._gui_refresh_callabck()
 
-    def handle_create_data(self, episodes: list, suffix: str):
+    def handle_create_data(
+        self,
+        episodes: list,
+        suffix: str,
+        pointcloud_subdir: str,
+        mmwave_path_as_dict: bool,
+        missing_frame_strategy: str,
+    ):
         def task():
             suffixes = ["all"]
             if suffix:
@@ -319,7 +435,13 @@ class DataProcessorDelegate(DataProcessorProtocol):
             for name in episodes:
                 try:
                     episode = self.get_episode(name)
-                    hdf5_maker = ToHdf5(episode, self.output_dir)
+                    hdf5_maker = ToHdf5(
+                        episode,
+                        self.output_dir,
+                        pointcloud_subdir=pointcloud_subdir,
+                        mmwave_path_as_dict=mmwave_path_as_dict,
+                        missing_frame_strategy=missing_frame_strategy,
+                    )
                     hdf5_maker.save(suffixes)
                     self._processed_episode_names.add(name)
                 except Exception as e:
@@ -332,9 +454,11 @@ class DataProcessorDelegate(DataProcessorProtocol):
         def task():
             for name in episodes:
                 try:
-                    paths = [
-                        self.raw_dir / "pointcloud" / f"{name}.json",
+                    pointcloud_candidates = [self.raw_dir / "pointcloud" / f"{name}.json"]
+                    pointcloud_candidates += list((self.raw_dir / "pointcloud").glob(f"*/{name}.json"))
+                    paths = pointcloud_candidates + [
                         self.raw_dir / "meta" / f"{name}.json",
+                        self.raw_dir / "meta" / f"{name}.meta.json",
                         self.raw_dir / "kinect" / f"{name}.csv",
                     ]
                     for p in paths:
@@ -391,20 +515,23 @@ class DataProcessorDelegate(DataProcessorProtocol):
         threading.Thread(target=task, daemon=True).start()
 
     def handle_calibrate_time(self, episodes: list):
-        def task():
-            for name in episodes:
-                try:
-                    episode = self.get_episode(name)
-                    calibrated = episode.calibrate_time(manual=True)
-                    if calibrated is not None:
-                        self.episodes[name] = calibrated
-                    self.status_df.loc[name, "Calibrated"] = True
-                except Exception as e:
-                    logger.error(f"Failed to calibrate time: {e}")
-                    traceback.print_exc()
+        if not episodes:
+            return
+        # Calibrate only on the first selected episode and return offset only.
+        name = episodes[0]
+        try:
+            episode = self.get_episode(name)
+            offset_ms = episode.calibrate_time(manual=True)
+            if offset_ms is None:
+                return
+            self.status_df.loc[name, "Calibrated"] = True
+            if self._gui_set_offset_callback is not None:
+                self._gui_set_offset_callback(int(offset_ms))
+            logger.info("Manual calibration finished on %s. skeleton_ts_offset_ms=%s", name, offset_ms)
             self.gui_refresh_callback()
-
-        threading.Thread(target=task, daemon=True).start()
+        except Exception as e:
+            logger.error(f"Failed to calibrate time: {e}")
+            traceback.print_exc()
 
     def handle_remove_processed(self, episodes, also_data):
         def task():
@@ -446,12 +573,16 @@ class DataProcessorDelegate(DataProcessorProtocol):
 
         threading.Thread(target=task, daemon=True).start()
 
-    def handle_data_align(self, episodes):
+    def handle_data_align(self, episodes, skeleton_ts_offset_ms: int):
         def task():
             try:
                 for name in episodes:
                     episode = self.get_episode(name)
-                    aligned = episode.align_traces(use_interp_skel=True)
+                    aligned = episode.align_traces(
+                        use_interp_skel=True,
+                        skeleton_ts_type='unix_ms',
+                        skeleton_ts_offset_ms=skeleton_ts_offset_ms,
+                    )
                     self.update_episode(name, aligned)
                     self.status_df.loc[name, "Aligned"] = True
                 self.gui_refresh_callback()

@@ -29,6 +29,7 @@ class PointCloudOfflineVisualizer(QMainWindow):
         super().__init__(parent)
         self.setWindowTitle("Offline Point Cloud Visualizer")
         self.resize(800, 600)
+        self.pcd_color = None  # optional RGBA tuple, e.g. (1,1,0,1); settable per-frame
         
         # ------------ Handle point clouds ------------
         if isinstance(point_clouds, list):
@@ -214,7 +215,13 @@ class PointCloudOfflineVisualizer(QMainWindow):
             pts = cloud[:, :3]
         else:
             pts = np.zeros((0, 3))
-        self.plot3d.scatter.setData(pos=pts)
+
+        # Use per-point color array if pcd_color is set, otherwise default
+        if self.pcd_color is not None and pts.shape[0] > 0:
+            color = np.tile(self.pcd_color, (pts.shape[0], 1))
+            self.plot3d.scatter.setData(pos=pts, color=color)
+        else:
+            self.plot3d.scatter.setData(pos=pts)
 
         if self._has_tracking and self.current_frame < len(self._trk_cache):
             locs = self._trk_cache[self.current_frame]
@@ -345,7 +352,8 @@ class PointCloudOfflineVisualizerSK(PointCloudOfflineVisualizer):
             parent=parent
         )
 
-        self._skel_scatter = gl.GLScatterPlotItem(size=5, color=(0, 1, 0, 1))
+        self.skel_color = (0, 1, 0, 1)  # default green, settable per-frame
+        self._skel_scatter = gl.GLScatterPlotItem(size=5, color=self.skel_color)
         self.plot3d.plot_3d.addItem(self._skel_scatter)
     
     def _load_frame(self, index: int) -> None:
@@ -368,6 +376,6 @@ class PointCloudOfflineVisualizerSK(PointCloudOfflineVisualizer):
                 skel_flat = skel_flat[:len(skel_flat) - (len(skel_flat) % 3)]
             
             joints = np.array(skel_flat).reshape(-1, 3)
-            self._skel_scatter.setData(pos=joints)
+            self._skel_scatter.setData(pos=joints, color=self.skel_color)
         else:
             self._skel_scatter.setData(pos=np.zeros((0, 3)))

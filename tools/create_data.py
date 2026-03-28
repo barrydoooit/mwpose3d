@@ -1,3 +1,10 @@
+"""
+uv run .\tools\create_data.py custom --root-path "E:\projects\mwpose3d\apps\impl\dataset_collection\traces\raw_new_pc" --out-dir "."
+
+uv run .\tools\create_data.py joaquin_v2_att2 --root-path "E:\projects\mwpose3d\apps\impl\dataset_collectionv2\traces\joaquin_collection_2" --out-dir "./data/joaquin_3"
+
+"""
+
 import argparse
 from pathlib import Path
 from typing import List, Literal
@@ -127,6 +134,9 @@ def main():
         help='specify the output directory')
     parser.add_argument('--debug', action='store_true', help='enable debug mode')
     args = parser.parse_args()
+    if not args.out_dir:
+        args.out_dir = str(Path('data') / args.dataset)
+
     if args.debug:
         debugpy.listen(5678)
         print('Waiting for debugger attach')

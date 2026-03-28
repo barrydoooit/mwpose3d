@@ -65,6 +65,20 @@ class InputPopupDialog(QDialog):
     def _on_accept(self):
         # Collect non-empty inputs and store them statically
         result = {key: fld.text() for key, fld in self._fields.items() if fld.text().strip()}
+        
+        # If no fields were filled, provide dummy data like headless_recorder.py
+        # so that a meta.json file is always generated for the downstream pipeline.
+        if not result:
+            import time
+            result = {
+                "Participant ID": "gui_default",
+                "Game": "gui_default",
+                "Position X": "0",
+                "Position Y": "0",
+                "Speed": "unknown",
+                "Description": f"default run at {time.strftime('%Y-%m-%d %H:%M:%S')}",
+            }
+            
         InputPopupDialog.set_previous_values(result)
         self.submitted.emit(result)
         self.accept()

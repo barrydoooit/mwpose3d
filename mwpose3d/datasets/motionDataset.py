@@ -20,7 +20,8 @@ class MotionDataset:
                  data_prefix: dict, # e.g. {'pcd': 'mmwave_filtered', 'skel': 'skeleton'}
                  pipeline: list,
                  sequence_length: int = 1,
-                 allow_pad_sequence: bool = False
+                 allow_pad_sequence: bool = False,
+                 max_sequences: int = None
                  ):
         self.info_path = Path(info_path)
         self.data_root = Path(data_root)
@@ -34,20 +35,43 @@ class MotionDataset:
         with open(self.info_path, 'rb') as f:
             self.info: list = pickle.load(f)
 
+        if max_sequences is not None:
+            self.info = self.info[:max_sequences]
+
         self.cum_frames, self.file_names = self._build_global_idx_to_file_table()
         self.total_frames = self.cum_frames[-1] if self.cum_frames.size > 0 else 0
         
         self.pipeline: Compose = Compose(pipeline) # NOTE: This will only work when default range is moved to mwpose3d from mmengine (like in the init of runner class)
-        print("MotionDataset initialized with total_frames:", self.total_frames)
-    
+        print(f"MotionDataset initialized: {len(self.info)} sequences, {self.total_frames} total frames")
+
+    @staticmethod
+    def _resolve_prefix_root_dir(prefix: str, modality: str = ''):
+        return prefix.split('.')[0]
+
+    @staticmethod
+    def _resolve_path(prefix: str, modality: str, info_single: dict):
+        path_key = f"{MotionDataset._resolve_prefix_root_dir(prefix, modality)}_path"
+        path_info = info_single.get(path_key, None)
+        if path_info is None:
+            raise KeyError(f"Key '{path_key}' is necessary but not found in info_single. Available keys: {list(info_single.keys())}")
+        if isinstance(path_info, str):
+            return path_info
+        if isinstance(path_info, dict):
+            node = path_info
+            for key in prefix.split('.')[1:]:
+                node = node[key]
+            return node
+        raise TypeError(f"Unsupported type for path_info under key '{path_key}': {type(path_info)}. Expected str or dict.")
+
     def _build_global_idx_to_file_table(self):
         cum_list = []
         file_lists = {modality: [] for modality in list(self.data_prefix.keys())} # {'pcd': [], 'skel': []}
         total_frames = 0
         for info_single in self.info:
-            if isinstance(info_single['frame_count'], dict):
-                info_single['frame_count'] = info_single['frame_count'][self.data_prefix['pcd']]
             frame_count = info_single['frame_count']
+            if isinstance(frame_count, dict):
+                # print(frame_count)
+                frame_count = min(frame_count.values())
             if self.sequence_length > 1 and not self.allow_pad_sequence:
                 valid_frames = max(frame_count - (self.sequence_length - 1), 0)
             else:
@@ -55,7 +79,13 @@ class MotionDataset:
             total_frames += valid_frames
             cum_list.append(total_frames)
             for modality in list(self.data_prefix.keys()):
-                file_lists[modality].append(join_path(self.data_root, self.data_prefix[modality], info_single[f'{self.data_prefix[modality]}_path']))
+                prefix = self.data_prefix[modality]
+                prefix_root_dir = self._resolve_prefix_root_dir(prefix, modality)
+                file_lists[modality].append(join_path(
+                    self.data_root,
+                    prefix_root_dir,
+                    self._resolve_path(prefix, modality, info_single),
+                ))
         cum_frames = np.array(cum_list, dtype=np.int64)
         file_names = {modality: np.array(file_lists[modality]) for modality in list(self.data_prefix.keys())}
         return cum_frames, file_names

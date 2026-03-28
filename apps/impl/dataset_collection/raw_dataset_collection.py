@@ -3,6 +3,7 @@ import sys
 import time
 from typing import Optional, Union, TYPE_CHECKING
 import logging
+import os
 
 from apps.impl.dataset_collection.metadata_input_dialog import InputPopupDialog
 from mwpose3d.utils.typing_utils import ConfigType
@@ -31,8 +32,10 @@ if TYPE_CHECKING:
     from mwpose3d.visualization.skel_online import OnlineSkeletonVisualizer
 
 
+from mwcore.radario.readers.TI.DCA1000EVM.udp_raw_reader import UdpRawDataReader
+
 @APPS.register_module()
-class HPEDatasetCollectionApp(BaseMWOnlineApp):
+class RawDatasetCollectionApp(BaseMWOnlineApp):
     def __init__(self,
                  reader_cfg: dict,
                  vis_cfg: dict,
@@ -40,6 +43,14 @@ class HPEDatasetCollectionApp(BaseMWOnlineApp):
                  buffer_cfg: dict,
                  kinect_cfg: dict,
                  cfg: ConfigType = None):
+        
+        
+        os.makedirs(cfg.data_root, exist_ok=True)
+        os.makedirs(os.path.join(cfg.data_root, 'meta'), exist_ok=True)
+        os.makedirs(os.path.join(cfg.data_root, 'pointcloud'), exist_ok=True)
+        os.makedirs(os.path.join(cfg.data_root, 'kinect'), exist_ok=True)
+        os.makedirs(os.path.join(cfg.data_root, 'raw'), exist_ok=True)
+        
         super().__init__(reader_cfg, vis_cfg, cfg)
         self.app = QApplication(sys.argv)
         # Thread for displaying text instructions
@@ -88,7 +99,7 @@ class HPEDatasetCollectionApp(BaseMWOnlineApp):
         )
 
 class _LoopController(QObject):
-    def __init__(self, app: HPEDatasetCollectionApp):
+    def __init__(self, app: RawDatasetCollectionApp):
         super().__init__()
         self.app = app
 
@@ -145,6 +156,15 @@ class _LoopController(QObject):
     @Slot()
     def _on_cycle_complete(self):
         logger.info("Cycle complete. Preparing for next capture.")
+        
+        # 1. Dump point cloud buffer (if any)
+        self.app.pcd_buffering_worker.dump_buffer()
+        
+        # 2. Explicitly trigger Kinect dump
+        # We use a timestamped filename to ensure it's saved even if buffer dump didn't trigger it
+        timestamp = time.strftime("%Y%m%d_%H%M%S")
+        self.app.kinect_mgr_worker.dumpSkeletonsSignal.emit(f"kinect_{timestamp}.csv")
+        
         QMetaObject.invokeMethod(
             self.app.pcd_buffering_worker,
             'clear_buffer',
@@ -165,6 +185,20 @@ class _LoopController(QObject):
         self.before_init()
 
     def stop_all(self):
+        # ── Dump captured data before shutting down (mirrors headless_recorder) ──
+        logger.info("Dumping captured data before exit...")
+        try:
+            self.app.pcd_buffering_worker.dump_buffer()
+        except Exception as e:
+            logger.error(f"Error dumping point cloud buffer on exit: {e}")
+
+        try:
+            timestamp = time.strftime("%Y%m%d_%H%M%S")
+            self.app.kinect_mgr_worker._on_dump(f"kinect_{timestamp}.csv")
+        except Exception as e:
+            logger.error(f"Error dumping kinect skeletons on exit: {e}")
+
+        # ── Tear down threads ──
         for tn in (
             "reader_thread",
             "kinect_mgr_thread",
@@ -178,3 +212,5 @@ class _LoopController(QObject):
             t.quit()
             logger.info(f"Waiting for thread: app.{tn} to quit")
             t.wait()
+    
+

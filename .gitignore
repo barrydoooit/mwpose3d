@@ -15,4 +15,12 @@ requirements.txt
 .idea
 **.csv
 **.json
+**.so
 traces
+
+apps/impl/dataset_collection/DumpKinectSkeleton
+
+tmpraw/
+tmp/
+
+**TESTIFICATE**

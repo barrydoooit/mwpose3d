@@ -145,23 +145,65 @@ def inspect(runner, dataloader: Config, vis: bool = False):
         # print('Skeleton std:', [round(x, 2) for x in skel_stds])
     
     if vis:
-        def pcd_generator():
-            for idx, data_batch in enumerate(dataloader):
-                assert len(data_batch['pcd_frames'][-1]) == 1
-                yield data_batch['pcd_frames'][-1][0]
-        
-        def skel_generator():
-            for idx, data_batch in enumerate(dataloader):
-                yield data_batch['skel_frames'][-1][0]
+        import h5py
+
+        # Pre-load pointing flags from all skeleton H5 files in the dataset
+        pointing_flags_cache = {}  # str -> np.ndarray or None
+        data_root = dataloader.dataset.data_root
+        skel_dir = data_root / 'skeleton' if hasattr(data_root, '__truediv__') else None
+        if skel_dir and skel_dir.is_dir():
+            for h5f in skel_dir.glob('*.h5'):
+                try:
+                    with h5py.File(h5f, 'r') as f:
+                        if 'pointing_gesture' in f:
+                            pointing_flags_cache[str(h5f)] = f['pointing_gesture'][:]
+                except Exception:
+                    pass
+
+        def _is_pointing(data_batch):
+            """Check pointing flag for the current batch item."""
+            data_file = data_batch.get('data_file', {})
+            skel_path = data_file.get('skel', None)
+            if isinstance(skel_path, (list, tuple)):
+                skel_path = skel_path[0]
+            if skel_path is None:
+                return False
+            flags = pointing_flags_cache.get(str(skel_path), None)
+            if flags is None:
+                return False
+            local_idx = data_batch.get('local_idx', 0)
+            if isinstance(local_idx, (list, tuple)):
+                local_idx = local_idx[-1]
+            return bool(flags[local_idx]) if local_idx < len(flags) else False
+
+        # Collect all data in a single pass (no separate generator per modality)
+        pcd_list, skel_list, pointing_list = [], [], []
+        total = len(dataloader) if hasattr(dataloader, '__len__') else None
+        for idx, data_batch in tqdm(enumerate(dataloader), desc='Loading frames', total=total):
+            pcd_list.append(data_batch['pcd_frames'][-1][0])
+            skel_list.append(data_batch['skel_frames'][-1][0])
+            pointing_list.append(_is_pointing(data_batch))
 
         from PySide6.QtWidgets import QApplication
         app = QApplication(sys.argv)
-        total = len(dataloader) if hasattr(dataloader, '__len__') else None
         from mwpose3d.visualization import PointCloudOfflineVisualizerSK
-        visualizer = PointCloudOfflineVisualizerSK(
-            pcd_generator(),
-            skel_generator(),
-            total_frames=total,
+
+        class _PointingVisualizer(PointCloudOfflineVisualizerSK):
+            """Thin subclass that sets per-frame colors based on pointing flags."""
+            def __init__(self, pcds, skels, flags, **kwargs):
+                self._pointing_flags = flags
+                super().__init__(pcds, skels, **kwargs)
+
+            def update_display(self):
+                is_pointing = (self.current_frame < len(self._pointing_flags)
+                               and self._pointing_flags[self.current_frame])
+                self.pcd_color = (1, 1, 0, 1) if is_pointing else None
+                self.skel_color = (0, 0, 1, 1) if is_pointing else (0, 1, 0, 1)
+                super().update_display()
+
+        visualizer = _PointingVisualizer(
+            pcd_list, skel_list, pointing_list,
+            total_frames=len(pcd_list),
             play_fps=60,
         )
         visualizer.show()

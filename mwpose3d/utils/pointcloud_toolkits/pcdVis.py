@@ -21,8 +21,12 @@ class PointCloudFigure(Figure):
         self.ax.set_xlabel('X')
         self.ax.set_ylabel('Y')
         self.ax.set_zlabel('Z')
-        self.ax.set_xlim(2, -2)
-        self.ax.set_ylim(2, 0)  # Reverse Y axis
+        # Setting limits manually matched to radar coordinates typically [-2,2] for X, [0,5] for Y, [-2,2] for Z
+        self._set_axes_limits()
+
+    def _set_axes_limits(self):
+        self.ax.set_xlim(-2, 2)
+        self.ax.set_ylim(0, 5) 
         self.ax.set_zlim(-2, 2)
     
     def update_points(self, points: Iterable[SimplePoint3D]):

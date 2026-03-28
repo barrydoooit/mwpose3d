@@ -79,8 +79,19 @@ class EpochBasedTrainLoop(BaseLoop):
     def _run_epoch(self) -> None:
         self.runner.call_hook('before_train_epoch')
         self.runner.model.train()
-        for idx, data_batch in enumerate(self.dataloader):
+        
+        inner_pbar = tqdm(
+            self.dataloader,
+            desc=f'Epoch {self._epoch + 1}/{self._max_epochs}',
+            leave=False
+        )
+        
+        for idx, data_batch in enumerate(inner_pbar):
             self._run_iter(idx, data_batch)
+            if self._iter % 30 == 0:
+                inner_pbar.set_postfix_str(f'loss: {self._last_loss:.4f}')
+            
+        inner_pbar.close()
             
         self.runner.call_hook('after_train_epoch')
         self._epoch += 1
@@ -93,8 +104,8 @@ class EpochBasedTrainLoop(BaseLoop):
         self.runner.optimizer.zero_grad()
         loss.backward()
         self.runner.optimizer.step()
-        if self._iter % 30 == 0:
-            self.epoch_pbar.set_postfix_str(f'loss: {loss.item():.4f}')
+        self._last_loss = loss.item()
+        # The epoch_pbar update is removed because we update it in inner_pbar instead
         
         self.runner.call_hook(
             'after_train_iter',

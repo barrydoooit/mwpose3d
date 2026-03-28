@@ -42,36 +42,91 @@ class KinectManagerWorker(QObject):
     
     @Slot()
     def _on_start(self):
-        self._ct = threading.Thread(target=self._run_capture_loop, name="KinectCaptureLoop", daemon=True)
-        self._ct.start()
-    
-    def _run_capture_loop(self):
+        # Don't call refresh() here - it closes/recreates the mmap which conflicts
+        # with the subprocess trying to create the same named mmap
+        # refresh() should only be called when STOPPING to clean up stale state
+        #
+        # Phase 1: Start the subprocess in a daemon thread (blocking I/O).
+        # Once it's ready, _on_subprocess_ready fires on the QThread event loop.
+        self._startup_thread = threading.Thread(
+            target=self._start_subprocess, name="KinectStartup", daemon=True)
+        self._startup_thread.start()
+
+    def _start_subprocess(self):
+        """Blocking helper – runs in a one-shot daemon thread."""
         try:
+            logger.info("[Kinect] Starting Kinect subprocess...")
             self.kinect_mgr.start_skeleton_capture()
+            logger.info("[Kinect] Waiting for capture to start (checking for mmap data)...")
             self.kinect_mgr.wait_for_capture_starts()
-            self.captureProcessStartedSignal.emit()
+            logger.info("[Kinect] Capture process started successfully!")
         except Exception as e:
-            logger.error(f"Error starting Kinect capture: {e}")
+            logger.error(f"[Kinect] Error starting Kinect capture: {e}")
             return
 
+        # Start daemon threads to log subprocess stdout/stderr
+        if self.kinect_mgr.process:
+            def log_subprocess_output():
+                if self.kinect_mgr.process.stdout:
+                    for line in iter(self.kinect_mgr.process.stdout.readline, b''):
+                        if line:
+                            logger.info(f"[Kinect stdout] {line.decode().strip()}")
+
+            def log_subprocess_error():
+                if self.kinect_mgr.process.stderr:
+                    for line in iter(self.kinect_mgr.process.stderr.readline, b''):
+                        if line:
+                            logger.warning(f"[Kinect stderr] {line.decode().strip()}")
+
+            threading.Thread(target=log_subprocess_output, daemon=True).start()
+            threading.Thread(target=log_subprocess_error, daemon=True).start()
+
+        # Transition to Phase 2 on the QThread event loop
+        from PySide6.QtCore import QTimer, QMetaObject, Qt
+        QMetaObject.invokeMethod(self, '_on_subprocess_ready', Qt.ConnectionType.QueuedConnection)
+
+    @Slot()
+    def _on_subprocess_ready(self):
+        """Phase 2: subprocess is up – start QTimer-based skeleton polling."""
         self._running = self.kinect_mgr.running
         self._paused = False
-        
-        while self._running and not QThread.currentThread().isInterruptionRequested():
-            if self._paused:
-                time.sleep(0.1)
-                continue
-            try:
-                new = self.kinect_mgr.get_new_records()
-            except Exception as e:
-                logger.error(f"Error getting new records: {e}")
-                break
+        self._skeleton_count = 0
+        self.captureProcessStartedSignal.emit()
 
-            if new:
-                self.skeletons.extend(new)
-                self.recentSkeletonJointCoordSignal.emit(self.skeletons[-1].flatten()[1][2:])  # Emit only the flattened data excluding timestamp and unix_ms
-            
-            time.sleep(0.01)
+        from PySide6.QtCore import QTimer
+        self._poll_timer = QTimer(self)
+        self._poll_timer.setInterval(10)  # 10ms poll interval
+        self._poll_timer.timeout.connect(self._poll_skeletons)
+        self._poll_timer.start()
+        logger.info("[Kinect] Skeleton polling started (QTimer, 10ms).")
+
+    @Slot()
+    def _poll_skeletons(self):
+        """Called every 10ms by QTimer – reads new skeletons from mmap."""
+        if not self._running or QThread.currentThread().isInterruptionRequested():
+            self._poll_timer.stop()
+            logger.info(f"[Kinect] Polling stopped. Total skeletons: {self._skeleton_count}")
+            return
+        if self._paused:
+            return
+
+        try:
+            new = self.kinect_mgr.get_new_records()
+        except Exception as e:
+            logger.error(f"[Kinect] Error getting new records: {e}")
+            self._poll_timer.stop()
+            return
+
+        if new:
+            self.skeletons.extend(new)
+            self._skeleton_count += len(new)
+            if self._skeleton_count == 1:
+                logger.info("[Kinect] First skeleton frame received!")
+            elif self._skeleton_count % 100 == 0:
+                logger.info(f"[Kinect] Captured {self._skeleton_count} skeleton frames so far")
+            self.recentSkeletonJointCoordSignal.emit(
+                self.skeletons[-1].flatten()[1][2:]
+            )
 
     @Slot()
     def _on_pause(self):
@@ -88,13 +143,15 @@ class KinectManagerWorker(QObject):
     
     @Slot()
     def _on_stop(self):
-        if self._ct.is_alive():
-            logger.info("Stopping Kinect Capture thread.")
-            self._ct.join(timeout=1)
+        if hasattr(self, '_poll_timer') and self._poll_timer.isActive():
+            self._poll_timer.stop()
+        if hasattr(self, '_startup_thread') and self._startup_thread.is_alive():
+            logger.info("Waiting for Kinect startup thread to finish...")
+            self._startup_thread.join(timeout=1)
         self.kinect_mgr.refresh()
         self._running = False
         self._paused = False
-        logger.info("Kinect Capture thread terminated.")
+        logger.info("Kinect Capture stopped.")
 
     @Slot(str)
     def _on_dump(self, filename: str):
