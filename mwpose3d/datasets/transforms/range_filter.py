@@ -48,18 +48,33 @@ class PointCloudRangeFilter(BaseTransform):
            filtered_frames = self.operate_empty_frames(input, filtered_frames, empty_frame_indices)
         input['pcd_frames'] = tuple(filtered_frames)
         return input
+
+    def _is_backup_frame(self, input: dict, idx: int) -> bool:
+        remaining = input.get('remaining_frames_idx')
+        if remaining is not None and idx < len(remaining):
+            return remaining[idx] < self.backup_frames
+        return idx < self.backup_frames
     
     def operate_empty_frames(self, input: dict, filtered_frames: List[np.ndarray], empty_frame_indices: List[int]):
         if self.empty_frame_op == 'duplicate':
+            empty_set = set(empty_frame_indices)
             for idx in empty_frame_indices:
-                if idx < self.backup_frames:
+                if self._is_backup_frame(input, idx):
                     continue # no need to fix the backup frames
+                # Prefer previous non-empty frame
+                donor = None
                 for i in range(idx - 1, -1, -1):
-                    if i not in empty_frame_indices:
-                        filtered_frames[idx] = filtered_frames[i].copy()
+                    if i not in empty_set:
+                        donor = i
                         break
-                else:
-                    raise ValueError("No previous non-empty frame found.")
+                # Fall back to closest next non-empty frame
+                if donor is None:
+                    for i in range(idx + 1, len(filtered_frames)):
+                        if i not in empty_set:
+                            donor = i
+                            break
+                if donor is not None:
+                    filtered_frames[idx] = filtered_frames[donor].copy()
             return filtered_frames
         elif self.empty_frame_op == 'shift':
             keep_indices = [i for i in range(len(filtered_frames)) if i not in empty_frame_indices]

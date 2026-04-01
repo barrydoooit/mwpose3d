@@ -101,14 +101,17 @@ class LoadMultiFrameFromH5(BaseTransform):
                 cur = start_idx + i
                 if cur < 0 or cur >= index[-1]:
                     pcd_frame = self.handle_empty_pcd(last_valid)
+                    ts = None
                 else:
                     start = index[cur]
                     end = index[cur + 1] if cur + 1 < len(index) else None
-                    pcd_data = grp[self.DATA][start:end][:, :self.load_pcd_dim]
-                    ts = grp[self.DATA][start:end][0, -1]
+                    raw_data = grp[self.DATA][start:end]
+                    pcd_data = raw_data[:, :self.load_pcd_dim]
                     if pcd_data.size == 0:
                         pcd_frame = self.handle_empty_pcd(last_valid)
+                        ts = None
                     else:
+                        ts = raw_data[0, -1]
                         pcd_frame = pcd_data
                         last_valid = pcd_frame
                 pcd_frames.append(pcd_frame)
